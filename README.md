@@ -2,9 +2,8 @@
 
 This repository contains RePhone application projects configured for Eclipse
 
-# Guide for installation/configuration on Linux
-
-### [RePhone on Linux guide](https://github.com/loboris/RePhone_on_Linux/raw/master/Documents/RePhone%20on%20Linux.pdf)<br/>
+###Guide for installation/configuration on Linux
+[RePhone on Linux guide](https://github.com/loboris/RePhone_on_Linux/raw/master/Documents/RePhone%20on%20Linux.pdf)<br/>
 
 ###Links:
 * [RePhone wiki](http://www.seeedstudio.com/wiki/Rephone)
