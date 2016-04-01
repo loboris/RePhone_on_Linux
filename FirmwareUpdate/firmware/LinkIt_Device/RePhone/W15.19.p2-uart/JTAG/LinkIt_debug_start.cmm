@@ -1,0 +1,30 @@
+SYStem.RESet
+SYStem.CPU ARM9EJ
+SYStem.JtagClock RTCK.
+sys.o cflush on
+SYStem.Up
+
+setup.IMASKHLL ON
+setup.IMASKASM ON
+
+DO LinkIt_bypass.cmm
+
+; specify_load_elf
+; D.LOAD.ELF ..\ARM\*.dbg 0x00000000 /PATH ..\ /nocode
+
+menu.reprogram LinkIt_plugin
+
+; setting attribute of breakpoints
+Break.Select Program OnChip
+Break.Select Hll OnChip
+Break.Select Spot OnChip
+Break.Select Read OnChip
+Break.Select Write OnChip
+
+; clean_win
+winclear
+
+; endup
+d.l
+enddo
+

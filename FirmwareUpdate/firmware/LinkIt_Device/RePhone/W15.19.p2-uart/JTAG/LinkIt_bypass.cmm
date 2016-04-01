@@ -1,0 +1,11 @@
+; disable_watchdog
+D.S SD:0xA0030000 %LE %WORD 0x2200
+
+
+; Avoiding assert at CTIRQ1/2
+D.S SD:0x83070008 %LE %WORD 0xABCD
+D.S SD:0x83070010 %LE %WORD 0x0003     ; bit0: disable CTIRQ1/2 timing check
+
+;endup
+d.l
+enddo

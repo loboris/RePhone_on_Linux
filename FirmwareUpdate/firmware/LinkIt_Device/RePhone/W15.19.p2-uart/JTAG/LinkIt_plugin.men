@@ -1,0 +1,45 @@
+ADD
+TOOLBAR
+(
+	SEPARATOR	
+	TOOLITEM "RESET" "DO LinkIt_reset.cmm"
+	[
+
+RRRR   bbb ggggg
+R  RR b      g
+R   R b      g    
+R RR  b      g       
+RR    b      g      
+RRR   b      g      
+R R    b     g      
+R  R   b     g      
+R  R    b    g      
+R  R    b    g      
+R  R     b   g     
+R   R    b   g   
+R   R    b   g    
+R   R bbb    g    
+	]
+
+	TOOLITEM "Assert bypass after BREAK" "DO LinkIt_bypass.cmm"
+	[
+RRRR       gggg
+ R RR     gg   g
+ R  R  Y  g
+ RRRR YYY g
+ R  RR Y  g  ggg
+ R   R    gg  gg
+RRRRRR     ggg g
+
+
+ ccc  ccc  c  c
+ c c  c cc c c
+ c c  c  c cc
+ cccc ccc  ccc
+ c  c c c  c c
+ c  c c  c c  c
+ cccc c  c c  c
+	]
+	
+	SEPARATOR
+)

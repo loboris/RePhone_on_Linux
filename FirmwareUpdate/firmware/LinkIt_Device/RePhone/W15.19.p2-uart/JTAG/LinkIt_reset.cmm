@@ -1,0 +1,10 @@
+; Auto Reset target with L1d assert disable
+
+; In Target reset
+SYStem.Mode EmulExt
+Register.RESet
+
+DO LinkIt_bypass.cmm
+
+GO
+
