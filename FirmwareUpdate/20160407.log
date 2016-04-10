@@ -1,0 +1,1844 @@
+USB Plug-out7.4.2016. 21:24:58
+USB Plug-out7.4.2016. 21:24:58
+++++++++++++unlock the download.........
+*********************************Start Time : 21:24:59    **************************
+New action to upload target binary.
+b_newcomport = false --1
+++++++++++++Could to downlaod and unlockit..........
+USB Insert7.4.2016. 21:25:00
+USB Plug-out7.4.2016. 21:25:01
+b_downloading = true 
+000000Begin downloading
+............................................ Process AllSystem.Diagnostics.Process 
+............................................Now start to run the process 
+............................................ Process starttime7.4.2016. 21:25:46 
+............................................ Process id4840 
+b_downloading = true 
+b_downloading = true 
+ParseArguments() : CFG path   = [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\SEEED02A_DEMO_BB.cfg]
+ParseArguments() : DA  path   = [C:\LoBo\RePhone\FirmwareUpdate\firmware\Download_Agent\6261]
+ParseArguments() : COM number = 10
+ParseArguments() : COM  path   = []
+ParseArguments() : Property name = [(null)]
+Test .
+[**Process**] _001_00000
+001
+GetBBInfoFromCFG() Platform = 0x2502
+GetBootRegionImagesNameFromCFG() Get rom name : [SEEED02A_DEMO_BOOTLOADER_V005_MT2502_MAUI_11CW1418SP5_W15_19.bin] (len = 64)
+GetBootRegionImagesNameFromCFG() Get rom name : [EXT_BOOTLOADER] (len = 14)
+GetBootRegionImagesNameFromCFG() Get rom name : [ROM] (len = 3)
+GetBootRegionImagesNameFromCFG() Get rom name : [VIVA] (len = 4)
+GetExternalMemorySettingFromCFG() EOF
+ParseConfigFile():  Done 
+[**Process**] _002_00000
+002
+[**Process**] _003_00000
+003
+load_image_info(): File Type = [ARM_BL], load address = 0x70006000 , format = RAW
+load_image_info(): File Type = [ARM_EXT_BL], load address = 0x10003000 , format = RAW
+load_image_info(): File Type = [PRIMARY_MAUI], load address = 0x10020000 , format = RAW
+load_image_info(): File Type = [VIVA], load address = 0x101d64d0 , format = RAW
+[**Process**] _005_00000
+005
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+b_downloading = true 
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+b_downloading = true 
+b_downloading = true 
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+b_downloading = true 
+b_downloading = true 
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+ERROR : Failed to open the communication port, Timeout (20 sec)
+release_cfg_images_name():  free boot region entry 0 
+release_cfg_images_name():  free entry 0 [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\SEEED02A_DEMO_BOOTLOADER_V005_MT2502_MAUI_11CW1418SP5_W15_19.bin](141)
+release_cfg_images_name():  free boot region entry 1 
+release_cfg_images_name():  free entry 1 [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\EXT_BOOTLOADER](91)
+release_cfg_images_name():  free main region entry 0 
+release_cfg_images_name():  free entry 0 [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\ROM](80)
+release_cfg_images_name():  free main region entry 1 
+release_cfg_images_name():  free entry 1 [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\VIVA](81)
+Native Downloader end, ret = 1011 
+000000 Done downloading
+USB Plug-out7.4.2016. 21:26:27
+++++++++++++unlock the download.........
+*********************************Start Time : 21:26:28    **************************
+New action to upload target binary.
+b_newcomport = false --1
+++++++++++++Could to downlaod and unlockit..........
+USB Insert7.4.2016. 21:26:29
+USB Plug-out7.4.2016. 21:26:30
+USB Plug-out7.4.2016. 21:26:41
+USB Plug-out7.4.2016. 21:26:41
+USB Plug-out7.4.2016. 21:26:45
+USB Plug-out7.4.2016. 21:27:02
+USB Plug-out7.4.2016. 21:27:05
+b_downloading = true 
+000000Begin downloading
+............................................ Process AllSystem.Diagnostics.Process 
+............................................Now start to run the process 
+............................................ Process starttime7.4.2016. 21:27:13 
+............................................ Process id4948 
+b_downloading = true 
+b_downloading = true 
+ParseArguments() : CFG path   = [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\SEEED02A_DEMO_BB.cfg]
+ParseArguments() : DA  path   = [C:\LoBo\RePhone\FirmwareUpdate\firmware\Download_Agent\6261]
+ParseArguments() : COM number = 10
+ParseArguments() : COM  path   = []
+ParseArguments() : Property name = [(null)]
+Test .
+[**Process**] _001_00000
+001
+GetBBInfoFromCFG() Platform = 0x2502
+GetBootRegionImagesNameFromCFG() Get rom name : [SEEED02A_DEMO_BOOTLOADER_V005_MT2502_MAUI_11CW1418SP5_W15_19.bin] (len = 64)
+GetBootRegionImagesNameFromCFG() Get rom name : [EXT_BOOTLOADER] (len = 14)
+GetBootRegionImagesNameFromCFG() Get rom name : [ROM] (len = 3)
+GetBootRegionImagesNameFromCFG() Get rom name : [VIVA] (len = 4)
+GetExternalMemorySettingFromCFG() EOF
+ParseConfigFile():  Done 
+[**Process**] _002_00000
+002
+[**Process**] _003_00000
+003
+load_image_info(): File Type = [ARM_BL], load address = 0x70006000 , format = RAW
+load_image_info(): File Type = [ARM_EXT_BL], load address = 0x10003000 , format = RAW
+load_image_info(): File Type = [PRIMARY_MAUI], load address = 0x10020000 , format = RAW
+load_image_info(): File Type = [VIVA], load address = 0x101d64d0 , format = RAW
+[**Process**] _005_00000
+005
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+b_downloading = true 
+b_downloading = true 
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+ERROR : Failed to open the communication port, Timeout (20 sec)
+release_cfg_images_name():  free boot region entry 0 
+release_cfg_images_name():  free entry 0 [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\SEEED02A_DEMO_BOOTLOADER_V005_MT2502_MAUI_11CW1418SP5_W15_19.bin](141)
+release_cfg_images_name():  free boot region entry 1 
+release_cfg_images_name():  free entry 1 [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\EXT_BOOTLOADER](91)
+release_cfg_images_name():  free main region entry 0 
+release_cfg_images_name():  free entry 0 [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\ROM](80)
+release_cfg_images_name():  free main region entry 1 
+release_cfg_images_name():  free entry 1 [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\VIVA](81)
+Native Downloader end, ret = 1011 
+000000 Done downloading
+USB Plug-out7.4.2016. 21:27:47
+USB Plug-out7.4.2016. 21:27:47
+USB Plug-out7.4.2016. 21:27:51
+USB Plug-out7.4.2016. 21:28:10
+++++++++++++unlock the download.........
+*********************************Start Time : 21:28:11    **************************
+New action to upload target binary.
+b_newcomport = false --1
+++++++++++++Could to downlaod and unlockit..........
+USB Insert7.4.2016. 21:28:11
+USB Plug-out7.4.2016. 21:28:13
+USB Plug-out7.4.2016. 21:28:32
+USB Plug-out7.4.2016. 21:28:32
+USB Plug-out7.4.2016. 21:28:36
+b_downloading = true 
+000000Begin downloading
+............................................ Process AllSystem.Diagnostics.Process 
+............................................Now start to run the process 
+............................................ Process starttime7.4.2016. 21:28:56 
+............................................ Process id4912 
+b_downloading = true 
+USB Plug-out7.4.2016. 21:28:56
+b_downloading = true 
+ParseArguments() : CFG path   = [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\SEEED02A_DEMO_BB.cfg]
+ParseArguments() : DA  path   = [C:\LoBo\RePhone\FirmwareUpdate\firmware\Download_Agent\6261]
+ParseArguments() : COM number = 10
+ParseArguments() : COM  path   = []
+ParseArguments() : Property name = [(null)]
+Test .
+[**Process**] _001_00000
+001
+GetBBInfoFromCFG() Platform = 0x2502
+GetBootRegionImagesNameFromCFG() Get rom name : [SEEED02A_DEMO_BOOTLOADER_V005_MT2502_MAUI_11CW1418SP5_W15_19.bin] (len = 64)
+GetBootRegionImagesNameFromCFG() Get rom name : [EXT_BOOTLOADER] (len = 14)
+GetBootRegionImagesNameFromCFG() Get rom name : [ROM] (len = 3)
+GetBootRegionImagesNameFromCFG() Get rom name : [VIVA] (len = 4)
+GetExternalMemorySettingFromCFG() EOF
+ParseConfigFile():  Done 
+[**Process**] _002_00000
+002
+[**Process**] _003_00000
+003
+load_image_info(): File Type = [ARM_BL], load address = 0x70006000 , format = RAW
+load_image_info(): File Type = [ARM_EXT_BL], load address = 0x10003000 , format = RAW
+load_image_info(): File Type = [PRIMARY_MAUI], load address = 0x10020000 , format = RAW
+load_image_info(): File Type = [VIVA], load address = 0x101d64d0 , format = RAW
+[**Process**] _005_00000
+005
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+[com] Closing the communication port
+b_downloading = true 
+b_downloading = true 
+[com] com_open: Opening the communication port: baudrate=115200
+[com] Opening the communication port number: 10
+handel (52)
+[**Process**] _010_00000
+010
+Connecting to BootROM... com_handle(52)
+send 0xa0 
+recv 0x5f 
+send 0xa 
+recv 0xf5 
+send 0x50 
+recv 0xaf 
+send 0x5 
+recv 0xfa 
+[**Process**] _015_00000
+015
+Disabling watchdog..
+Get BB Code
+bootrom_SetLongPressPWKEY(): Long Press PWKEY Start
+bootrom_SetLongPressPWKEY(): EFUSE = 0x26400000bootrom_SetLongPressPWKEY(): It's MT2501 and MT2502 chip
+bootrom_SetLongPressPWKEY(): Long Press PWKEY End
+bootrom_SetLSRSTB(): Set LSRSTB Start
+bootrom_SetLSRSTB(): Set LSRSTB End
+BRom_MT6261::PSRAM_INIT(): Set PSRAM_INIT Start 
+EMI_data_training DONE 
+PSRAM_INIT(): Set PSRAM_INIT Done 
+bootrom_disable_charge_control(): Disable charge control Start
+bootrom_disable_charge_control(): Disable charge control End
+Latching powerkey...
+Set Remap...
+XIP
+[**Process**] _020_00000
+020
+[**Process**] _022_00000
+022
+Sending DA1...
+[**Process**] _025_00000
+025
+Sending DA2...
+[**Process**] _028_00000
+028
+Transferring control to DA...
+BootROM stage .... Done
+[**Process**] _030_00000
+030
+Connecting to DA...
+Get SYNC_CHAR C0 DA return BB = 142 
+DA starts to detect NOR/SF flash 
+DA starts to detect NAND flash 
+Get DA report from target. 
+Efuse Data: 0xabababab, 0x00011c7a, 0x0001d794, 0x00011c7a, 0x0001d794
+Get DA report done. 
+Sync with DA is done. 
+[**Process**] _032_00000
+032
+Formatting CBR...
+[**Process**] _035_00000
+035
+Write Boot loader...
+da_write_boot_loader:: send Format HB command
+da_write_boot_loader:: send Flash Dev
+Set flash type: SF
+da_write_boot_loader 0x7
+da_write_boot_loader com_recv_byte response 0x5a
+da_write_boot_loader::DA_DOWNLOAD_BLOADER_CMD(0x51).
+da_write_boot_loader::  check code region access right..da_write_boot_loader DA_DOWNLOAD_BLOADER_CMD response 0x5a
+da_write_boot_loader:: send PACKET SIZE(0x00001000)
+da_write_boot_loader send Flash Device Type(0x07)
+da_write_boot_loader  check Flash Device Type... response 0x5a
+da_write_boot_loader:: check Header Block..
+da_write_boot_loader check Header Block response 0x5a
+da_write_boot_loader:: 1st download ...
+da_write_boot_loader: send BL Numers(0x00000002).
+da_write_boot_loader ask DA to format HB (0x5A)
+da_write_boot_loader ask DA to check HB exist or not (0xA5)
+da_write_boot_loader  DA check HB... response 0x5a
+[**Process**] _038_00000
+038
+da_write_boot_loader : send BL[0] - BL_EXIST_MAGIC(0x5A).
+DA_cmd::CMD_DownloadBootLoader(): send BL[0] - BL_DEV(0x07).
+da_write_boot_loader send BL[0] - BL_TYPE(0x0001).
+da_write_boot_loader:: send BL[0] - BL_BEGIN_DEV_ADDR(load addr)(0x70006000).
+da_write_boot_loader:: send BL[0] - BL_BOUNDARY_DEV_ADDR(load addr+file_len)(0x70007C68).
+da_write_boot_loader::: send BL[0] - BL_ATTRIBUTE(0x00000001)
+.da_write_boot_loader:::  send BL[0] - BL_MAX_SIZE(0xFFFFFFFF).
+DA_cmd::CMD_DownloadBootLoader(): send BL[0] - AC_C enable (0).
+DA_cmd::CMD_DownloadBootLoader(): send BL[0] - AC Final Offset (0) = FILE_CONTENT_OFFSET (0x00000140) + AC Offset (0).
+DA_cmd::CMD_DownloadBootLoader(): send BL[0] - AC Length (0).
+DA_cmd::CMD_DownloadBootLoader(): send BL[0] - BL_SIZE(0x00001C68).DA_cmd::CMD_DownloadBootLoader(): send BL[0] - BL_RESERVED_BLOCK(0).
+DA_cmd::CMD_DownloadBootLoader(): send BL[0] - BL_ALIGN_TYPE(0).DA_cmd::CMD_DownloadBootLoader(): send BL[0] - BL_FILEINFO_ATTR(0x01).
+DA_cmd::CMD_DownloadBootLoader(): wait for ACK.DA_cmd::CMD_DownloadBootLoader(): ACK(0x5A) OK!da_write_boot_loader : send BL[1] - BL_EXIST_MAGIC(0x5A).
+DA_cmd::CMD_DownloadBootLoader(): send BL[1] - BL_DEV(0x07).
+da_write_boot_loader send BL[1] - BL_TYPE(0x0002).
+da_write_boot_loader:: send BL[1] - BL_BEGIN_DEV_ADDR(load addr)(0x10003000).
+da_write_boot_loader:: send BL[1] - BL_BOUNDARY_DEV_ADDR(load addr+file_len)(0x1001CF20).
+da_write_boot_loader::: send BL[1] - BL_ATTRIBUTE(0x00000000)
+.da_write_boot_loader:::  send BL[1] - BL_MAX_SIZE(0xFFFFFFFF).
+DA_cmd::CMD_DownloadBootLoader(): send BL[1] - AC_C enable (0).
+DA_cmd::CMD_DownloadBootLoader(): send BL[1] - AC Final Offset (0) = FILE_CONTENT_OFFSET (0x00000060) + AC Offset (0).
+DA_cmd::CMD_DownloadBootLoader(): send BL[1] - AC Length (0).
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+DA_cmd::CMD_DownloadBootLoader(): send BL[1] - BL_SIZE(0x00019F20).DA_cmd::CMD_DownloadBootLoader(): send BL[1] - BL_RESERVED_BLOCK(0).
+DA_cmd::CMD_DownloadBootLoader(): send BL[1] - BL_ALIGN_TYPE(0).DA_cmd::CMD_DownloadBootLoader(): send BL[1] - BL_FILEINFO_ATTR(0x03).
+DA_cmd::CMD_DownloadBootLoader(): wait for ACK.DA_cmd::CMD_DownloadBootLoader(): ACK(0x5A) OK!DA_cmd::CMD_DownloadBootLoader(): Set BL Profiles - wait for ACK.DA_cmd::CMD_DownloadBootLoader(): Set BL Profiles - ACK(0x5A) OK!
+DA_cmd::CMD_DownloadBootLoader(): BL Self Update Check - wait for ACK.
+DA_cmd::CMD_DownloadBootLoader(): BL Self Update Check - ACK(0x5A) OK!
+[**Process**] _040_00000
+040
+[**Process**] _044_00000
+044
+[**Process**] _048_00000
+048
+DA_cmd::CMD_DownloadBootLoader(): wait for post-process of download bootloader.
+da_write_boot_loader download finish response is 0x5a
+da_write_boot_loader download finish response status is 0x0002
+Check Efuse backup data...
+da_check_efuse_backup_data: maker (0xabababab), efuse_backup_data_1 (0x00011c7a), efuse_backup_data_2 (0x0001d794)
+[**Process**] _050_00000
+050
+Write NOR images...
+get_CBRinfo...
+SV5_CMD_SetMemBlock...
+send MEM_BEGIN_ADDR(0x00020000)
+send MEM_END_ADDR(0x001D60CF)
+send IMAGE_TYPE(0x00000100)
+send MEM_BEGIN_ADDR(0x001D64D0)
+send MEM_END_ADDR(0x004D7BBB)
+send IMAGE_TYPE(0x00000108)
+UNCHANED_DATA_BLOCKS=(0x02)
+bin index = 0 format time = 27
+Wait bin[0] format time 0/27
+Wait bin[0] format time 1/27
+Wait bin[0] format time 2/27
+Wait bin[0] format time 3/27
+Wait bin[0] format time 4/27
+Wait bin[0] format time 5/27
+Wait bin[0] format time 6/27
+Wait bin[0] format time 7/27
+Wait bin[0] format time 8/27
+Wait bin[0] format time 9/27
+Wait bin[0] format time 10/27
+Wait bin[0] format time 11/27
+Wait bin[0] format time 12/27
+Wait bin[0] format time 13/27
+Wait bin[0] format time 14/27
+Wait bin[0] format time 15/27
+Wait bin[0] format time 16/27
+Wait bin[0] format time 17/27
+Wait bin[0] format time 18/27
+Wait bin[0] format time 19/27
+Wait bin[0] format time 20/27
+Wait bin[0] format time 21/27
+Wait bin[0] format time 22/27
+Wait bin[0] format time 23/27
+Wait bin[0] format time 24/27
+Wait bin[0] format time 25/27
+Wait bin[0] format time 26/27
+bin index = 1 format time = 48
+Wait bin[1] format time 0/48
+Wait bin[1] format time 1/48
+Wait bin[1] format time 2/48
+Wait bin[1] format time 3/48
+Wait bin[1] format time 4/48
+Wait bin[1] format time 5/48
+Wait bin[1] format time 6/48
+Wait bin[1] format time 7/48
+Wait bin[1] format time 8/48
+Wait bin[1] format time 9/48
+Wait bin[1] format time 10/48
+Wait bin[1] format time 11/48
+Wait bin[1] format time 12/48
+Wait bin[1] format time 13/48
+Wait bin[1] format time 14/48
+Wait bin[1] format time 15/48
+Wait bin[1] format time 16/48
+Wait bin[1] format time 17/48
+Wait bin[1] format time 18/48
+Wait bin[1] format time 19/48
+Wait bin[1] format time 20/48
+Wait bin[1] format time 21/48
+Wait bin[1] format time 22/48
+Wait bin[1] format time 23/48
+Wait bin[1] format time 24/48
+Wait bin[1] format time 25/48
+Wait bin[1] format time 26/48
+Wait bin[1] format time 27/48
+Wait bin[1] format time 28/48
+Wait bin[1] format time 29/48
+Wait bin[1] format time 30/48
+Wait bin[1] format time 31/48
+Wait bin[1] format time 32/48
+Wait bin[1] format time 33/48
+Wait bin[1] format time 34/48
+Wait bin[1] format time 35/48
+Wait bin[1] format time 36/48
+Wait bin[1] format time 37/48
+Wait bin[1] format time 38/48
+Wait bin[1] format time 39/48
+Wait bin[1] format time 40/48
+Wait bin[1] format time 41/48
+Wait bin[1] format time 42/48
+Wait bin[1] format time 43/48
+Wait bin[1] format time 44/48
+Wait bin[1] format time 45/48
+Wait bin[1] format time 46/48
+Wait bin[1] format time 47/48
+SV5_CMD_ERASE_MAUI_INFO...
+Send DA_ERASE_MAUI_INFO(0x5B).
+get the target_MauiInfo_addr: 0x0
+get the target_rom_addr: 0x0
+get the target_blk_addr: 0x20000
+Target address is zero. Do nothing!
+[**Process**] _060_00000
+060
+Send DA_WRITE_CMD(0xD5).
+Packet Length: 4096
+wait for DA to save unchanged data
+Sleep(4ms)=UNCHANED_DATA_BLOCKS(2)x32KWx70ns.
+[**Process**] _070_00000
+070
+[**Process**] _071_00000
+071
+[**Process**] _072_00000
+072
+[**Process**] _073_00000
+073
+[**Process**] _074_00000
+074
+[**Process**] _075_00000
+075
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+b_downloading = true 
+[**Process**] _076_00000
+076
+[**Process**] _077_00000
+077
+[**Process**] _078_00000
+078
+[**Process**] _079_00000
+079
+Image[0]: 1794256 bytes sent
+[**Process**] _080_00000
+080
+[**Process**] _081_00000
+081
+[**Process**] _082_00000
+082
+[**Process**] _083_00000
+083
+[**Process**] _084_00000
+084
+[**Process**] _085_00000
+085
+[**Process**] _086_00000
+086
+[**Process**] _087_00000
+087
+[**Process**] _088_00000
+088
+[**Process**] _089_00000
+089
+[**Process**] _090_00000
+090
+[**Process**] _091_00000
+091
+[**Process**] _092_00000
+092
+[**Process**] _093_00000
+093
+[**Process**] _094_00000
+094
+[**Process**] _095_00000
+095
+Image[1]: 3151596 bytes sent
+wait for DA to write all data to flash
+wait for DA to perform unchanged data recovery.
+wait for DA to perform ProcessInfo.
+[**Process**] _098_00000
+098
+verify image checksum. for normal chip
+Verifying PRIMARY_MAUI
+Sending ckecksum (0x721E)
+Checksum matched (image index = 0)
+Verifying VIVA
+Sending ckecksum (0x3243)
+Checksum matched (image index = 1)
+[**Process**] _099_00000
+099
+write data OK
+Format flash FAT...
+Send DA_FORMAT_FAT_CMD(0xB8).
+FAT range : Start address = 0x00500000.
+FAT range : Length        = 0x00afe000.
+Start to Format FAT operation.
+Format FAT is Done.
+Disconnect DA...
+[com] Closing the communication port
+release_cfg_images_name():  free boot region entry 0 
+release_cfg_images_name():  free entry 0 [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\SEEED02A_DEMO_BOOTLOADER_V005_MT2502_MAUI_11CW1418SP5_W15_19.bin](141)
+release_cfg_images_name():  free boot region entry 1 
+release_cfg_images_name():  free entry 1 [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\EXT_BOOTLOADER](91)
+release_cfg_images_name():  free main region entry 0 
+release_cfg_images_name():  free entry 0 [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\ROM](80)
+release_cfg_images_name():  free main region entry 1 
+release_cfg_images_name():  free entry 1 [C:\LoBo\RePhone\FirmwareUpdate\firmware\LinkIt_Device\RePhone\W15.19.p2-uart\VIVA](81)
+[**Process**] _0100_00000
+0100
+Native Downloader end, ret = 0 
+000000 Done downloading

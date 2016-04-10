@@ -34,6 +34,8 @@
 #include "devman.h"
 #endif
 
+#include "vmmemory.h"
+
 #define FREELIST_REF	0	/* free list of references */
 
 
@@ -709,13 +711,17 @@ LUALIB_API int (luaL_loadstring) (lua_State *L, const char *s) {
 
 /* }====================================================== */
 
+#include "vmlog.h"
 
+//-----------------------------------------------------------
 static int l_check_memlimit(lua_State *L, size_t needbytes) {
   global_State *g = G(L);
   int cycle_count = 0;
   lu_mem limit = g->memlimit - needbytes;
+
   /* don't allow allocation if it requires more memory then the total limit. */
   if (needbytes > g->memlimit) return 1;
+
   /* make sure the GC is not disabled. */
   if (!is_block_gc(L)) {
     while (g->totalbytes >= limit) {
@@ -727,34 +733,68 @@ static int l_check_memlimit(lua_State *L, size_t needbytes) {
   return (g->totalbytes >= limit) ? 1 : 0;
 }
 
-
+/*
+The type of the memory-allocation function used by Lua states.
+The allocator function must provide a functionality similar to realloc, but not exactly the same.
+Its arguments are:
+ ud, an opaque pointer passed to lua_newstate;
+ ptr, a pointer to the block being allocated/reallocated/freed;
+ osize, the original size of the block;
+ nsize, the new size of the block.
+ptr is NULL if and only if osize is zero.
+When nsize is zero, the allocator must return NULL;
+  if osize is not zero, it should free the block pointed to by ptr.
+When nsize is not zero, the allocator returns NULL if and only if it cannot fill the request.
+When nsize is not zero and osize is zero, the allocator should behave like malloc.
+When nsize and osize are not zero, the allocator behaves like realloc.
+Lua assumes that the allocator never fails when osize >= nsize.
+*/
+//----------------------------------------------------------------------
 static void *l_alloc (void *ud, void *ptr, size_t osize, size_t nsize) {
   lua_State *L = (lua_State *)ud;
   int mode = L == NULL ? 0 : G(L)->egcmode;
   void *nptr;
 
-  if (nsize == 0) {
-    free(ptr);
+  if (nsize == 0) { // free
+	free(ptr);
     return NULL;
   }
-  if (L != NULL && (mode & EGC_ALWAYS)) /* always collect memory if requested */
+
+  // malloc/realloc
+  if (L != NULL && (mode & EGC_ALWAYS)) {
+	// always collect memory if requested
     luaC_fullgc(L);
+  }
+
   if(nsize > osize && L != NULL) {
-#if defined(LUA_STRESS_EMERGENCY_GC)
+	#if defined(LUA_STRESS_EMERGENCY_GC)
     luaC_fullgc(L);
-#endif
+	#endif
     if(G(L)->memlimit > 0 && (mode & EGC_ON_MEM_LIMIT) && l_check_memlimit(L, nsize - osize))
       return NULL;
   }
-  nptr = realloc(ptr, nsize);
+
+  if (ptr == NULL) {
+	  nptr = malloc(nsize);
+  }
+  else {
+	  nptr = realloc(ptr, nsize);
+  }
+
   if (nptr == NULL && L != NULL && (mode & EGC_ON_ALLOC_FAILURE)) {
     luaC_fullgc(L); /* emergency full collection. */
-    nptr = realloc(ptr, nsize); /* try allocation again */
+
+    if (ptr == NULL) {
+  	  nptr = malloc(nsize);
+    }
+    else {
+  	  nptr = realloc(ptr, nsize);
+    }
   }
   return nptr;
 }
 
-
+//-------------------------------
 static int panic (lua_State *L) {
   (void)L;  /* to avoid warnings */
   fprintf(stderr, "PANIC: unprotected error in call to Lua API (%s)\n",

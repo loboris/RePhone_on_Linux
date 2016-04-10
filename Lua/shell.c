@@ -207,11 +207,15 @@ void shell_docall(lua_State *L)
     vm_signal_post(g_shell_signal);
 }
 
+#include "legc.h"
+extern unsigned int g_memory_size;
+
 //===================================================================
 VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
 {
     lua_State *L = (lua_State *)user_data;
 
+    legc_set_mode(L, EGC_ON_MEM_LIMIT | EGC_ON_ALLOC_FAILURE, g_memory_size);
     g_main_handle = vm_thread_get_main_handle();
 
     g_shell_message.message_id = SHELL_MESSAGE_ID;

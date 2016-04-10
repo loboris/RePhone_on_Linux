@@ -40,6 +40,7 @@
 #include "vmudp.h"
 #include "vmdatetime.h"
 #include "vmtimer.h"
+#include "vmlog.h"
 
 
 extern VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type;
@@ -139,7 +140,9 @@ static void sntp_callback(VM_UDP_HANDLE handle, VM_UDP_EVENT event)
 
                 vm_time_set_date_time(&new_time);
                 ntp_time_set = 1;
-                printf("\nTime Synchronised: tz=%d epoch=%lu: %s\n", ntp_time_zone, epoch, asctime(ntpTime));
+                char buf[128] = {0};
+                sprintf(buf, "Time Synchronized: tz=%d epoch=%lu: %s", ntp_time_zone, epoch, asctime(ntpTime));
+                vm_log_info(buf);
             }
             vm_udp_close(g_udp);
             break;

@@ -16,6 +16,7 @@
 
 #include "lua.h"
 #include "shell.h"
+#include "lstate.h"
 
 #include "lauxlib.h"
 #include "lualib.h"
@@ -29,11 +30,47 @@
 #include "vmchset.h"
 #include "vmstdlib.h"
 #include "vmwdt.h"
+#include "vmsystem.h"
 
 #if defined (LUA_USE_WDG)
 extern int sys_wdt_tmo;
 extern VM_WDT_HANDLE sys_wdt_id;
 #endif
+extern int retarget_target;
+
+
+//-------------------------------------------------
+void lua_log_printf(int type, const char *msg, ...)
+{
+  if (retarget_target < 0) return;
+
+  va_list ap;
+  char *pos, message[256];
+  int sz;
+  int nMessageLen = 0;
+
+  memset(message, 0, 256);
+  pos = message;
+
+  sz = 0;
+  va_start(ap, msg);
+  nMessageLen = vsnprintf(pos, 256 - sz, msg, ap);
+  va_end(ap);
+
+  if( nMessageLen<=0 ) return;
+
+  //retarget_target = 1;
+  if (type == 1) printf("\n[FATAL]");
+  else if (type == 2) printf("\n[ERROR]");
+  else if (type == 3) printf("\n[WARNING]");
+  else if (type == 4) printf("\n[INFO]");
+  else if (type == 5) printf("\n[DEBUG]");
+  if (type > 0) printf(" %s:%d ",__FILE__,__LINE__);
+
+  printf("%s\n", message);
+  //retarget_target = 0;
+}
+
 
 /*
 //====================================================================
@@ -123,6 +160,7 @@ static void setfield (lua_State *L, const char *key, int value) {
   lua_setfield(L, -2, key);
 }
 
+//-------------------------------------------------------------------
 static void setboolfield (lua_State *L, const char *key, int value) {
   if (value < 0)  /* undefined? */
     return;  /* does not set field */
@@ -130,6 +168,7 @@ static void setboolfield (lua_State *L, const char *key, int value) {
   lua_setfield(L, -2, key);
 }
 
+//-------------------------------------------------------
 static int getboolfield (lua_State *L, const char *key) {
   int res;
   lua_getfield(L, -1, key);
@@ -138,7 +177,7 @@ static int getboolfield (lua_State *L, const char *key) {
   return res;
 }
 
-
+//----------------------------------------------------------
 static int getfield (lua_State *L, const char *key, int d) {
   int res;
   lua_getfield(L, -1, key);
@@ -153,7 +192,7 @@ static int getfield (lua_State *L, const char *key, int d) {
   return res;
 }
 
-
+//---------------------------------
 static int os_date (lua_State *L) {
   const char *s = luaL_optstring(L, 1, "%c");
   //time_t t = luaL_opt(L, (time_t)luaL_checknumber, 2, time(NULL));
@@ -206,7 +245,7 @@ static int os_date (lua_State *L) {
   return 1;
 }
 
-
+//---------------------------------
 static int os_time (lua_State *L) {
   time_t t;
   VMUINT rtct;
@@ -246,12 +285,10 @@ static int os_difftime (lua_State *L) {
 
 /* }====================================================== */
 
-
+//======================================
 static int os_setlocale (lua_State *L) {
-  static const int cat[] = {LC_ALL, LC_COLLATE, LC_CTYPE, LC_MONETARY,
-                      LC_NUMERIC, LC_TIME};
-  static const char *const catnames[] = {"all", "collate", "ctype", "monetary",
-     "numeric", "time", NULL};
+  static const int cat[] = {LC_ALL, LC_COLLATE, LC_CTYPE, LC_MONETARY, LC_NUMERIC, LC_TIME};
+  static const char *const catnames[] = {"all", "collate", "ctype", "monetary", "numeric", "time", NULL};
   const char *l = luaL_optstring(L, 1, NULL);
   int op = luaL_checkoption(L, 2, "all", catnames);
   lua_pushstring(L, setlocale(cat[op], l));
@@ -316,15 +353,25 @@ static int os_ntptime (lua_State *L) {
   return 0;
 }
 
-//============================
-int os_getinfo(lua_State* L) {
+//===========================
+int os_getver(lua_State* L) {
 	VMCHAR value[128] = {0};
 	VMUINT written = vm_firmware_get_info(value, sizeof(value)-1, VM_FIRMWARE_HOST_VERSION);
 	lua_pushstring(L, value);
 	written = vm_firmware_get_info(value, sizeof(value)-1, VM_FIRMWARE_BUILD_DATE_TIME);
 	lua_pushstring(L, value);
-	written = vm_firmware_get_info(value, sizeof(value)-1, VM_FIRMWARE_HOST_MAX_MEM);
-	lua_pushstring(L, value);
+    return 2;
+}
+
+//============================
+int os_getmem(lua_State* L) {
+	VMCHAR value[32] = {0};
+	VMUINT written = vm_firmware_get_info(value, sizeof(value)-1, VM_FIRMWARE_HOST_MAX_MEM);
+    global_State *g = G(L);
+	lua_pushinteger(L, g->totalbytes );
+	lua_pushinteger(L, g->memlimit );
+	lua_pushinteger(L, vm_str_strtoi(value)*1024);
+
     return 3;
 }
 
@@ -480,12 +527,24 @@ static int os_listfiles(lua_State* L)
     return 0;
 }
 
-
-/*
+//=================================
 static int os_exit (lua_State *L) {
-  exit(luaL_optint(L, 1, EXIT_SUCCESS));
+  //exit(luaL_optint(L, 1, EXIT_SUCCESS));
+  printf("\n[SYSEVT] APP RESTART\n");
+  vm_pmng_restart_application();
+  return 0;
 }
-*/
+
+//=====================================
+static int os_retarget (lua_State *L) {
+	int targ = luaL_checkinteger(L,1);
+
+	if (targ == 0) retarget_target = 0;
+	else if (targ == 1) retarget_target = 1;
+	return 0;
+}
+
+extern int luaB_dofile (lua_State *L);
 
 
 #define MIN_OPT_LEVEL 1
@@ -495,15 +554,17 @@ const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("shutdown"), LFUNCVAL(os_shutdown)},
   {LSTRKEY("reboot"),   LFUNCVAL(os_reboot)},
   {LSTRKEY("battery"),  LFUNCVAL(os_battery)},
-  {LSTRKEY("sysinfo"),  LFUNCVAL(os_getinfo)},
+  {LSTRKEY("ver"),  	LFUNCVAL(os_getver)},
+  {LSTRKEY("mem"),  	LFUNCVAL(os_getmem)},
   {LSTRKEY("schedule"), LFUNCVAL(os_scheduled_startup)},
   {LSTRKEY("clock"),    LFUNCVAL(os_clock)},
   {LSTRKEY("date"),     LFUNCVAL(os_date)},
 #if !defined LUA_NUMBER_INTEGRAL
   {LSTRKEY("difftime"), LFUNCVAL(os_difftime)},
 #endif
+  {LSTRKEY("execute"), LFUNCVAL(luaB_dofile)},
   //{LSTRKEY("execute"),LFUNCVAL(os_execute)},
-  //{LSTRKEY("exit"),   LFUNCVAL(os_exit)},
+  {LSTRKEY("exit"),   LFUNCVAL(os_exit)},
   //{LSTRKEY("getenv"), LFUNCVAL(os_getenv)},
   {LSTRKEY("remove"),   LFUNCVAL(os_remove)},
   {LSTRKEY("rename"),   LFUNCVAL(os_rename)},
@@ -519,6 +580,7 @@ const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("wdtstop"),  LFUNCVAL(os_wdtstop)},
   {LSTRKEY("wdtreset"), LFUNCVAL(os_wdtreset)},
 #endif
+  {LSTRKEY("retarget"), LFUNCVAL(os_retarget)},
   {LNILKEY, LNILVAL}
 };
 

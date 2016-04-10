@@ -40,17 +40,24 @@
 extern "C" {
 #endif
 
-#define __LINKIT_RELEASE__
+#include <stdio.h>
 
+extern void lua_log_printf(int type, const char *msg, ...);
+
+// !!If you don't need log messages, comment this define!!
+//#define __LINKIT_RELEASE__
+
+/*
 void _vm_log_debug(const char* fmt, ...);
 void _vm_log_info(const char* fmt, ...);
 void _vm_log_warn(const char* fmt, ...);
 void _vm_log_error(const char* fmt, ...);
 void _vm_log_fatal(const char* fmt, ...);
-
 int _vm_log_module(const char* __file__, const int __line__);
+*/
 
-#if defined(__LINKIT_ONE_RELEASE__) || defined(__LINKIT_RELEASE__)
+
+#if defined(__LINKIT_RELEASE__)
 #define vm_log_fatal
 #define vm_log_error
 #define vm_log_warn
@@ -70,7 +77,8 @@ int _vm_log_module(const char* __file__, const int __line__);
  * PARAMETERS
  *  format_string : [IN] Format string, same as vm_sprintf, followed by argements for the format string.
 *****************************************************************************/
-#define vm_log_fatal(...)		if(_vm_log_module(__FILE__, __LINE__)) _vm_log_fatal(__VA_ARGS__)
+//#define vm_log_fatal(...)		if(_vm_log_module(__FILE__, __LINE__)) _vm_log_fatal(__VA_ARGS__)
+#define vm_log_fatal(...)		lua_log_printf(1,__VA_ARGS__)
 
 /*****************************************************************************
  * FUNCTION
@@ -86,7 +94,8 @@ int _vm_log_module(const char* __file__, const int __line__);
  * PARAMETERS
  *  format_string : [IN] Format string, same as vm_sprintf, followed by argements for the format string.
 *****************************************************************************/
-#define vm_log_error(...)		if(_vm_log_module(__FILE__, __LINE__)) _vm_log_error(__VA_ARGS__)
+//#define vm_log_error(...)		if(_vm_log_module(__FILE__, __LINE__)) _vm_log_error(__VA_ARGS__)
+#define vm_log_error(...)		lua_log_printf(2,__VA_ARGS__)
 
 /*****************************************************************************
  * FUNCTION
@@ -103,7 +112,8 @@ int _vm_log_module(const char* __file__, const int __line__);
  * PARAMETERS
  *  format_string : [IN] Format string, same as vm_sprintf, followed by argements for the format string.
 *****************************************************************************/
-#define vm_log_warn(...)		if(_vm_log_module(__FILE__, __LINE__)) _vm_log_warn(__VA_ARGS__)
+//#define vm_log_warn(...)		if(_vm_log_module(__FILE__, __LINE__)) _vm_log_warn(__VA_ARGS__)
+#define vm_log_warn(...)		lua_log_printf(3,__VA_ARGS__)
 
 /*****************************************************************************
  * FUNCTION
@@ -115,7 +125,8 @@ int _vm_log_module(const char* __file__, const int __line__);
  * PARAMETERS
  *  format_string : [IN] Format string, same as vm_sprintf, followed by argements for the format string.
 *****************************************************************************/
-#define vm_log_info(...)		if(_vm_log_module(__FILE__, __LINE__)) _vm_log_info( __VA_ARGS__)
+//#define vm_log_info(...)		if(_vm_log_module(__FILE__, __LINE__)) _vm_log_info( __VA_ARGS__)
+#define vm_log_info(...)		lua_log_printf(4,__VA_ARGS__)
 
 /*****************************************************************************
  * FUNCTION
@@ -125,7 +136,8 @@ int _vm_log_module(const char* __file__, const int __line__);
  * PARAMETERS
  *  format_string : [IN] Format string, same as vm_sprintf, followed by argements for the format string.
 *****************************************************************************/
-#define vm_log_debug(...)		if(_vm_log_module(__FILE__, __LINE__)) _vm_log_debug(__VA_ARGS__)
+//#define vm_log_debug(...)		if(_vm_log_module(__FILE__, __LINE__)) _vm_log_debug(__VA_ARGS__)
+#define vm_log_debug(...)		lua_log_printf(5,__VA_ARGS__)
 #endif
 
 #ifdef __cplusplus

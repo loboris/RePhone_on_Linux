@@ -8,24 +8,31 @@
 #include "vmdatetime.h"
 #include "vmmemory.h"
 #include "vmbearer.h"
+#include "vmchset.h"
+#include "vmtype.h"
+#include "vmfs.h"
+#include "vmstdlib.h"
 
 #include "lua.h"
 #include "lauxlib.h"
 #include "shell.h"
 
 #define REPLY_SEGMENT_LENGTH 128
-#define CONTENT_TYPE_WWWFORM "Content-Type: application/x-www-form-urlencoded"
+#define CONTENT_TYPE_WWWFORM  "Content-Type: application/x-www-form-urlencoded"
+#define CONTENT_TYPE_FORMDATA "Content-Type: multipart/form-data"
 
 extern lua_State* L;
 extern VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type;
 
 static int g_channel_id = 0;
+static int g_request_id = -1;
 static int g_read_seg_num;
 static char g_https_url[64] = {0,};
 static int g_https_header_cb_ref = LUA_NOREF;
 static int g_https_response_cb_ref = LUA_NOREF;
 static char *g_postdata = NULL;
 static int g_postdata_len = 0;
+static int _post_type = 0;
 
 
 //----------------------------------------------------------------------------------------------------
@@ -51,7 +58,7 @@ static void https_send_request_set_channel_rsp_cb(VMUINT32 req_id, VMUINT8 chann
     if(ret != 0) {
         vm_https_unset_channel(channel_id);
     }
-    printf("[HTTPS] GET req to %s, result %d\n", g_https_url, ret);
+    vm_log_debug("[HTTPS] GET req to %s, result %d\n", g_https_url, ret);
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -59,86 +66,42 @@ static void https_post_request_set_channel_rsp_cb(VMUINT32 req_id, VMUINT8 chann
 {
     VMINT ret = -1;
 
-    /*
-    vm_https_request_context_t s;
-    vm_https_content_t c;
-    g_channel_id = channel_id;
-
-    //c.content_type = (VMSTR)"content-type: audio/wav;";
-    c.content_type = "form-data;";
-    //c.content_type_length = strlen(c.content_type);
-    c.name = "content-disposition: form-data; name=zzzz; par1=1234;";
-    c.name = "file";
-    c.name_length = strlen(c.name);
-    c.filename = "";
-    c.filename_length = strlen(c.filename);
-    c.charset = VM_HTTPS_CHARSET_UTF_8 ;
-    c.data_type = VM_HTTPS_DATA_TYPE_MULTIPART;
-    c.data_length = 1;
-    c.file_path_name = (VMWSTR)"";
-    c.file_path_name_length = 0; //(VMUINT32)(strlen(c.file_path_name));
-
-
-
-    s.url_length = strlen(g_https_url);
-    s.url = (VMUINT8 *)g_https_url,
-
-    s.header = (VMUINT8 *)"content-type: multipart/form-data;";
-    s.header_length = strlen(s.header);
-    //vm_log_debug("s.header.lenght===---:%d", s.header_length);
-
-    s.number_entries =1;
-    s.content = &c;
-
-    ret = vm_https_request_ext(0,                           // Request ID
-                                VM_HTTPS_METHOD_POST,       // HTTP Method Constant
-                                VM_HTTPS_OPTION_NO_CACHE,   // HTTP request options
-                                VM_HTTPS_DATA_TYPE_BUFFER,  // Reply type (wps_data_type_enum)
-                                128, // bytes of data to be sent in reply at a time. If data is more that this, multiple
-                                     //   response would be there
-								FALSE,
-								VM_HTTPS_DATA_TYPE_MULTIPART,
-								&s,
-								NULL);
-	*/
-
-    ret = vm_https_send_request(0,                            // Request ID
-                                VM_HTTPS_METHOD_POST,         // HTTP Method Constant
-                                VM_HTTPS_OPTION_NO_CACHE,     // HTTP request options
-                                VM_HTTPS_DATA_TYPE_BUFFER,    // Reply type (wps_data_type_enum)
+	ret = vm_https_send_request(0,                            // Request ID
+								VM_HTTPS_METHOD_POST,         // HTTP Method Constant
+								VM_HTTPS_OPTION_NO_CACHE,     // HTTP request options
+								VM_HTTPS_DATA_TYPE_BUFFER,    // Reply type (wps_data_type_enum)
 								REPLY_SEGMENT_LENGTH,		  // bytes of data to be sent in reply at a time.
-                                 	 	 	 	 	 	 	  // If data is more that this, multiple response would be there
-                                g_https_url,                  // The request URL
-                                strlen(g_https_url),          // The request URL length
+															  // If data is more that this, multiple response would be there
+								g_https_url,                  // The request URL
+								strlen(g_https_url),          // The request URL length
 								CONTENT_TYPE_WWWFORM,         // The request header
-                                strlen(CONTENT_TYPE_WWWFORM), // The request header length
+								strlen(CONTENT_TYPE_WWWFORM), // The request header length
 								g_postdata,					  // Post segment
 								g_postdata_len);		 	  // Post segment length
+
     if(ret != 0) {
         vm_https_unset_channel(channel_id);
     }
-    printf("[HTTPS] POST req to %s, result %d\n", g_https_url, ret);
+    vm_log_debug("[HTTPS] POST req to %s, result %d\n", g_https_url, ret);
 }
 
 //------------------------------------------------------------------------
 static void https_unset_channel_rsp_cb(VMUINT8 channel_id, VMUINT8 result)
 {
     vm_log_debug("https_unset_channel_rsp_cb()");
-    printf("[HTTPS] https_unset_channel_rsp_cb()\n");
+    g_request_id = -1;
 }
 
 //-----------------------------------------------------------
 static void https_send_release_all_req_rsp_cb(VMUINT8 result)
 {
     vm_log_debug("https_send_release_all_req_rsp_cb()");
-    printf("[HTTPS] https_send_release_all_req_rsp_cb()\n");
 }
 
 //---------------------------------------------
 static void https_send_termination_ind_cb(void)
 {
     vm_log_debug("https_send_termination_ind_cb()");
-    printf("[HTTPS] https_send_termination_ind_cb()\n");
 }
 
 //--------------------------------------------------------------------
@@ -164,6 +127,7 @@ static void https_send_read_request_rsp_cb(VMUINT16 request_id,
         vm_https_cancel(request_id);
         vm_https_unset_channel(g_channel_id);
     } else {
+        g_request_id = request_id;
     	if (g_https_header_cb_ref != LUA_NOREF) {
 			int i;
 			luaL_Buffer b;
@@ -288,14 +252,12 @@ static void https_send_read_read_content_rsp_cb(VMUINT16 request_id,
 static void https_send_cancel_rsp_cb(VMUINT16 request_id, VMUINT8 result)
 {
     vm_log_debug("https_send_cancel_rsp_cb()");
-    printf("https_send_cancel_rsp_cb()\n");
 }
 
 //--------------------------------------------------------
 static void https_send_status_query_rsp_cb(VMUINT8 status)
 {
     vm_log_debug("https_send_status_query_rsp_cb()");
-    printf("https_send_status_query_rsp_cb()\n");
 }
 
 //=========================
@@ -359,6 +321,11 @@ int https_post(lua_State* L)
     g_postdata[sl] = '\0';
     g_postdata_len = sl;
 
+    if (lua_gettop(L) >= 3) {
+    	_post_type = luaL_checkinteger(L, 3);
+    }
+    else _post_type = 0;
+
     ret = vm_https_register_context_and_callback(gprs_bearer_type, &callbacks);
     if (ret != 0) {
         l_message(NULL, "register context & cb failed");
@@ -411,7 +378,18 @@ static int https_on( lua_State* L )
 	return 0;
 }
 
+//=====================================
+static int https_cancel( lua_State* L )
+{
+	if (g_request_id >= 0) {
+		vm_https_cancel(g_request_id);
+	}
+	vm_https_unset_channel(g_channel_id);
+	g_channel_id = 0;
+	g_read_seg_num = 0;
 
+	return 0;
+}
 
 #undef MIN_OPT_LEVEL
 #define MIN_OPT_LEVEL 0
@@ -421,6 +399,7 @@ const LUA_REG_TYPE https_map[] = {
 		{ LSTRKEY("get"), LFUNCVAL(https_get)},
 		{ LSTRKEY("post"), LFUNCVAL(https_post)},
 		{ LSTRKEY("on"), LFUNCVAL(https_on)},
+		{ LSTRKEY("cancel"), LFUNCVAL(https_cancel)},
         { LNILKEY, LNILVAL }
 };
 

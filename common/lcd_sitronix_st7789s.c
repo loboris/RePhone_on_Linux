@@ -19,6 +19,10 @@
 #include "vmdcl_gpio.h"
 #include "lcd_sitronix_st7789s.h"
 
+#ifndef NULL
+#define NULL (0)      /* 0 */
+#endif
+
 #define LCD_GPIO_RESET 38
 #define LCD_GPIO_CS 39
 

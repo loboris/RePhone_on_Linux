@@ -53,7 +53,8 @@ void *luaM_growaux_ (lua_State *L, void *block, int *size, size_t size_elems,
     newsize = limit;  /* still have at least one free place */
   }
   else {
-    newsize = (*size)*2;
+	if (*size > 8192) newsize = (*size) + ((*size)/2);
+	else newsize = (*size)*2;
     if (newsize < MINSIZEARRAY)
       newsize = MINSIZEARRAY;  /* minimum size */
   }

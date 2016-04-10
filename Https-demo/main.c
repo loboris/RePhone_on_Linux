@@ -48,8 +48,6 @@
 
 static VMUINT8 g_channel_id;
 static VMINT g_read_seg_num;
-//static VM_WDT_HANDLE sys_wdt_id = -1;
-//static VM_TIMER_ID_PRECISE sys_timer_id = 0;
 static int cnt = 0;
 
 extern void retarget_setup();
@@ -219,21 +217,12 @@ static void https_send_request(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data
 	);
 }
 
-/*
-//-------------------------------------------------------------------------------
-static void sys_timer_callback(VM_TIMER_ID_PRECISE sys_timer_id, void* user_data)
-{
-	  vm_wdt_reset(sys_wdt_id);
-}
-*/
 
 void handle_sysevt(VMINT message, VMINT param) 
 {
     switch (message) 
     {
     case VM_EVENT_CREATE:
-    	//sys_wdt_id = vm_wdt_start(2000);
-        //sys_timer_id = vm_timer_create_precise(1000, sys_timer_callback, NULL);
         set_custom_apn();
         vm_timer_create_non_precise(VMHTTPS_TEST_DELAY, https_send_request, NULL);
         break;

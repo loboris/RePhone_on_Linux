@@ -8,7 +8,7 @@ OBJECTS += screen.o
 
 OBJECTS += lua/lapi.o lua/lcode.o lua/ldebug.o lua/ldo.o lua/ldump.o lua/lfunc.o lua/lgc.o lua/llex.o lua/lmem.o lua/lobject.o lua/lopcodes.o \
 lua/lparser.o lua/lstate.o lua/lstring.o lua/ltable.o lua/ltm.o lua/lundump.o lua/lvm.o lua/lzio.o lua/lrotable.o lua/lauxlib.o lua/lbaselib.o \
-lua/ldblib.o lua/liolib.o lua/lmathlib.o lua/loslib.o lua/ltablib.o lua/lstrlib.o lua/loadlib.o lua/linit.o lua/print.o lua/linenoise.o
+lua/ldblib.o lua/liolib.o lua/lmathlib.o lua/loslib.o lua/ltablib.o lua/lstrlib.o lua/loadlib.o lua/linit.o lua/print.o lua/linenoise.o lua/legc.o
 
 INCLUDE_PATHS += -I./lua
 

@@ -169,7 +169,7 @@ void handle_sysevt(VMINT message, VMINT param)
 void vm_main(void)
 {
     retarget_setup();
-    fputs("LUA for RePhone started.\n", stdout);
+    vm_log_info("LUA for RePhone started");
 
     key_init();
     vm_keypad_register_event_callback(handle_keypad_event);

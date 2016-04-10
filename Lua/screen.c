@@ -1,6 +1,7 @@
 
 #include <stdint.h>
 
+#include "vmboard.h"
 #include "vmmemory.h"
 #include "lcd_sitronix_st7789s.h"
 #include "vmdcl.h"
