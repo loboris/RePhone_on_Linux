@@ -34,7 +34,7 @@
 #include "devman.h"
 #endif
 
-#include "vmmemory.h"
+//#include "vmmemory.h"
 
 #define FREELIST_REF	0	/* free list of references */
 
@@ -794,11 +794,16 @@ static void *l_alloc (void *ud, void *ptr, size_t osize, size_t nsize) {
   return nptr;
 }
 
+extern int sys_wdt_rst_time;
+extern int sys_wdt_time;
+
 //-------------------------------
 static int panic (lua_State *L) {
   (void)L;  /* to avoid warnings */
   fprintf(stderr, "PANIC: unprotected error in call to Lua API (%s)\n",
                    lua_tostring(L, -1));
+  sys_wdt_rst_time = 99999;
+  sys_wdt_time = 99999;
   return 0;
 }
 

@@ -1,5 +1,6 @@
 
 #include "vmtimer.h"
+#include "vmlog.h"
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -43,7 +44,7 @@ int timer_create(lua_State *L)
     	        vm_timer_set_hisr(hisr_id, customer_hisr_timer_proc, 0, 10, 10);
     	    }
    	    else {
-   	         printf("create hisr timer fail");
+   	    	vm_log_debug("create hisr timer fail");
    	    }
     }
     lua_pushvalue(L, 2);

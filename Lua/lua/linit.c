@@ -22,7 +22,7 @@
 #include "desktop_conf.h"
 #endif
 
-LUALIB_API int luaopen_platform (lua_State *L);
+//LUALIB_API int luaopen_platform (lua_State *L);
 int luaopen_dummy(lua_State *L);
 
 // Declare table
@@ -125,6 +125,8 @@ static const luaL_Reg lualibs[] = {
   {LUA_IOLIBNAME,	luaopen_io},
   {LUA_STRLIBNAME,	luaopen_string},
   {LUA_MATHLIBNAME,	luaopen_math},
+  {LUA_OSLIBNAME,	luaopen_os},
+  {LUA_DBLIBNAME,	luaopen_debug},
 #if defined(LUA_PLATFORM_LIBS_ROM)
   LUA_PLATFORM_LIBS_ROM
 #endif

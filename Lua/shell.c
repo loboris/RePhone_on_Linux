@@ -28,7 +28,6 @@ static const char *progname = LUA_PROGNAME;
 
 static int remote_docall(void);
 
-
 //-----------------------------------------------
 static void lstop (lua_State *L, lua_Debug *ar) {
   (void)ar;  /* unused arg. */
@@ -146,25 +145,25 @@ static int pushline (lua_State *L, int firstline) {
 static int loadline (lua_State *L) {
   int status;
   lua_settop(L, 0);
-  if (!pushline(L, 1))
-    return -1;  /* no input */
+  if (!pushline(L, 1)) return -1;       // no input
+
   for (;;) {  /* repeat until gets a complete line */
     status = luaL_loadbuffer(L, lua_tostring(L, 1), lua_strlen(L, 1), "=stdin");
-    if (!incomplete(L, status)) break;  /* cannot try to add lines? */
-    if (!pushline(L, 0))  /* no more input? */
-      return -1;
-    lua_pushliteral(L, "\n");  /* add a new line... */
-    lua_insert(L, -2);  /* ...between the two lines */
-    lua_concat(L, 3);  /* join them */
+    if (!incomplete(L, status)) break;  // cannot try to add lines?
+    if (!pushline(L, 0))  return -1;    // no more input?
+
+    lua_pushliteral(L, "\n");           // add a new line...
+    lua_insert(L, -2);  				// ...between the two lines
+    lua_concat(L, 3);  					// join them
   }
   lua_saveline(L, 1);
-  lua_remove(L, 1);  /* remove line */
+  lua_remove(L, 1);						// remove line
   return status;
 }
 
 // Main lua shell loop
 //================================
-static void dotty (lua_State *L) {
+void dotty (lua_State *L) {
   int status;
   const char *oldprogname = progname;
   progname = NULL;
@@ -172,7 +171,10 @@ static void dotty (lua_State *L) {
   printf("\nLUA SHELL STARTED\n");
 
   while ((status = loadline(L)) != -1) {
-    if (status == 0) status = remote_docall(); //docall(L, 0, 0);
+    if (status == 0) {
+        status = remote_docall();
+        //status = docall(L, 0, 0);
+    }
     report(L, status);
     if (status == 0 && lua_gettop(L) > 0) {  /* any result to print? */
       lua_getglobal(L, "print");
@@ -189,7 +191,7 @@ static void dotty (lua_State *L) {
   progname = oldprogname;
 }
 
-//----------------------------
+//------------------------------------
 static int remote_docall(void)
 {
     g_shell_message.message_id = SHELL_MESSAGE_ID;
@@ -226,6 +228,6 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     printf("\nLUA EXITED, RESTART!\n");
     g_shell_message.message_id = SHELL_MESSAGE_QUIT;
     vm_thread_send_message(g_main_handle, &g_shell_message);
-    return -1;
+    return 0;
 }
 //===================================================================

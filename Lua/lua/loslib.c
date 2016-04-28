@@ -17,10 +17,10 @@
 #include "lua.h"
 #include "shell.h"
 #include "lstate.h"
-
 #include "lauxlib.h"
 #include "lualib.h"
 #include "lrotable.h"
+
 #include "vmdatetime.h"
 #include "sntp.h"
 #include "vmpwr.h"
@@ -31,18 +31,24 @@
 #include "vmstdlib.h"
 #include "vmwdt.h"
 #include "vmsystem.h"
+#include "vmdcl.h"
+#include "vmlog.h"
+#include "vmtimer.h"
 
-#if defined (LUA_USE_WDG)
-extern int sys_wdt_tmo;
-extern VM_WDT_HANDLE sys_wdt_id;
-#endif
+#include "ymodem.h"
+
 extern int retarget_target;
+extern VM_DCL_HANDLE retarget_device_handle;
+extern VM_DCL_HANDLE retarget_uart1_handle;
+extern void retarget_putc(char ch);
+extern int retarget_waitc(unsigned char *c, int timeout);
+extern int retarget_waitchars(unsigned char *buf, int *count, int timeout);
 
 
-//-------------------------------------------------
-void lua_log_printf(int type, const char *msg, ...)
+//-----------------------------------------------------------------------------
+void lua_log_printf(int type, const char *file, int line, const char *msg, ...)
 {
-  if (retarget_target < 0) return;
+  if ((retarget_target != retarget_device_handle) && (retarget_target != retarget_uart1_handle)) return;
 
   va_list ap;
   char *pos, message[256];
@@ -59,16 +65,14 @@ void lua_log_printf(int type, const char *msg, ...)
 
   if( nMessageLen<=0 ) return;
 
-  //retarget_target = 1;
   if (type == 1) printf("\n[FATAL]");
   else if (type == 2) printf("\n[ERROR]");
   else if (type == 3) printf("\n[WARNING]");
   else if (type == 4) printf("\n[INFO]");
   else if (type == 5) printf("\n[DEBUG]");
-  if (type > 0) printf(" %s:%d ",__FILE__,__LINE__);
+  if (type > 0) printf(" %s:%d ", file, line);
 
   printf("%s\n", message);
-  //retarget_target = 0;
 }
 
 
@@ -141,7 +145,7 @@ static int os_getenv (lua_State *L) {
 
 //==================================
 static int os_clock (lua_State *L) {
-  lua_pushnumber(L, ((lua_Number)vm_time_ust_get_count())/(lua_Number)CLOCKS_PER_SEC);
+  lua_pushnumber(L, ((float)vm_time_ust_get_count())/(float)CLOCKS_PER_SEC);
   return 1;
 }
 
@@ -195,25 +199,27 @@ static int getfield (lua_State *L, const char *key, int d) {
 //---------------------------------
 static int os_date (lua_State *L) {
   const char *s = luaL_optstring(L, 1, "%c");
-  //time_t t = luaL_opt(L, (time_t)luaL_checknumber, 2, time(NULL));
   time_t t = luaL_opt(L, (time_t)luaL_checknumber, 2, 0x7FFFFFFF);
+
   if (t == 0x7FFFFFFF) {
+	  // get time from rtc
 	  VMUINT rtct;
 	  vm_time_get_unix_time(&rtct);
 	  t = rtct;
   }
 
   struct tm *stm;
-  if (*s == '!') {  /* UTC? */
+  if (*s == '!') {
+	// UTC
     stm = gmtime(&t);
-    s++;  /* skip `!' */
+    s++;  // skip '!'
   }
-  else
-    stm = localtime(&t);
+  else stm = localtime(&t);
+
   if (stm == NULL)  /* invalid date? */
     lua_pushnil(L);
-  else if (strcmp(s, "*t") == 0) {
-    lua_createtable(L, 0, 9);  /* 9 = number of fields */
+  else if (strcmp(s, "*t") == 0) { // time to table
+    lua_createtable(L, 0, 9);      // 9 = number of fields
     setfield(L, "sec", stm->tm_sec);
     setfield(L, "min", stm->tm_min);
     setfield(L, "hour", stm->tm_hour);
@@ -275,13 +281,11 @@ static int os_time (lua_State *L) {
   return 1;
 }
 
-#if !defined LUA_NUMBER_INTEGRAL
 static int os_difftime (lua_State *L) {
   lua_pushnumber(L, difftime((time_t)(luaL_checknumber(L, 1)),
                              (time_t)(luaL_optnumber(L, 2, 0))));
   return 1;
 }
-#endif
 
 /* }====================================================== */
 
@@ -303,14 +307,14 @@ static int os_battery (lua_State *L) {
 
 //===================================
 static int os_reboot (lua_State *L) {
-    printf("\nREBOOT\n");
+    vm_log_info("REBOOT");
 	vm_pwr_reboot();
 	return 0;
 }
 
 //=====================================
 static int os_shutdown (lua_State *L) {
-    printf("\nSHUTDOWN\n");
+	vm_log_info("SHUTDOWN");
 	vm_pwr_shutdown(777);
 	return 0;
 }
@@ -333,22 +337,29 @@ static int os_scheduled_startup (lua_State *L) {
   start_time.hour = time_now->tm_hour;
   start_time.minute = time_now->tm_min;
   start_time.second = time_now->tm_sec;
-  start_time.month = time_now->tm_mon;
+  start_time.month = time_now->tm_mon + 1;
   start_time.year = time_now->tm_year + 1900;
 
   vm_pwr_scheduled_startup(&start_time, VM_PWR_STARTUP_ENABLE_CHECK_DHMS);
-  printf("\nSHUTDOWN, wake up at %s\n", asctime(time_now));
-  vm_pwr_shutdown(778);
+  vm_log_info("WAKE UP SCHEDULED at %s", asctime(time_now));
+  //vm_pwr_shutdown(778);
   return 0;
 }
 
 //====================================
 static int os_ntptime (lua_State *L) {
 
+  int sntp_cb = LUA_NOREF;
   int tz = luaL_checkinteger( L, 1 );
   if ((tz > 14) || (tz < -12)) { tz = 0; }
 
-  sntp_gettime(tz);
+  if (lua_gettop(L) >= 2) {
+	if ((lua_type(L, 2) == LUA_TFUNCTION) || (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
+	  lua_pushvalue(L, 2);
+	  sntp_cb = luaL_ref(L, LUA_REGISTRYINDEX);
+  	}
+  }
+  sntp_gettime(tz, sntp_cb);
 
   return 0;
 }
@@ -363,14 +374,17 @@ int os_getver(lua_State* L) {
     return 2;
 }
 
+extern int g_memory_size_b;
+
 //============================
 int os_getmem(lua_State* L) {
-	VMCHAR value[32] = {0};
-	VMUINT written = vm_firmware_get_info(value, sizeof(value)-1, VM_FIRMWARE_HOST_MAX_MEM);
+	//VMCHAR value[32] = {0};
+	//VMUINT written = vm_firmware_get_info(value, sizeof(value)-1, VM_FIRMWARE_HOST_MAX_MEM);
     global_State *g = G(L);
 	lua_pushinteger(L, g->totalbytes );
 	lua_pushinteger(L, g->memlimit );
-	lua_pushinteger(L, vm_str_strtoi(value)*1024);
+	//lua_pushinteger(L, vm_str_strtoi(value)*1024);
+	lua_pushinteger(L, g_memory_size_b );
 
     return 3;
 }
@@ -413,23 +427,21 @@ static int os_copy (lua_State *L) {
   return 1;
 }
 
-#if defined (LUA_USE_WDG)
-
+/*
 //==============================
 int os_wdtreset (lua_State *L) {
-  if (sys_wdt_id >= 0) {
-	  vm_wdt_reset(sys_wdt_id);
+  if (sys_wdt_id) {
+	sys_wdt_rst_time = 0;
   }
   return 0;
 }
 
 //====================================
 static int os_wdtstop (lua_State *L) {
-  //sys_msg(SHELL_MESSAGE_WDTSTOP);
-  if (sys_wdt_id >= 0) {
-	printf("**STOP WATCHDOG\n");
-	vm_wdt_stop(sys_wdt_id);
-	sys_wdt_id = -1;
+  if (sys_wdt_id) {
+	vm_log_info("**STOP WATCHDOG\n");
+	sys_wdt_id = 0;
+	sys_wdt_rst_time = 0;
   }
   return 0;
 }
@@ -437,20 +449,18 @@ static int os_wdtstop (lua_State *L) {
 //=====================================
 static int os_wdtstart (lua_State *L) {
   int tick = luaL_checkinteger(L, 1);
-  if (tick < 1) tick = 10;
+  if (tick < 2) tick = 2;
   if (tick > 600) tick = 600;
 
-  sys_wdt_tmo = (tick * 216685) / 1000;
-  //sys_msg(SHELL_MESSAGE_WDTSTART);
-  if (sys_wdt_id < 0) {
-	printf("**START WATCHDOG %d mSec\n", (sys_wdt_tmo*4615) / 1000);
-	sys_wdt_id = vm_wdt_start(sys_wdt_tmo);
+  //sys_wdt_tmo = tick*1000;
+  if (!sys_wdt_id) {
+	vm_log_info("START WATCHDOG %d sec\n", tick);
+	sys_wdt_id = 1;
+	sys_wdt_rst_time = 0;
   }
-
   return 0;
 }
-
-#endif
+*/
 
 //===================================
 static int os_listfiles(lua_State* L)
@@ -503,7 +513,7 @@ static int os_listfiles(lua_State* L)
 				filetime.tm_min = fileinfoex.modify_datetime.minute;
 				filetime.tm_sec = fileinfoex.modify_datetime.second;
 				filetime.tm_mday = fileinfoex.modify_datetime.day;
-				filetime.tm_mon = fileinfoex.modify_datetime.month;
+				filetime.tm_mon = fileinfoex.modify_datetime.month-1;
 				filetime.tm_year = fileinfoex.modify_datetime.year-1900;
 				char ftime[20] = {0};
 				strftime(ftime, 18, "%D %T", &filetime);
@@ -539,10 +549,152 @@ static int os_exit (lua_State *L) {
 static int os_retarget (lua_State *L) {
 	int targ = luaL_checkinteger(L,1);
 
-	if (targ == 0) retarget_target = 0;
-	else if (targ == 1) retarget_target = 1;
+	if ((targ == 0) && (retarget_device_handle >= 0)) retarget_target = retarget_device_handle;
+	else if ((targ == 1) && (retarget_uart1_handle >= 0)) retarget_target = retarget_uart1_handle;
 	return 0;
 }
+
+//====================================
+static int os_getchar (lua_State *L) {
+	int tmo = luaL_checkinteger(L,1);
+
+	unsigned char c;
+	int res = retarget_waitc(&c, tmo);
+	if (res < 0) lua_pushnil(L);
+	else lua_pushinteger(L, c);
+
+	return 1;
+}
+
+//======================================
+static int os_getstring (lua_State *L) {
+	int count = luaL_checkinteger(L,1);
+	int tmo = luaL_checkinteger(L,2);
+
+	if (count > 256) count = 256;
+	if (count < 1) count = 1;
+
+	unsigned char buf[256] = {0};
+
+	int res = retarget_waitchars(buf, &count, tmo);
+	if (res < 0) lua_pushnil(L);
+	else lua_pushstring(L, buf);
+
+	return 1;
+}
+
+//====================================
+static int os_putchar (lua_State *L) {
+	char *c = luaL_checkstring(L,1);
+	retarget_putc(*c);
+	return 0;
+}
+
+
+//==================================
+static int file_recv( lua_State* L )
+{
+  int fsize = 0;
+  unsigned char c, gnm;
+  char fnm[64];
+  unsigned int max_len = vm_fs_get_disk_free_space(vm_fs_get_internal_drive_letter())-(1024*10);
+
+  gnm = 0;
+  if (lua_gettop(L) == 1 && lua_type( L, 1 ) == LUA_TSTRING) {
+    // file name is given
+    size_t len;
+    const char *fname = luaL_checklstring( L, 1, &len );
+    strcpy(fnm, fname);
+    gnm = 1; // file name ok
+  }
+  if (gnm == 0) memset(fnm, 0x00, 64);
+
+  lua_log_printf(0, NULL, 0, "Start Ymodem file transfer, max size: %d", max_len);
+
+  while (retarget_waitc(&c, 10) == 0) {};
+
+  fsize = Ymodem_Receive(fnm, max_len, gnm);
+
+  while (retarget_waitc(&c, 10) == 0) {};
+
+  if (fsize > 0) printf("\r\nReceived successfully, %d\r\n",fsize);
+  else if (fsize == -1) printf("\r\nFile write error!\r\n");
+  else if (fsize == -2) printf("\r\nFile open error!\r\n");
+  else if (fsize == -3) printf("\r\nAborted.\r\n");
+  else if (fsize == -4) printf("\r\nFile size too big, aborted.\r\n");
+  else if (fsize == -5) printf("\r\nWrong file name or file exists!\r\n");
+  else printf("\r\nReceive failed!\r\n");
+
+  return 0;
+}
+
+
+//==================================
+static int file_send( lua_State* L )
+{
+  char res = 0;
+  char newname = 0;
+  unsigned char c;
+  const char *fname;
+  size_t len;
+  int fsize = 0;
+
+  fname = luaL_checklstring( L, 1, &len );
+  char filename[64] = {0};
+  const char * newfname;
+
+  if (lua_gettop(L) >= 2 && lua_type( L, 2 ) == LUA_TSTRING) {
+    size_t len;
+    newfname = luaL_checklstring( L, 2, &len );
+    newname = 1;
+  }
+
+  // Open the file
+  int ffd = file_open(fname, 0);
+  if (ffd < 0) {
+    l_message(NULL,"Error opening file.");
+    return 0;
+  }
+
+  // Get file size
+  if (vm_fs_get_size(ffd, &fsize) < 0) {
+    vm_fs_close(ffd);
+    l_message(NULL,"Error opening file.");
+    return 0;
+  }
+
+  if (newname == 1) {
+    printf("Sending '%s' as '%s'\r\n", fname, newfname);
+    strcpy(filename, newfname);
+  }
+  else strcpy(filename, fname);
+
+  l_message(NULL,"Start Ymodem file transfer...");
+
+  while (retarget_waitc(&c, 10) == 0) {};
+
+  res = Ymodem_Transmit(filename, fsize, ffd);
+
+  vm_thread_sleep(500);
+  while (retarget_waitc(&c, 10) == 0) {};
+
+  vm_fs_close(ffd);
+
+  if (res == 0) {
+    l_message(NULL,"\r\nFile sent successfuly.");
+  }
+  else if (res == 99) {
+    l_message(NULL,"\r\nNo response.");
+  }
+  else if (res == 98) {
+    l_message(NULL,"\r\nAborted.");
+  }
+  else {
+    l_message(NULL,"\r\nError sending file.");
+  }
+  return 0;
+}
+
 
 extern int luaB_dofile (lua_State *L);
 
@@ -559,9 +711,7 @@ const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("schedule"), LFUNCVAL(os_scheduled_startup)},
   {LSTRKEY("clock"),    LFUNCVAL(os_clock)},
   {LSTRKEY("date"),     LFUNCVAL(os_date)},
-#if !defined LUA_NUMBER_INTEGRAL
   {LSTRKEY("difftime"), LFUNCVAL(os_difftime)},
-#endif
   {LSTRKEY("execute"), LFUNCVAL(luaB_dofile)},
   //{LSTRKEY("execute"),LFUNCVAL(os_execute)},
   {LSTRKEY("exit"),   LFUNCVAL(os_exit)},
@@ -575,12 +725,15 @@ const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("time"),     LFUNCVAL(os_time)},
   {LSTRKEY("list"),     LFUNCVAL(os_listfiles)},
   //{LSTRKEY("tmpname"),   LFUNCVAL(os_tmpname)},
-#if defined (LUA_USE_WDG)
-  {LSTRKEY("wdtstart"), LFUNCVAL(os_wdtstart)},
-  {LSTRKEY("wdtstop"),  LFUNCVAL(os_wdtstop)},
-  {LSTRKEY("wdtreset"), LFUNCVAL(os_wdtreset)},
-#endif
+  //{LSTRKEY("wdtstart"), LFUNCVAL(os_wdtstart)},
+  //{LSTRKEY("wdtstop"),  LFUNCVAL(os_wdtstop)},
+  //{LSTRKEY("wdtreset"), LFUNCVAL(os_wdtreset)},
   {LSTRKEY("retarget"), LFUNCVAL(os_retarget)},
+  {LSTRKEY("getchar"), LFUNCVAL(os_getchar)},
+  {LSTRKEY("getstring"), LFUNCVAL(os_getstring)},
+  {LSTRKEY("putchar"), LFUNCVAL(os_putchar)},
+  {LSTRKEY("yrecv"), LFUNCVAL(file_recv)},
+  {LSTRKEY("ysend"), LFUNCVAL(file_send)},
   {LNILKEY, LNILVAL}
 };
 

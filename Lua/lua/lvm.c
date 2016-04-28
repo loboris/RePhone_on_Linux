@@ -27,7 +27,6 @@
 #include "lvm.h"
 #include "lrotable.h"
 
-#include "shell.h"
 
 
 /* limit for table tag-method chains (to avoid loops) */
@@ -426,6 +425,9 @@ static void Arith (lua_State *L, StkId ra, const TValue *rb,
       }
 
 
+extern int sys_wdt_rst_time;
+extern void _reset_wdg(void);
+
 void luaV_execute (lua_State *L, int nexeccalls) {
   LClosure *cl;
   StkId base;
@@ -439,7 +441,12 @@ void luaV_execute (lua_State *L, int nexeccalls) {
   k = cl->p->k;
   /* main loop of interpreter */
   for (;;) {
-    const Instruction i = *pc++;
+	// --- wdg reset ----
+	sys_wdt_rst_time = 0;
+	_reset_wdg();
+	// ------------------
+
+	const Instruction i = *pc++;
     StkId ra;
     if ((L->hookmask & (LUA_MASKLINE | LUA_MASKCOUNT)) &&
         (--L->hookcount == 0 || (L->hookmask & LUA_MASKLINE))) {

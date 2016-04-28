@@ -22,25 +22,36 @@
 typedef VMINT (*vm_get_sym_entry_t)(char* symbol);
 vm_get_sym_entry_t vm_get_sym_entry;
 
-unsigned int g_memory_size = 1024 * 1024;
-static void* g_base_address = NULL;
+#define RESERVED_HEAP 1024*64             // heap reserved for C usage
+
+unsigned int g_memory_size = 1024 * 800;  // heap for lua usage, will be adjusted
+int g_memory_size_b = 0;                  // adjusted heap for C usage
+static void* g_base_address = NULL;       // base address of the lua heap
 
 extern void vm_main();
 
 int __g_errno = 0;
 
 
+char *__tzname[2] = { (char *) "CET", (char *) "CET" };
+int __daylight = 1;
+long int __timezone = 1L;
+
+
+//-----------------------
 void __cxa_pure_virtual()
 {
     while(1)
         ;
 }
 
+//------------
 int* __errno()
 {
     return &__g_errno;
 }
 
+//----------------------------
 extern caddr_t _sbrk(int incr)
 {
     static void* heap = NULL;
@@ -53,7 +64,7 @@ extern caddr_t _sbrk(int incr)
             vm_log_fatal("malloc failed");
         } else {
             heap = base;
-            vm_log_info("Init memory success, base: %#08x, size: %d", (caddr_t)g_base_address, g_memory_size);
+            vm_log_info("Init memory success, base: %#08x, size: %d, heap: %d", (caddr_t)g_base_address, g_memory_size, g_memory_size_b);
         }
     }
 
@@ -69,6 +80,7 @@ extern caddr_t _sbrk(int incr)
     return (caddr_t)prev_heap;
 }
 
+//---------------------------------------------
 extern int link(char* old_name, char* new_name)
 {
     VMWCHAR ucs_oldname[32], ucs_newname[32];
@@ -78,12 +90,13 @@ extern int link(char* old_name, char* new_name)
     return vm_fs_rename(ucs_oldname, ucs_newname);
 }
 
+//----------------------------------------------
 int _open(const char* file, int flags, int mode)
 {
     int result;
     VMUINT fs_mode;
-    VMWCHAR wfile_name[32];
-    char file_name[32];
+    VMWCHAR wfile_name[64];
+    char file_name[64];
     char* ptr;
 
     if(file[1] != ':') {
@@ -93,7 +106,7 @@ int _open(const char* file, int flags, int mode)
         ptr = (char *)file;
     }
 
-    vm_chset_ascii_to_ucs2(wfile_name, 32, ptr);
+    vm_chset_ascii_to_ucs2(wfile_name, 64, ptr);
 
     if(flags & O_CREAT) {
         fs_mode = VM_FS_MODE_CREATE_ALWAYS_WRITE;
@@ -112,6 +125,7 @@ int _open(const char* file, int flags, int mode)
     return result;
 }
 
+//-------------------------
 extern int _close(int file)
 {
     LOG("_close(%d)\n", file);
@@ -119,6 +133,7 @@ extern int _close(int file)
     return 0;
 }
 
+//------------------------------------------
 extern int _fstat(int file, struct stat* st)
 {
     int size;
@@ -136,6 +151,7 @@ extern int _fstat(int file, struct stat* st)
     return 0;
 }
 
+//--------------------------
 extern int _isatty(int file)
 {
     if(file < 3) {
@@ -146,6 +162,7 @@ extern int _isatty(int file)
     return 0;
 }
 
+//-------------------------------------------------
 extern int _lseek(int file, int offset, int whence)
 {
     int position;
@@ -158,11 +175,13 @@ extern int _lseek(int file, int offset, int whence)
     return position;
 }
 
+//---------------------------------------
 __attribute__((weak)) int retarget_getc()
 {
     return 0;
 }
 
+//--------------------------------------------
 extern int _read(int file, char* ptr, int len)
 {
     if(file < 3) {
@@ -181,10 +200,12 @@ extern int _read(int file, char* ptr, int len)
     }
 }
 
+//----------------------------------------------
 __attribute__((weak)) void retarget_putc(char c)
 {
 }
 
+//---------------------------------------------
 extern int _write(int file, char* ptr, int len)
 {
     if(file < 3) {
@@ -204,26 +225,32 @@ extern int _write(int file, char* ptr, int len)
     }
 }
 
+//---------------------------
 extern void _exit(int status)
 {
     for(;;)
         ;
 }
 
+//---------------------------------
 extern void _kill(int pid, int sig)
 {
     return;
 }
 
+//----------------------
 extern int _getpid(void)
 {
     return -1;
 }
 
+//-----------------------------
 int __cxa_guard_acquire(int* g)
 {
     return !*(char*)(g);
 };
+
+//------------------------------
 void __cxa_guard_release(int* g)
 {
     *(char*)g = 1;
@@ -233,28 +260,47 @@ typedef void (**__init_array)(void);
 
 //void __libc_init_array(void);
 
+//-----------------------------------------------------------------------------------
 void gcc_entry(unsigned int entry, unsigned int init_array_start, unsigned int count)
 {
     unsigned int i;
+    void* g_base_address_b = NULL;
+
     __init_array ptr;
     vm_get_sym_entry = (vm_get_sym_entry_t)entry;
 
     while (g_base_address == NULL) {
     	g_base_address = vm_malloc(g_memory_size);
         if (g_base_address == NULL) {
-        	g_memory_size -= 1024*64;
+        	g_memory_size -= 1024;
         }
         else break;
     }
+    vm_free(g_base_address);
+    g_base_address = NULL;
+    g_memory_size_b = RESERVED_HEAP;
+    g_memory_size -= RESERVED_HEAP;
+	g_base_address = vm_malloc(g_memory_size);
+
+    while ((g_base_address_b == NULL) && (g_memory_size_b > 0)) {
+    	g_base_address_b = vm_malloc(g_memory_size_b);
+        if (g_base_address_b == NULL) {
+        	g_memory_size_b -= 1024;
+        }
+        else break;
+    }
+    if (g_memory_size_b < 0) g_memory_size_b = 0;
+    if (g_base_address_b != NULL) vm_free(g_base_address_b);
+    g_base_address_b = NULL;
 
     ptr = (__init_array)init_array_start;
     for(i = 1; i < count; i++) {
         ptr[i]();
     }
 
-    while (vm_time_ust_get_count() < 10000000) {
+    /*while (vm_time_ust_get_count() < 10000000) {
     	vm_thread_sleep(10);
-    }
+    }*/
     vm_main();
 }
 
@@ -337,6 +383,7 @@ VMUINT vm_dcl_pin_to_pwm(VMUINT pin)
     return 0;
 }
 
+//--------------------------------------
 VMUINT vm_dcl_pin_to_channel(VMUINT pin)
 {
     VMINT i;
@@ -350,6 +397,7 @@ VMUINT vm_dcl_pin_to_channel(VMUINT pin)
     return 0;
 }
 
+//-----------------------------------
 VMUINT vm_dcl_pin_to_eint(VMUINT pin)
 {
     VMINT i;
@@ -369,7 +417,7 @@ typedef struct {
     VM_DCL_HANDLE handle; 
 } VM_DCL_PIN_HANDLE;
 
-
+//----------------------------------------------------------------
 static VM_DCL_PIN_HANDLE pinHandleTable[VM_DCL_PIN_TABLE_SIZE] = {
     { VM_PIN_P0, 0, VM_DCL_HANDLE_INVALID },
     { VM_PIN_P1, 0, VM_DCL_HANDLE_INVALID },
@@ -394,6 +442,7 @@ static VM_DCL_PIN_HANDLE pinHandleTable[VM_DCL_PIN_TABLE_SIZE] = {
     { VM_PIN_P20, 0, VM_DCL_HANDLE_INVALID }
 };
 
+//-------------------------------------------------
 int gpio_get_handle(int pin, VM_DCL_HANDLE *handle)
 {
     int i;

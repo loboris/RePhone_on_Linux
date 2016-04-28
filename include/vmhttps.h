@@ -607,13 +607,8 @@ VM_RESULT vm_https_request_ext(VMUINT16 request_id, VM_HTTPS_METHOD method, VM_H
 *  request_id :         [IN] Request ID.
 *  sequence_number :    [IN] Sequence id.
 *  more :               [IN] Need more send or not.
-*  post_segment_length: [IN] Post segment.
 *  post_segment :       [IN] Post segment length.
-*  request_id :         [IN] The request ID.
-*  sequence_number :    [IN] The sequence id.
-*  more :               [IN] This indicates whether it needs more send or not.
-*  post_segment_length: [IN] The post segment.
-*  post_segment :       [IN] The post segment length.     
+*  post_segment_length: [IN] Post segment.
 * RETURNS
 *  VM_RESULT
 *****************************************************************************/

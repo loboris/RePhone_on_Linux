@@ -9,6 +9,7 @@
 
 #include "lua.h"
 #include "lauxlib.h"
+#include "lrodefs.h"
 
 #define MAX_NAME_LEN 32  /* Max length of file name */
 

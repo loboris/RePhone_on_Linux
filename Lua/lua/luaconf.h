@@ -23,6 +23,10 @@
 #define lua_c
 #define LUA_PATH_DEFAULT	"?.lua;?.lc;C:\\?.lua;C:\\?.lc;"
 
+#define LUA_OPTIMIZE_MEMORY 0
+#define MODULE_LUA_CO_LINE
+//#define MIN_OPT_LEVEL 2
+
 /*
 @@ LUA_ANSI controls the use of non-ansi features.
 ** CHANGE it (define it) if you want Lua to avoid the use of any
@@ -305,8 +309,6 @@
 ** CHANGE them if you want to improve this functionality (e.g., by using
 ** GNU readline and history facilities).
 */
-
-//#define LUA_USE_WDG
 
 #if defined(LUA_CROSS_COMPILER)
 #if defined(LUA_USE_READLINE)

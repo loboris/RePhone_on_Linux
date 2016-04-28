@@ -417,38 +417,17 @@ int linenoise_savehistory( int id, const char *filename )
 
 extern int retarget_getc();
 
-#if defined (LUA_USE_WDG)
-static char bkpbuff[256] = {0};
-static int hasbkp = 0;
-#endif
-
+// !!this runs from lua thread!!
 //--------------------------------------------------------------------------------
 int linenoise_getline( int id, char* buffer, int buffer_size, const char* prompt )
 {
     int ch = 0;
     int line_position = 0;
-#if defined (LUA_USE_WDG)
-    if (hasbkp) {
-	    memset(buffer, 0, buffer_size);
-    	strcpy(buffer, bkpbuff);
-    	line_position = strlen(buffer);
-        memset(bkpbuff, 0, 256);
-    }
-#endif
 
 start:
     /* show prompt */
-#if defined (LUA_USE_WDG)
-	if (hasbkp == 0) {
-		fputs(prompt, stdout);
-		fflush(stdout);
-	    memset(buffer, 0, buffer_size);
-	}
-	else hasbkp = 0;
-#else
 	fputs(prompt, stdout);
 	fflush(stdout);
-#endif
 
 	while (1) {
         ch = retarget_getc(stdin);
@@ -505,16 +484,6 @@ start:
                 memset(buffer, 0, buffer_size);
             }
        }
-#if defined (LUA_USE_WDG)
-       else {
-    	   if (line_position > 0) {
-    		   strncpy(bkpbuff, buffer, line_position);
-    		   hasbkp = 1;
-    	   }
-    	   sprintf(buffer, "os.wdtreset()");
-    	   return 14;
-       }
-#endif
     }
 }
 

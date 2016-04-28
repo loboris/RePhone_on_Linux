@@ -4,6 +4,7 @@
 #include "vmfirmware.h"
 #include "lua.h"
 #include "lauxlib.h"
+#include "lrodefs.h"
 #include "vmdatetime.h"
 
 #define INPUT             0

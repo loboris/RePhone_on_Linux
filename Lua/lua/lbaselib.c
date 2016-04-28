@@ -19,6 +19,7 @@
 #include "lauxlib.h"
 #include "lualib.h"
 #include "lrotable.h"
+#include "lrodefs.h"
 
 #ifndef LUA_CROSS_COMPILER
 #include "platform_conf.h"

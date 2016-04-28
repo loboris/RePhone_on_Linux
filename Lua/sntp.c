@@ -42,8 +42,12 @@
 #include "vmtimer.h"
 #include "vmlog.h"
 
+#include "lua.h"
+#include "lauxlib.h"
+//#include "shell.h"
 
 extern VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type;
+extern lua_State *L;
 
 #define NTP_PACKET_SIZE 48
 #define NTP_TIME_OUT 30
@@ -57,6 +61,7 @@ static VM_TIMER_ID_PRECISE sntp_timer_id;
 static int ntp_time_set = 0;
 static int ntp_time_zone = 0;
 static int ntp_timeout = 0;
+static int ntp_cb_ref = -1;
 
 struct NtpPacket
 {
@@ -135,14 +140,25 @@ static void sntp_callback(VM_UDP_HANDLE handle, VM_UDP_EVENT event)
                 new_time.hour = ntpTime->tm_hour;
                 new_time.minute = ntpTime->tm_min;
                 new_time.second = ntpTime->tm_sec;
-                new_time.month = ntpTime->tm_mon;
+                new_time.month = ntpTime->tm_mon + 1;
                 new_time.year = ntpTime->tm_year + 1900;
 
                 vm_time_set_date_time(&new_time);
                 ntp_time_set = 1;
-                char buf[128] = {0};
-                sprintf(buf, "Time Synchronized: tz=%d epoch=%lu: %s", ntp_time_zone, epoch, asctime(ntpTime));
-                vm_log_info(buf);
+            	if (ntp_cb_ref != LUA_NOREF) {
+            		lua_rawgeti(L, LUA_REGISTRYINDEX, ntp_cb_ref);
+            		if ((lua_type(L, -1) == LUA_TFUNCTION) || (lua_type(L, -1) == LUA_TLIGHTFUNCTION)) {
+            			lua_call(L, 0, 0);
+            			luaL_unref(L, LUA_REGISTRYINDEX, ntp_cb_ref);
+            			ntp_cb_ref = LUA_NOREF;
+            		}
+            		else lua_remove(L, -1);
+            	}
+            	else {
+                    char buf[128] = {0};
+                    sprintf(buf, "Time Synchronized: tz=%d epoch=%lu: %s", ntp_time_zone, epoch, asctime(ntpTime));
+                    vm_log_info(buf);
+            	}
             }
             vm_udp_close(g_udp);
             break;
@@ -155,12 +171,13 @@ static void sntp_callback(VM_UDP_HANDLE handle, VM_UDP_EVENT event)
 
 }
 
-//-------------------------
-void sntp_gettime( int tz )
+//-------------------------------------
+void sntp_gettime( int tz, int cb_ref )
 {
   ntp_time_set = 0;
   ntp_time_zone = tz;
   ntp_timeout = 0;
+  ntp_cb_ref = cb_ref;
 
   sntp_timer_id = vm_timer_create_precise(500, sntp_timer_callback, NULL);
 
