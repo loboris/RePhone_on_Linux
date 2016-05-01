@@ -13,3 +13,29 @@ This repository contains RePhone application projects configured for Eclipse
 * [Linkit Assist SDK](http://download.labs.mediatek.com/MediaTek_LinkIt_Assist_2502_SDK_2_0_46.zip)
 * [Eclipse](https://www.eclipse.org/downloads/)
 
+# <p style='color:blue'>Lua on RePhone</p>
+
+The main project in this repository is Lua implementation on RePhone.
+
+####Main features:
+
+* Complete <b>Lua 5.1</b> implementation
+* Memory available to Lua programs ~700 KB + heap for c functions ~64 KB
+* System functions for <b>watchdog</b>, <b>rtc</b>, scheduled <b>shut down</b> / <b>wake up</b> implemented
+* <b>os</b> module expanded with many new functions ( <b>ntptime</b> function added for adjusting RTC time from NTP server )
+* Lua <B>shell</b> is available on USB port (/dev/ttyACM0) and on RePhone hardware UART
+* Many new/RePhone specific modules (written in c)
+  * <b>gpio</b>, with added fonctions for gpio toggle and EINT on any eint capable pin
+  * <b>pwm</b> module (<i>in development</i>)
+  * <b>adc</b> module (<i>in development</i>)
+  * <b>https</b>, with added post mode (capable of sending file or params from table)
+  * <b>gsm</b> module, with complete SMS functionality
+  * <b>audio</b> module
+  * <b>timer</b> module
+  * <b>i2c</b> module
+  * <b>spi</b> module (<i>in development</i>)
+  * <b>tcp & udp</b> modules
+  * <b>sensor</b> module (DS18B20, DHT-11, DHT-22 for now)
+  * hash modules: <b>md5</b>, <b>SHA1</b>, <b>SHA2</b>
+  * complete <b>json</b> module (cjson)
+  * <b>struct</b> module (python struct library Lua implementation)

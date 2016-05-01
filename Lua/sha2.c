@@ -36,6 +36,7 @@
 
 #include <stddef.h>
 #include <string.h>
+#include <stdint.h>
 #include <sys/types.h>
 
 #include <lua.h>
@@ -86,7 +87,9 @@
  * <machine/endian.h> where the appropriate definitions are actually
  * made).
  */
-#if !defined(BYTE_ORDER) || (BYTE_ORDER != LITTLE_ENDIAN && BYTE_ORDER != BIG_ENDIAN)
+ #define BYTE_ORDER LITTLE_ENDIAN
+
+ #if !defined(BYTE_ORDER) || (BYTE_ORDER != LITTLE_ENDIAN && BYTE_ORDER != BIG_ENDIAN)
 #error Define BYTE_ORDER to be equal to either LITTLE_ENDIAN or BIG_ENDIAN
 #endif
 
@@ -101,12 +104,12 @@
 /*** ENDIAN REVERSAL MACROS *******************************************/
 #if BYTE_ORDER == LITTLE_ENDIAN
 #define REVERSE32(w,x)	{ \
-	u_int32_t tmp = (w); \
+	uint32_t tmp = (w); \
 	tmp = (tmp >> 16) | (tmp << 16); \
 	(x) = ((tmp & 0xff00ff00UL) >> 8) | ((tmp & 0x00ff00ffUL) << 8); \
 }
 #define REVERSE64(w,x)	{ \
-	u_int64_t tmp = (w); \
+	uint64_t tmp = (w); \
 	tmp = (tmp >> 32) | (tmp << 32); \
 	tmp = ((tmp & 0xff00ff00ff00ff00ULL) >> 8) | \
 	      ((tmp & 0x00ff00ff00ff00ffULL) << 8); \
@@ -121,7 +124,7 @@
  * 64-bit words):
  */
 #define ADDINC128(w,n)	{ \
-	(w)[0] += (u_int64_t)(n); \
+	(w)[0] += (uint64_t)(n); \
 	if ((w)[0] < (n)) { \
 		(w)[1]++; \
 	} \
@@ -165,13 +168,13 @@
  * only.
  */
 static void SHA512Last(SHA2_CTX *);
-static void SHA256Transform(SHA2_CTX *, const u_int8_t *);
-static void SHA512Transform(SHA2_CTX *, const u_int8_t *);
+static void SHA256Transform(SHA2_CTX *, const uint8_t *);
+static void SHA512Transform(SHA2_CTX *, const uint8_t *);
 
 
 /*** SHA-XYZ INITIAL HASH VALUES AND CONSTANTS ************************/
 /* Hash constant words K for SHA-256: */
-const static u_int32_t K256[64] = {
+const static uint32_t K256[64] = {
 	0x428a2f98UL, 0x71374491UL, 0xb5c0fbcfUL, 0xe9b5dba5UL,
 	0x3956c25bUL, 0x59f111f1UL, 0x923f82a4UL, 0xab1c5ed5UL,
 	0xd807aa98UL, 0x12835b01UL, 0x243185beUL, 0x550c7dc3UL,
@@ -191,7 +194,7 @@ const static u_int32_t K256[64] = {
 };
 
 /* Initial hash value H for SHA-256: */
-const static u_int32_t sha256_initial_hash_value[8] = {
+const static uint32_t sha256_initial_hash_value[8] = {
 	0x6a09e667UL,
 	0xbb67ae85UL,
 	0x3c6ef372UL,
@@ -203,7 +206,7 @@ const static u_int32_t sha256_initial_hash_value[8] = {
 };
 
 /* Hash constant words K for SHA-384 and SHA-512: */
-const static u_int64_t K512[80] = {
+const static uint64_t K512[80] = {
 	0x428a2f98d728ae22ULL, 0x7137449123ef65cdULL,
 	0xb5c0fbcfec4d3b2fULL, 0xe9b5dba58189dbbcULL,
 	0x3956c25bf348b538ULL, 0x59f111f1b605d019ULL,
@@ -247,7 +250,7 @@ const static u_int64_t K512[80] = {
 };
 
 /* Initial hash value H for SHA-384 */
-const static u_int64_t sha384_initial_hash_value[8] = {
+const static uint64_t sha384_initial_hash_value[8] = {
 	0xcbbb9d5dc1059ed8ULL,
 	0x629a292a367cd507ULL,
 	0x9159015a3070dd17ULL,
@@ -259,7 +262,7 @@ const static u_int64_t sha384_initial_hash_value[8] = {
 };
 
 /* Initial hash value H for SHA-512 */
-const static u_int64_t sha512_initial_hash_value[8] = {
+const static uint64_t sha512_initial_hash_value[8] = {
 	0x6a09e667f3bcc908ULL,
 	0xbb67ae8584caa73bULL,
 	0x3c6ef372fe94f82bULL,
@@ -288,8 +291,8 @@ SHA256Init(SHA2_CTX *context)
 /* Unrolled SHA-256 round macros: */
 
 #define ROUND256_0_TO_15(a,b,c,d,e,f,g,h) do {				    \
-	W256[j] = (u_int32_t)data[3] | ((u_int32_t)data[2] << 8) |	    \
-	    ((u_int32_t)data[1] << 16) | ((u_int32_t)data[0] << 24);	    \
+	W256[j] = (uint32_t)data[3] | ((uint32_t)data[2] << 8) |	    \
+	    ((uint32_t)data[1] << 16) | ((uint32_t)data[0] << 24);	    \
 	data += 4;							    \
 	T1 = (h) + Sigma1_256((e)) + Ch((e), (f), (g)) + K256[j] + W256[j]; \
 	(d) += T1;							    \
@@ -310,13 +313,13 @@ SHA256Init(SHA2_CTX *context)
 } while(0)
 
 static void
-SHA256Transform(SHA2_CTX *context, const u_int8_t *data)
+SHA256Transform(SHA2_CTX *context, const uint8_t *data)
 {
-	u_int32_t	a, b, c, d, e, f, g, h, s0, s1;
-	u_int32_t	T1, *W256;
+	uint32_t	a, b, c, d, e, f, g, h, s0, s1;
+	uint32_t	T1, *W256;
 	int		j;
 
-	W256 = (u_int32_t *)context->buffer;
+	W256 = (uint32_t *)context->buffer;
 
 	/* Initialize registers with the prev. intermediate value */
 	a = context->state.st32[0];
@@ -370,13 +373,13 @@ SHA256Transform(SHA2_CTX *context, const u_int8_t *data)
 #else /* SHA2_UNROLL_TRANSFORM */
 
 static void
-SHA256Transform(SHA2_CTX *context, const u_int8_t *data)
+SHA256Transform(SHA2_CTX *context, const uint8_t *data)
 {
-	u_int32_t	a, b, c, d, e, f, g, h, s0, s1;
-	u_int32_t	T1, T2, *W256;
+	uint32_t	a, b, c, d, e, f, g, h, s0, s1;
+	uint32_t	T1, T2, *W256;
 	int		j;
 
-	W256 = (u_int32_t *)context->buffer;
+	W256 = (uint32_t *)context->buffer;
 
 	/* Initialize registers with the prev. intermediate value */
 	a = context->state.st32[0];
@@ -390,8 +393,8 @@ SHA256Transform(SHA2_CTX *context, const u_int8_t *data)
 
 	j = 0;
 	do {
-		W256[j] = (u_int32_t)data[3] | ((u_int32_t)data[2] << 8) |
-		    ((u_int32_t)data[1] << 16) | ((u_int32_t)data[0] << 24);
+		W256[j] = (uint32_t)data[3] | ((uint32_t)data[2] << 8) |
+		    ((uint32_t)data[1] << 16) | ((uint32_t)data[0] << 24);
 		data += 4;
 		/* Apply the SHA-256 compression function to update a..h */
 		T1 = h + Sigma1_256(e) + Ch(e, f, g) + K256[j] + W256[j];
@@ -448,7 +451,7 @@ SHA256Transform(SHA2_CTX *context, const u_int8_t *data)
 #endif /* SHA2_UNROLL_TRANSFORM */
 
 static void
-SHA256Update(SHA2_CTX *context, const u_int8_t *data, size_t len)
+SHA256Update(SHA2_CTX *context, const uint8_t *data, size_t len)
 {
 	size_t	freespace, usedspace;
 
@@ -494,9 +497,9 @@ SHA256Update(SHA2_CTX *context, const u_int8_t *data, size_t len)
 }
 
 static void
-SHA256Final(u_int8_t digest[], SHA2_CTX *context)
+SHA256Final(uint8_t digest[], SHA2_CTX *context)
 {
-	u_int32_t	*d = (u_int32_t *)digest;
+	uint32_t	*d = (uint32_t *)digest;
 	unsigned int	usedspace;
 
 	/* If no digest buffer is passed, we don't bother doing this: */
@@ -531,7 +534,7 @@ SHA256Final(u_int8_t digest[], SHA2_CTX *context)
 			*context->buffer = 0x80;
 		}
 		/* Set the bit count: */
-		*(u_int64_t *)&context->buffer[SHA256_SHORT_BLOCK_LENGTH] = context->bitcount[0];
+		*(uint64_t *)&context->buffer[SHA256_SHORT_BLOCK_LENGTH] = context->bitcount[0];
 
 		/* Final transform: */
 		SHA256Transform(context, context->buffer);
@@ -574,10 +577,10 @@ SHA512Init(SHA2_CTX *context)
 /* Unrolled SHA-512 round macros: */
 
 #define ROUND512_0_TO_15(a,b,c,d,e,f,g,h) do {				    \
-	W512[j] = (u_int64_t)data[7] | ((u_int64_t)data[6] << 8) |	    \
-	    ((u_int64_t)data[5] << 16) | ((u_int64_t)data[4] << 24) |	    \
-	    ((u_int64_t)data[3] << 32) | ((u_int64_t)data[2] << 40) |	    \
-	    ((u_int64_t)data[1] << 48) | ((u_int64_t)data[0] << 56);	    \
+	W512[j] = (uint64_t)data[7] | ((uint64_t)data[6] << 8) |	    \
+	    ((uint64_t)data[5] << 16) | ((uint64_t)data[4] << 24) |	    \
+	    ((uint64_t)data[3] << 32) | ((uint64_t)data[2] << 40) |	    \
+	    ((uint64_t)data[1] << 48) | ((uint64_t)data[0] << 56);	    \
 	data += 8;							    \
 	T1 = (h) + Sigma1_512((e)) + Ch((e), (f), (g)) + K512[j] + W512[j]; \
 	(d) += T1;							    \
@@ -599,10 +602,10 @@ SHA512Init(SHA2_CTX *context)
 } while(0)
 
 static void
-SHA512Transform(SHA2_CTX *context, const u_int8_t *data)
+SHA512Transform(SHA2_CTX *context, const uint8_t *data)
 {
-	u_int64_t	a, b, c, d, e, f, g, h, s0, s1;
-	u_int64_t	T1, *W512 = (u_int64_t *)context->buffer;
+	uint64_t	a, b, c, d, e, f, g, h, s0, s1;
+	uint64_t	T1, *W512 = (uint64_t *)context->buffer;
 	int		j;
 
 	/* Initialize registers with the prev. intermediate value */
@@ -656,10 +659,10 @@ SHA512Transform(SHA2_CTX *context, const u_int8_t *data)
 #else /* SHA2_UNROLL_TRANSFORM */
 
 static void
-SHA512Transform(SHA2_CTX *context, const u_int8_t *data)
+SHA512Transform(SHA2_CTX *context, const uint8_t *data)
 {
-	u_int64_t	a, b, c, d, e, f, g, h, s0, s1;
-	u_int64_t	T1, T2, *W512 = (u_int64_t *)context->buffer;
+	uint64_t	a, b, c, d, e, f, g, h, s0, s1;
+	uint64_t	T1, T2, *W512 = (uint64_t *)context->buffer;
 	int		j;
 
 	/* Initialize registers with the prev. intermediate value */
@@ -674,10 +677,10 @@ SHA512Transform(SHA2_CTX *context, const u_int8_t *data)
 
 	j = 0;
 	do {
-		W512[j] = (u_int64_t)data[7] | ((u_int64_t)data[6] << 8) |
-		    ((u_int64_t)data[5] << 16) | ((u_int64_t)data[4] << 24) |
-		    ((u_int64_t)data[3] << 32) | ((u_int64_t)data[2] << 40) |
-		    ((u_int64_t)data[1] << 48) | ((u_int64_t)data[0] << 56);
+		W512[j] = (uint64_t)data[7] | ((uint64_t)data[6] << 8) |
+		    ((uint64_t)data[5] << 16) | ((uint64_t)data[4] << 24) |
+		    ((uint64_t)data[3] << 32) | ((uint64_t)data[2] << 40) |
+		    ((uint64_t)data[1] << 48) | ((uint64_t)data[0] << 56);
 		data += 8;
 		/* Apply the SHA-512 compression function to update a..h */
 		T1 = h + Sigma1_512(e) + Ch(e, f, g) + K512[j] + W512[j];
@@ -734,7 +737,7 @@ SHA512Transform(SHA2_CTX *context, const u_int8_t *data)
 #endif /* SHA2_UNROLL_TRANSFORM */
 
 static void
-SHA512Update(SHA2_CTX *context, const u_int8_t *data, size_t len)
+SHA512Update(SHA2_CTX *context, const uint8_t *data, size_t len)
 {
 	size_t	freespace, usedspace;
 
@@ -815,17 +818,17 @@ SHA512Last(SHA2_CTX *context)
 		*context->buffer = 0x80;
 	}
 	/* Store the length of input data (in bits): */
-	*(u_int64_t *)&context->buffer[SHA512_SHORT_BLOCK_LENGTH] = context->bitcount[1];
-	*(u_int64_t *)&context->buffer[SHA512_SHORT_BLOCK_LENGTH+8] = context->bitcount[0];
+	*(uint64_t *)&context->buffer[SHA512_SHORT_BLOCK_LENGTH] = context->bitcount[1];
+	*(uint64_t *)&context->buffer[SHA512_SHORT_BLOCK_LENGTH+8] = context->bitcount[0];
 
 	/* Final transform: */
 	SHA512Transform(context, context->buffer);
 }
 
 static void
-SHA512Final(u_int8_t digest[], SHA2_CTX *context)
+SHA512Final(uint8_t digest[], SHA2_CTX *context)
 {
-	u_int64_t	*d = (u_int64_t *)digest;
+	uint64_t	*d = (uint64_t *)digest;
 
 	/* If no digest buffer is passed, we don't bother doing this: */
 	if (digest != NULL) {
@@ -865,15 +868,15 @@ SHA384Init(SHA2_CTX *context)
 }
 
 static void
-SHA384Update(SHA2_CTX *context, const u_int8_t *data, size_t len)
+SHA384Update(SHA2_CTX *context, const uint8_t *data, size_t len)
 {
 	SHA512Update((SHA2_CTX *)context, data, len);
 }
 
 static void
-SHA384Final(u_int8_t digest[], SHA2_CTX *context)
+SHA384Final(uint8_t digest[], SHA2_CTX *context)
 {
-	u_int64_t	*d = (u_int64_t *)digest;
+	uint64_t	*d = (uint64_t *)digest;
 
 	/* If no digest buffer is passed, we don't bother doing this: */
 	if (digest != NULL) {
@@ -925,7 +928,7 @@ SHA384Final(u_int8_t digest[], SHA2_CTX *context)
 		size_t l;						\
 		const char *d = luaL_checklstring(L, 2, &l);		\
 									\
-		htype##Update(ctx, (const u_int8_t *)d, l);		\
+		htype##Update(ctx, (const uint8_t *)d, l);		\
 									\
 		return 0;						\
 	}
@@ -934,7 +937,7 @@ SHA384Final(u_int8_t digest[], SHA2_CTX *context)
 	static int l_hashes_##hname##_final(lua_State *L)		\
 	{								\
 		SHA2_CTX *ctx = l_hashes_##hname##_get(L);		\
-		u_int8_t sum[htype##_DIGEST_LENGTH];			\
+		uint8_t sum[htype##_DIGEST_LENGTH];			\
 									\
 		htype##Final(sum, ctx);					\
 		lua_pushlstring(L, (char *)sum, htype##_DIGEST_LENGTH);	\
@@ -946,12 +949,12 @@ SHA384Final(u_int8_t digest[], SHA2_CTX *context)
 	static int l_hashes_##hname##_sum(lua_State *L)			\
 	{								\
 		SHA2_CTX ctx;						\
-		u_int8_t sum[htype##_DIGEST_LENGTH];			\
+		uint8_t sum[htype##_DIGEST_LENGTH];			\
 		size_t l;						\
 		const char *d = luaL_checklstring(L, 1, &l);		\
 									\
 		htype##Init(&ctx);					\
-		htype##Update(&ctx, (const u_int8_t *)d, l);		\
+		htype##Update(&ctx, (const uint8_t *)d, l);		\
 		htype##Final(sum, &ctx);				\
 									\
 		lua_pushlstring(L, (char *)sum, htype##_DIGEST_LENGTH);	\

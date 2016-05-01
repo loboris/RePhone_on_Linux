@@ -35,7 +35,7 @@
 #ifndef _SHA2_H
 #define _SHA2_H
 
-#include "attributes.h"
+//#include "attributes.h"
 
 /*** SHA-256/384/512 Various Length Definitions ***********************/
 #define SHA256_BLOCK_LENGTH		64
@@ -52,29 +52,23 @@
 /*** SHA-256/384/512 Context Structure *******************************/
 typedef struct _SHA2_CTX {
 	union {
-		u_int32_t	st32[8];
-		u_int64_t	st64[8];
+		uint32_t	st32[8];
+		uint64_t	st64[8];
 	} state;
-	u_int64_t	bitcount[2];
-	u_int8_t	buffer[SHA512_BLOCK_LENGTH];
+	uint64_t	bitcount[2];
+	uint8_t	buffer[SHA512_BLOCK_LENGTH];
 } SHA2_CTX;
 
 static void SHA256Init(SHA2_CTX *);
-static void SHA256Update(SHA2_CTX *, const u_int8_t *, size_t)
-	_BOUNDED(__string__,2,3);
-static void SHA256Final(u_int8_t[SHA256_DIGEST_LENGTH], SHA2_CTX *)
-	_BOUNDED(__minbytes__,1,SHA256_DIGEST_LENGTH);
+static void SHA256Update(SHA2_CTX *, const uint8_t *, size_t);
+static void SHA256Final(uint8_t[SHA256_DIGEST_LENGTH], SHA2_CTX *);
 
 static void SHA384Init(SHA2_CTX *);
-static void SHA384Update(SHA2_CTX *, const u_int8_t *, size_t)
-	_BOUNDED(__string__,2,3);
-static void SHA384Final(u_int8_t[SHA384_DIGEST_LENGTH], SHA2_CTX *)
-	_BOUNDED(__minbytes__,1,SHA384_DIGEST_LENGTH);
+static void SHA384Update(SHA2_CTX *, const uint8_t *, size_t);
+static void SHA384Final(uint8_t[SHA384_DIGEST_LENGTH], SHA2_CTX *);
 
 static void SHA512Init(SHA2_CTX *);
-static void SHA512Update(SHA2_CTX *, const u_int8_t *, size_t)
-	_BOUNDED(__string__,2,3);
-static void SHA512Final(u_int8_t[SHA512_DIGEST_LENGTH], SHA2_CTX *)
-	_BOUNDED(__minbytes__,1,SHA512_DIGEST_LENGTH);
+static void SHA512Update(SHA2_CTX *, const uint8_t *, size_t);
+static void SHA512Final(uint8_t[SHA512_DIGEST_LENGTH], SHA2_CTX *);
 
 #endif /* _SHA2_H */

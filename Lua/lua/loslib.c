@@ -34,8 +34,17 @@
 #include "vmdcl.h"
 #include "vmlog.h"
 #include "vmtimer.h"
+#include "vmusb.h"
 
+//#define USE_YMODEM
+
+#if defined USE_YMODEM
 #include "ymodem.h"
+#endif
+
+#define REDLED               17
+#define GREENLED             15
+#define BLUELED              12
 
 extern int retarget_target;
 extern VM_DCL_HANDLE retarget_device_handle;
@@ -43,6 +52,10 @@ extern VM_DCL_HANDLE retarget_uart1_handle;
 extern void retarget_putc(char ch);
 extern int retarget_waitc(unsigned char *c, int timeout);
 extern int retarget_waitchars(unsigned char *buf, int *count, int timeout);
+extern int no_activity_time;		// no activity counter
+extern int max_no_activity_time;	// time with no activity before shut down in seconds
+extern int wakeup_interval;			// regular wake up interval in seconds
+extern int led_blink;				// led blink during session
 
 
 //-----------------------------------------------------------------------------
@@ -257,8 +270,7 @@ static int os_time (lua_State *L) {
   VMUINT rtct;
   if (lua_isnoneornil(L, 1)) {
 	// called without args?
-    //t = time(NULL);  /* get current time */
-    vm_time_get_unix_time(&rtct);  /* get current time */
+    vm_time_get_unix_time(&rtct);  // get current time
     t = rtct;
   }
   else {
@@ -324,15 +336,48 @@ static int os_scheduled_startup (lua_State *L) {
   VMUINT rtct;
   vm_date_time_t start_time;
   struct tm *time_now;
-  unsigned long epoch;
+  time_t nsec = 0;
 
-  vm_time_get_unix_time(&rtct);  /* get current time */
+  vm_time_get_unix_time(&rtct);  // get current time
 
-  int nsec = luaL_checkinteger( L, 1 );
-  if (nsec < 86400) epoch = rtct + nsec;
-  else epoch = nsec;
+  if (lua_istable(L, 1)) {
+	  // ** get scheduled time from table
+	  nsec = rtct;
+	  time_now = gmtime(&nsec);
+	  lua_settop(L, 1);  // make sure table is at the top
+	  time_now->tm_sec = getfield(L, "sec", 0);
+	  time_now->tm_min = getfield(L, "min", 0);
+	  time_now->tm_hour = getfield(L, "hour", 12);
+	  time_now->tm_mday = getfield(L, "day", -1);
+	  time_now->tm_mon = getfield(L, "month", -1) - 1;
+	  time_now->tm_year = getfield(L, "year", -1) - 1900;
+	  time_now->tm_isdst = getboolfield(L, "isdst");
+	  nsec = mktime(time_now);
+  }
+  else if (lua_isnumber(L, 1)) {
+	  // ** wake up at current time + seconds increment
+	  nsec = luaL_checkinteger( L, 1 );
+	  if (nsec > 0) {
+		  nsec += rtct;
+		  time_now = gmtime(&nsec);
+	  }
+  }
+  else {
+	  return luaL_error(L, "Wrong argument!");
+  }
 
-  time_now = gmtime(&epoch);
+  if (nsec <= 0) {
+	  // ** wake up at next interval
+	  no_activity_time = max_no_activity_time + 1;
+	  vm_log_info("WAKE UP SCHEDULED at next interval (%d sec)", wakeup_interval);
+	  return 0;
+  }
+
+  if (nsec < rtct) {
+	  vm_log_info("WAKE UP SCHEDULED in past!");
+	  return 0;
+  }
+
   start_time.day = time_now->tm_mday;
   start_time.hour = time_now->tm_hour;
   start_time.minute = time_now->tm_min;
@@ -426,41 +471,6 @@ static int os_copy (lua_State *L) {
 
   return 1;
 }
-
-/*
-//==============================
-int os_wdtreset (lua_State *L) {
-  if (sys_wdt_id) {
-	sys_wdt_rst_time = 0;
-  }
-  return 0;
-}
-
-//====================================
-static int os_wdtstop (lua_State *L) {
-  if (sys_wdt_id) {
-	vm_log_info("**STOP WATCHDOG\n");
-	sys_wdt_id = 0;
-	sys_wdt_rst_time = 0;
-  }
-  return 0;
-}
-
-//=====================================
-static int os_wdtstart (lua_State *L) {
-  int tick = luaL_checkinteger(L, 1);
-  if (tick < 2) tick = 2;
-  if (tick > 600) tick = 600;
-
-  //sys_wdt_tmo = tick*1000;
-  if (!sys_wdt_id) {
-	vm_log_info("START WATCHDOG %d sec\n", tick);
-	sys_wdt_id = 1;
-	sys_wdt_rst_time = 0;
-  }
-  return 0;
-}
-*/
 
 //===================================
 static int os_listfiles(lua_State* L)
@@ -590,6 +600,47 @@ static int os_putchar (lua_State *L) {
 	return 0;
 }
 
+//=====================================
+static int os_ledblink (lua_State *L) {
+	if (lua_gettop(L) >= 1) {
+		int lb = luaL_checkinteger(L,1);
+		if ((lb == 0) || (lb == BLUELED) || (lb == REDLED) || (lb == GREENLED)) {
+			led_blink = lb;
+		}
+	}
+	lua_pushinteger(L, led_blink);
+	return 1;
+}
+
+//=======================================
+static int os_wakeup_int (lua_State *L) {
+	if (lua_gettop(L) >= 1) {
+		int wui = luaL_checkinteger(L,1);  // wake up interval in minutes
+		if (wui > 0) wakeup_interval = wui * 60;
+	}
+	lua_pushinteger(L, wakeup_interval / 60);
+	return 1;
+}
+
+//=======================================
+static int os_noact_time (lua_State *L) {
+	if (lua_gettop(L) >= 1) {
+		int noact = luaL_checkinteger(L,1);  // maximum time with no activity in minutes
+		if (noact > 0) max_no_activity_time = noact * 60;
+	}
+	lua_pushinteger(L, max_no_activity_time / 60);
+	return 1;
+}
+
+//================================
+static int os_usb (lua_State *L) {
+	lua_pushinteger(L, vm_usb_get_cable_status());
+	return 1;
+}
+
+
+
+#if defined USE_YMODEM
 
 //==================================
 static int file_recv( lua_State* L )
@@ -695,6 +746,7 @@ static int file_send( lua_State* L )
   return 0;
 }
 
+#endif
 
 extern int luaB_dofile (lua_State *L);
 
@@ -712,9 +764,8 @@ const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("clock"),    LFUNCVAL(os_clock)},
   {LSTRKEY("date"),     LFUNCVAL(os_date)},
   {LSTRKEY("difftime"), LFUNCVAL(os_difftime)},
-  {LSTRKEY("execute"), LFUNCVAL(luaB_dofile)},
-  //{LSTRKEY("execute"),LFUNCVAL(os_execute)},
-  {LSTRKEY("exit"),   LFUNCVAL(os_exit)},
+  {LSTRKEY("execute"),  LFUNCVAL(luaB_dofile)},
+  {LSTRKEY("exit"),     LFUNCVAL(os_exit)},
   //{LSTRKEY("getenv"), LFUNCVAL(os_getenv)},
   {LSTRKEY("remove"),   LFUNCVAL(os_remove)},
   {LSTRKEY("rename"),   LFUNCVAL(os_rename)},
@@ -725,15 +776,18 @@ const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("time"),     LFUNCVAL(os_time)},
   {LSTRKEY("list"),     LFUNCVAL(os_listfiles)},
   //{LSTRKEY("tmpname"),   LFUNCVAL(os_tmpname)},
-  //{LSTRKEY("wdtstart"), LFUNCVAL(os_wdtstart)},
-  //{LSTRKEY("wdtstop"),  LFUNCVAL(os_wdtstop)},
-  //{LSTRKEY("wdtreset"), LFUNCVAL(os_wdtreset)},
   {LSTRKEY("retarget"), LFUNCVAL(os_retarget)},
-  {LSTRKEY("getchar"), LFUNCVAL(os_getchar)},
-  {LSTRKEY("getstring"), LFUNCVAL(os_getstring)},
-  {LSTRKEY("putchar"), LFUNCVAL(os_putchar)},
-  {LSTRKEY("yrecv"), LFUNCVAL(file_recv)},
-  {LSTRKEY("ysend"), LFUNCVAL(file_send)},
+  {LSTRKEY("getchar"),  LFUNCVAL(os_getchar)},
+  {LSTRKEY("getstring"),LFUNCVAL(os_getstring)},
+  {LSTRKEY("putchar"),  LFUNCVAL(os_putchar)},
+  {LSTRKEY("ledblink"), LFUNCVAL(os_ledblink)},
+  {LSTRKEY("wkupint"),  LFUNCVAL(os_wakeup_int)},
+  {LSTRKEY("noacttime"),LFUNCVAL(os_noact_time)},
+  {LSTRKEY("usb"),      LFUNCVAL(os_usb)},
+#if defined USE_YMODEM
+  {LSTRKEY("yrecv"),    LFUNCVAL(file_recv)},
+  {LSTRKEY("ysend"),    LFUNCVAL(file_send)},
+#endif
   {LNILKEY, LNILVAL}
 };
 

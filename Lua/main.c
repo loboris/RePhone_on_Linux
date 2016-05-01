@@ -33,7 +33,7 @@ extern int luaopen_audio(lua_State *L);
 extern int luaopen_gsm(lua_State *L);
 extern int luaopen_timer(lua_State *L);
 extern int luaopen_gpio(lua_State *L);
-extern int luaopen_screen(lua_State *L);
+//extern int luaopen_screen(lua_State *L);
 extern int luaopen_i2c(lua_State *L);
 extern int luaopen_tcp(lua_State* L);
 extern int luaopen_https(lua_State* L);
@@ -43,18 +43,25 @@ extern int luaopen_sensor(lua_State* L);
 extern int luaopen_cjson(lua_State *l);
 extern int luaopen_hash_md5(lua_State *L);
 extern int luaopen_hash_sha1(lua_State *L);
+extern int luaopen_hash_sha2(lua_State *L);
 
 
+#define REDLED               17
+#define GREENLED             15
+#define BLUELED              12
 #define SYS_TIMER_INTERVAL   22		// ticks, 0.10153 seconds
 #define MAX_WDT_RESET_COUNT 145		// max run time with 50 sec reset = 7250 seconds, ~2 hours
 
+// Global variables
 lua_State *L = NULL;
 int sys_wdt_rst_time = 0;
-int no_input_time = 0;
+int no_activity_time = 0;			// no activity counter
+int max_no_activity_time = 300;	    // time with no activity before shut down in seconds
+int wakeup_interval = 20*60;		// regular wake up interval in seconds
+int led_blink = BLUELED;			// led blinking during session, set to 0 for no led blink
 int sys_wdt_time = 0;
-int wakeup_interval = 20*60;		// in seconds
-int led_blink = 1;
 
+// Local variables
 static int sys_wdt_tmo = 13001;		// in ticks, 13001 = 59.999615 seconds
 static int sys_wdt_rst = 10834;		// time at which wdt is reset in ticks, 10834 = 49.99891 seconds
 static int sys_wdt_rst_count = 0;
@@ -62,7 +69,6 @@ static VM_TIMER_ID_NON_PRECISE wdg_timer_id = NULL;
 static int sys_timer_tick = 0;
 static VM_WDT_HANDLE wdg_handle = -1;
 static int do_wdt_reset = 0;
-static int max_no_input_time = 300;	// time with no input before shut down (seconds)
 
 
 //--------------------------
@@ -83,8 +89,6 @@ static void key_init(void) {
 //---------------------------------------------
 static void sys_timer_callback(void* user_data)
 {
-    VM_DCL_HANDLE ghandle;
-
 	sys_wdt_rst_time += SYS_TIMER_INTERVAL;
 	sys_wdt_time += SYS_TIMER_INTERVAL;
 
@@ -97,10 +101,11 @@ static void sys_timer_callback(void* user_data)
 		return;
 	}
 
-	if (led_blink) {
+	if ((led_blink == BLUELED) || (led_blink == REDLED) || (led_blink == GREENLED)) {
+	    VM_DCL_HANDLE ghandle;
 		sys_timer_tick += SYS_TIMER_INTERVAL;
 		if (sys_timer_tick > (SYS_TIMER_INTERVAL*10)) sys_timer_tick = 0;
-		gpio_get_handle(12, &ghandle);
+		gpio_get_handle(led_blink, &ghandle);
 		if (sys_timer_tick == 0) vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
 		else if (sys_timer_tick == SYS_TIMER_INTERVAL) vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 	}
@@ -111,8 +116,12 @@ static void sys_timer_callback(void* user_data)
 void _reset_wdg(void)
 {
 	if (do_wdt_reset > 0) {
+		/* ***********************************************************************
+		   ** There is a bug in "vm_wdt_reset", we can only reset wdt 149 times **
+		   ** If wdt is reset more then max reset count, we MUST REBOOT!        **
+		   ***********************************************************************/
 		if (sys_wdt_rst_count > MAX_WDT_RESET_COUNT) {
-			vm_log_debug("[SYSTMR] WDT RESETS, REBOOT");
+			vm_log_debug("[SYSTMR] WDT MAX RESETS, REBOOT");
 			vm_pwr_reboot();
 		}
 		vm_wdt_reset(wdg_handle);
@@ -123,6 +132,8 @@ void _reset_wdg(void)
 
 //------------------------------
 void _scheduled_startup (void) {
+  if (wakeup_interval <= 0) return;
+
   vm_date_time_t start_time;
   VMUINT rtct;
   unsigned long nextt;
@@ -145,7 +156,7 @@ void _scheduled_startup (void) {
   start_time.year = time_now->tm_year + 1900;
 
   vm_pwr_scheduled_startup(&start_time, VM_PWR_STARTUP_ENABLE_CHECK_HMS);
-  vm_log_debug("[SYSTMR] WAKE UP scheduled at %s", asctime(time_now));
+  //vm_log_debug("[SYSTMR] WAKE UP scheduled at %s", asctime(time_now));
 }
 
 // system timer callback
@@ -154,11 +165,13 @@ void _scheduled_startup (void) {
 static void wdg_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 {
 	_reset_wdg();
-	if (no_input_time > max_no_input_time) {
-		no_input_time = 0;
-		VM_USB_CABLE_STATUS usb_stat = vm_usb_get_cable_status();
-		_scheduled_startup();
-		if (usb_stat == 0) vm_pwr_shutdown(778);
+	if (no_activity_time > max_no_activity_time) {
+		no_activity_time = 0;
+		if (wakeup_interval > 0) {
+			VM_USB_CABLE_STATUS usb_stat = vm_usb_get_cable_status();
+			_scheduled_startup();
+			if (usb_stat == 0) vm_pwr_shutdown(778);
+		}
 	}
 }
 
@@ -185,22 +198,22 @@ static int msleep_c(lua_State *L)
     return 0;
 }
 
-//--------------------------
-static void _led_setup(void)
+//-------------------------
+static void _led_init(void)
 {
     VM_DCL_HANDLE ghandle;
 
-    gpio_get_handle(15, &ghandle); // Green LED
+    gpio_get_handle(GREENLED, &ghandle); // Green LED
     vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
     vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
     vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 
-    gpio_get_handle(12, &ghandle); // Blue LED
+    gpio_get_handle(BLUELED, &ghandle); // Blue LED
     vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
     vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
-    vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+    vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 
-    gpio_get_handle(17, &ghandle); // Red LED
+    gpio_get_handle(REDLED, &ghandle); // Red LED
     vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
     vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
     vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
@@ -215,20 +228,22 @@ static void lua_setup()
     lua_gc(L, LUA_GCSTOP, 0);  /* stop collector during initialization */
     luaL_openlibs(L);  /* open libraries */
 
+    // ** If not needed, comment any of the fallowing "luaopen..."
     luaopen_audio(L);
     luaopen_gsm(L);
     luaopen_timer(L);
     luaopen_gpio(L);
-    luaopen_screen(L);
+    //luaopen_screen(L);
     luaopen_i2c(L);
     luaopen_tcp(L);
     luaopen_https(L);
     luaopen_gprs(L);
-    luaopen_struct(L);
     luaopen_sensor(L);
+    luaopen_struct(L);
     luaopen_cjson(L);
     luaopen_hash_md5(L);
     luaopen_hash_sha1(L);
+    luaopen_hash_sha2(L);
 
     lua_register(L, "msleep", msleep_c);
 
@@ -298,7 +313,7 @@ static void handle_sysevt(VMINT message, VMINT param)
 /****************/
 void vm_main(void)
 {
-	_led_setup();
+	_led_init();
 
 	VM_TIMER_ID_HISR sys_timer_id = vm_timer_create_hisr("WDGTMR");
     vm_timer_set_hisr(sys_timer_id, sys_timer_callback, NULL, SYS_TIMER_INTERVAL, SYS_TIMER_INTERVAL);

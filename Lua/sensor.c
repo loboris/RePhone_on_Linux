@@ -3,6 +3,8 @@
  * ONEWIRE adapted by LoBo from TM_ONEWIRE (author  Tilen Majerle)
  */
 
+#include <string.h>
+
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
@@ -10,6 +12,7 @@
 
 #include "vmdcl.h"
 #include "vmdcl_gpio.h"
+#include "vmdcl_eint.h"
 #include "vmdatetime.h"
 #include "vmthread.h"
 
@@ -93,84 +96,121 @@ extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
 extern int sys_wdt_rst_time;
 extern void _reset_wdg(void);
 
-VM_DCL_HANDLE handle_DHT11 = -1;
-int DHT11_22 = 0;
-
 
 //******************
 // ONEWIRE FUNCTIONS
 //******************
 
-//--------------------------------------------------------------------------
-static unsigned char OW_OUT_SetWait(unsigned char hilo, unsigned char testbit, unsigned int dly) {
-  int i, j;
-  int bitval = 1;
-  VM_TIME_UST_COUNT tstart;
-  vm_dcl_gpio_control_level_status_t data;
-  
-  /* set line low or high, and wait dly us */
-  if (hilo==0) {
-    vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
-    vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
-  }
-  else {
-    vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
-  	vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
-    /* wait 5 usek after releasing the line */
-  	tstart = vm_time_ust_get_count();
-	while (vm_time_ust_get_duration(tstart, vm_time_ust_get_count()) < 5) { }
-  }
-  
-  tstart = vm_time_ust_get_count();
-  while (vm_time_ust_get_duration(tstart, vm_time_ust_get_count()) < dly) {
-    if (testbit && bitval) {
-      vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_READ, &data);
-      if (data.level_status == 0 ) {
-        bitval = 0;
-      }
-    }
-  }
-  return bitval;
-}
-
 //---------------------------------
 static unsigned char TM_OneWire_Reset() {
-  unsigned char i;
+	unsigned char bit = 1;
+	int i;
+    vm_dcl_gpio_control_level_status_t data;
 
-  // Line low, and wait 480us minimum
-  OW_OUT_SetWait(0, 0, 480);
-  /* Release line and wait for 480us minimum*/
-  i = OW_OUT_SetWait(1, 1, 480);
-  // Return value of presence pulse, 0 = OK, 1 = ERROR
-  return i;
+    VMUINT32 imask = vm_irq_mask();
+	i = 330;
+	// Set line low and wait ~500 us
+	vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+	while (i > 0) {
+		vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+		i--;
+	}
+
+	// Release the line and wait 500 us for line value
+	i = 330;
+	vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+	vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+    vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_READ, &data);
+    vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_READ, &data);
+	while (i > 0) {
+	    vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_READ, &data);
+	    if (data.level_status == 0) {
+	    	bit = 0;
+	    	break;
+	    }
+	    i--;
+	}
+	if (bit == 0) {
+		// wait up to 500 us
+		while (i > 0) {
+		  	vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+			i--;
+		}
+	}
+	vm_irq_restore(imask);
+    // Return value of presence pulse, 0 = OK, 1 = ERROR
+    return bit;
 }
 
-//--------------------------------------------
+// DS1820 WRITE slot
+//--------------------------------------------------
 static void TM_OneWire_WriteBit(unsigned char bit) {
+  int i = 0;
+  VMUINT32 imask = vm_irq_mask();
   if (bit) {
-    /* Set line low */
-    OW_OUT_SetWait(0, 0, 8);
-    /* Bit high */
-    /* release the line and Wait for 60 us */
-    OW_OUT_SetWait(1, 0, 60);
-  } else {
-    /* Set line low */
-    /* Bit low */
-    OW_OUT_SetWait(0, 0, 65);
-    /* release the line and Wait for 5 us */
-    OW_OUT_SetWait(1, 0, 5);
+	// ** Bit high
+	// Set line low and wait 8 us
+	vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+	vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+
+	// Release the line and wait ~65 us
+	i = 45;
+    vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+	while (i > 0) {
+	  	vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+		i--;
+	}
   }
+  else {
+    // ** Bit low
+	i = 45;
+	// Set line low and wait ~65 us
+    vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+	while (i > 0) {
+		vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+		i--;
+	}
+    // Release the line and wait 5 us
+    vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+  	vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+  	vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+  }
+  vm_irq_restore(imask);
 }
 
-//-----------------------------------
+// DS1820 READ slot
+//-----------------------------------------
 static unsigned char TM_OneWire_ReadBit() {
-  unsigned char bit = 0;
+  unsigned char bit = 1;
+  vm_dcl_gpio_control_level_status_t data;
+  int i = 0;
 
-  /* Line low */
-  OW_OUT_SetWait(0, 0, 3);
-  /* Release line and wait for line value */
-  bit = OW_OUT_SetWait(1, 1, 60);
-  /* Return bit value */
+  VMUINT32 imask = vm_irq_mask();
+  // Set line low and wait 3 us
+  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+
+  // Release the line and wait ~65 us for line value
+  i = 40;
+  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+  while (i > 0) {
+      vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_READ, &data);
+      if (data.level_status == 0) {
+    	  bit = 0;
+    	  break;
+      }
+	  i--;
+  }
+  if (bit == 0) {
+	// wait up to 65 us
+	while (i > 0) {
+	  	vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+		i--;
+	}
+  }
+  vm_irq_restore(imask);
+  // Return bit value
   return bit;
 }
 
@@ -849,196 +889,6 @@ static unsigned char TM_DS18B20_AllDone() {
 */
 
 
-//****************
-// dht11 functions
-//****************
-
-//--------------------------------------------------------
-static unsigned char DHT_IN_Length(unsigned char hilo, unsigned int dly) {
-  unsigned int bitlen = 0;
-  vm_dcl_gpio_control_level_status_t data;
-  VM_TIME_UST_COUNT tstart, tend;
-  
-  bitlen = 0;
-  tstart = vm_time_ust_get_count();
-  tend = tstart;
-  if (hilo) { // === measure high state length ===
-    while (vm_time_ust_get_duration(tstart, tend) <= dly) {
-   	  tend = vm_time_ust_get_count();
-      if (bitlen == 0) { // wait for high pulse start
-        vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_READ, &data);
-        if (data.level_status != 0 ) {
-          bitlen = 1;
-          tstart = vm_time_ust_get_count();
-          tend = tstart;
-        }
-      }
-      else { // wait for low (high pulse end)
-        vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_READ, &data);
-        if (data.level_status == 0 ) {
-          bitlen = tend;
-          break;
-        }
-      }
-    }
-  }
-  else { // === measure low state length ===
-    while (vm_time_ust_get_duration(tstart, tend) <= dly) {
-	  tend = vm_time_ust_get_count();
-      if (bitlen == 0) { // wait for low pulse start
-          vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_READ, &data);
-          if (data.level_status == 0 ) {
-            bitlen = 1;
-            tstart = vm_time_ust_get_count();
-            tend = tstart;
-          }
-      }
-      else {
-        // wait for high (low pulse end)
-        vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_READ, &data);
-        if (data.level_status != 0 ) {
-          bitlen = tend;
-          break;
-        }
-      }
-    }
-  }
-  if (bitlen == 1) return 0;
-  
-  return bitlen; // return pulse length in usec
-}
-
-//-------------------------------------------------------
-static void DHT_OUT_SetWait(unsigned char hilo, unsigned int dly) {
-  VM_TIME_UST_COUNT tstart;
-  
-  if (hilo==0) {
-    vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
-    vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
-  }
-  else {
-    vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
-  	vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
-  }
-
-  tstart = vm_time_ust_get_count();
-  while (vm_time_ust_get_duration(tstart, vm_time_ust_get_count()) < dly) { }
-}
-
-//------------------------------
-static unsigned char DHT11_Check(void)
-{   
-  unsigned char len = 0;
-
-  // send reset pulse  
-  DHT_OUT_SetWait(0,10);  // data=0, wait 10 usec
-  vm_thread_sleep(20);	  // wait 20 msec
-  DHT_OUT_SetWait(1,1);   // data=1, wait 1 usec
-  // data line is now input
-
-  // 20~40us HIGH -> ~80us LOW -> ~80 us HIGH)
-  // measure DHT11 Pull down pulse
-  len = DHT_IN_Length(0, 100);
-  if ((len < 40) || (len >= 100)) return 1;
-  // measure DHT11 Pull up pulse (~80us)
-  len = DHT_IN_Length(1, 100);
-  if ((len < 40) || (len >= 100)) return 1;
-  return 0;  // OK
-}
-
-//===========================================
-static int lsensor_dht11_init( lua_State* L )
-{
-  unsigned pin=0;
-  pin = luaL_checkinteger( L, 1 );
-  gpio_get_handle(pin, &handle_DHT11);
-  DHT11_22 = 0;
-  
-  if (lua_gettop(L) > 1) {
-    DHT11_22 = luaL_checkinteger( L, 2 );
-  }
-  
-  // set data high (pull up input)
-  DHT_OUT_SetWait(1,40);  // data=1, wait 40 usec
-  vm_thread_sleep(50);
-  
-  if(DHT11_Check()==0)
-    lua_pushinteger(L, 1);
-  else
-     lua_pushinteger(L, 0);
-  return 1;
-}
-
-//==========================================
-static int lsensor_dht11_get( lua_State* L )
-{
-  if (handle_DHT11 < 0) {
-    l_message( NULL, "init DHT11 first" );
-    lua_pushinteger(L, 0);
-    lua_pushinteger(L, 0);
-    lua_pushinteger(L, 4);
-    return 3;
-  }
-  
-  unsigned char i,j,dat,len,stat;
-  unsigned char buf[5];
-  unsigned int csum;
-  int t, h;
-  
-  t = 0;
-  h = 0;
-  stat = 0;
-  if(DHT11_Check()==0)
-  {
-    // Read bytes
-    for (j=0;j<5;j++) {
-      dat=0;
-      for (i=0;i<8;i++) 
-      {
-        dat<<=1; // next bit
-        // read bit:
-        // bit=0:  50 us LOW -> 26~28 us HIGH
-        // bit=1:  50 us LOW ->    70 us HIGH
-        
-        // wait & measure data bit length 
-        len = DHT_IN_Length(1, 15000);
-        if ((len < 10) || (len >= 90)) {
-          stat = 1;
-          break;
-        }
-        if (len > 40 ) dat |= 1;
-      }
-      if (stat) break;
-      buf[j] = dat;  // save byte
-    }
-    
-    if (stat == 0) {
-      csum = (buf[0]+buf[1]+buf[2]+buf[3]) & 0xFF;
-      if ( csum != buf[4]) stat = 2;
-    }
-  }
-  else {
-    stat = 3;
-  }
-
-  if (stat == 0) {
-    if (DHT11_22) { // DHT22
-      h = (buf[0]<<8) | buf[1];
-      if (buf[2] & 0x80) t = (((buf[2]&0x7f)<<8) | buf[3]) * -1;
-      else t = (buf[2]<<8) | buf[3];
-    }
-    else { // DHT11
-      h = buf[0];
-      if (buf[2] & 0x80) t = (buf[2]&0x7f) * -1;
-      else t = buf[2];
-    }
-  }
-  lua_pushinteger(L, t);
-  lua_pushinteger(L, h);
-  lua_pushinteger(L, stat);
-  return 3;
-}
-
 //----------------------------
 unsigned char check_dev(unsigned char n) {
   if (((ow_numdev == 0)) || (n == 0) || (n > ow_numdev)) {
@@ -1247,7 +1097,13 @@ static int lsensor_ow_init( lua_State* L )
   
   pin = luaL_checkinteger( L, 1 );
   pin = luaL_checkinteger( L, 1 );
-  gpio_get_handle(pin, &OW_DEVICE.handle);
+  if (gpio_get_handle(pin, &OW_DEVICE.handle) == VM_DCL_HANDLE_INVALID) {
+      return luaL_error(L, "invalid pin handle");
+  }
+
+  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
+  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
 
   vm_thread_sleep(2);
   
@@ -1303,6 +1159,247 @@ static int lsensor_ow_search( lua_State* L )
   return 1;
 }
 
+
+// =====================
+// DHT11/DHT22 functions
+// =====================
+
+#define MAX_BIT_WAIT_TIME 100
+
+//--------------------------
+static int _dht11_read(unsigned char *dhtdata, VM_DCL_HANDLE handle)
+{
+    vm_dcl_gpio_control_level_status_t data;
+	VMUINT8  state = 1;
+	int      start_time;
+	int      min_time = 9000;
+	int      max_time = 0;
+	VMUINT8  data_idx = 0;
+	VMUINT8  bit_no = 0;
+
+    int err = 0;
+
+    VMUINT32 imask = vm_irq_mask();
+    while (err == 0) {
+	    switch (state) {
+        	case 1:  // wait dht first pulse
+				start_time = 0;
+				// --- wait for low state, response to start signal
+				while (start_time < MAX_BIT_WAIT_TIME) {
+					vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_READ, &data);
+					if (data.level_status == 0 ) break;
+					start_time++;
+				}
+				if (start_time >= MAX_BIT_WAIT_TIME ) {
+					err = -1; // no start pulse low
+					continue;
+				}
+				state = 2;
+				data_idx = 0;
+				bit_no = 0;
+				start_time = 0;
+				// --- wait for high state, end of response signal
+				while (start_time < MAX_BIT_WAIT_TIME) {
+					vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_READ, &data);
+					if (data.level_status == 1 ) break;
+					start_time++;
+				}
+				if (start_time >= MAX_BIT_WAIT_TIME ) {
+					err = -2; // no start pulse high
+					continue;
+				}
+				start_time = 0;
+				// --- wait for low state, start of transmision, first bit of the firs byte
+				while (start_time < MAX_BIT_WAIT_TIME) {
+					vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_READ, &data);
+					if (data.level_status == 0 ) break;
+					start_time++;
+				}
+				if (start_time >= MAX_BIT_WAIT_TIME ) {
+					err = -3; // no start of transmision
+					continue;
+				}
+        		break;
+        	case 2:  // dht read data
+				start_time = 0;
+				// --- wait for high state, bit value
+				while (start_time < MAX_BIT_WAIT_TIME) {
+					vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_READ, &data);
+					if (data.level_status == 1 ) break;
+					start_time++;
+				}
+				if (start_time >= MAX_BIT_WAIT_TIME ) {
+					err = -4; // no bit pulse high
+					continue;
+				}
+				start_time = 0;
+				// wait for low state, measure bit time
+				while (start_time < MAX_BIT_WAIT_TIME) {
+					vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_READ, &data);
+					if (data.level_status == 0 ) break;
+					start_time++;
+				}
+				if (start_time >= MAX_BIT_WAIT_TIME ) {
+					err = -5; // no bit pulse low
+					continue;
+				}
+				if (start_time > max_time) max_time = start_time;
+				if (start_time < min_time) min_time = start_time;
+
+				dhtdata[data_idx] <<= 1;
+				if (start_time > 35 ) {
+					dhtdata[data_idx] |= 1;
+				}
+				bit_no++;          // next bit
+				if (bit_no > 7) {  // next byte
+					bit_no = 0;
+					data_idx++;
+					if (data_idx > 4) state = 3;
+					else dhtdata[data_idx] = 0;
+				}
+        		break;
+        	case 3:  // dht read last pulse
+				start_time = 0;
+				// wait for high state
+				while (start_time < MAX_BIT_WAIT_TIME) {
+					vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_READ, &data);
+					if (data.level_status == 1 ) break;
+					start_time++;
+				}
+				if (start_time >= MAX_BIT_WAIT_TIME ) {
+					err = -6; // no end pulse high
+					continue;
+				}
+				err = 1;
+				break;
+        	default:
+				err = -7;
+				continue;
+		}
+	}
+    vm_irq_restore(imask);
+    printf("state=%d idx=%d bit=%d min=%d max=%d\n", state, data_idx, bit_no, min_time, max_time);
+    if (data_idx > 0) {
+  	  for (int i=0; i<5; i++) {
+  		  printf(" %d", dhtdata[i]);
+  	  }
+  	  printf("\n");
+    }
+    if (err == 1) err = 0;
+    return err;
+}
+
+//===========================================
+static int lsensor_dht11_get( lua_State* L )
+{
+  VM_DCL_HANDLE handle_DHT11 = -1;
+  int DHT11_22 = 0;
+  int pin=0;
+  VMUINT8 dht_data[5];
+
+  pin = luaL_checkinteger( L, 1 );
+  if (gpio_get_handle(pin, &handle_DHT11) == VM_DCL_HANDLE_INVALID) {
+      return luaL_error(L, "invalid pin handle");
+  }
+
+  if (lua_gettop(L) > 1) {
+    DHT11_22 = luaL_checkinteger( L, 2 );
+  }
+
+  memset(dht_data, 0x00, 5);
+  // send 25 msec reset pulse
+  vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
+  vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+  vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+  vm_thread_sleep(25);
+  vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+  vm_dcl_control(handle_DHT11, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+
+  // read data
+  int t=0, h=0;
+  int stat = _dht11_read(dht_data, handle_DHT11);
+
+  if (stat == 0) {
+	  unsigned int csum;
+	  csum = dht_data[0] + dht_data[1] + dht_data[2] + dht_data[3];
+
+	  if (csum == dht_data[4]) {
+		  if (DHT11_22) { // DHT22
+			h = (dht_data[0]<<8) | dht_data[1];
+			if (dht_data[2] & 0x80) t = (((dht_data[2]&0x7f)<<8) | dht_data[3]) * -1;
+			else t = (dht_data[2]<<8) | dht_data[3];
+		  }
+		  else { // DHT11
+			h = dht_data[0];
+			if (dht_data[2] & 0x80) t = (dht_data[2]&0x7f) * -1;
+			else t = dht_data[2];
+		  }
+	  }
+	  else csum = -9;
+  }
+  lua_pushinteger(L, t);
+  lua_pushinteger(L, h);
+  lua_pushinteger(L, stat);
+  return 3;
+}
+
+
+//=====================================
+static int lsensor_test( lua_State* L )
+{
+  VM_DCL_HANDLE handle = -1;
+  VMUINT32 imask;
+  int i, j;
+  unsigned char bit;
+  vm_dcl_gpio_control_level_status_t data;
+
+  int pin = luaL_checkinteger( L, 1 );
+  int tmo = luaL_checkinteger( L, 2 );
+  int tmo1 = luaL_checkinteger( L, 3 );
+
+  if (gpio_get_handle(pin, &handle) == VM_DCL_HANDLE_INVALID) {
+      return luaL_error(L, "invalid pin handle");
+  }
+
+  vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
+
+  VM_TIME_UST_COUNT startt = vm_time_ust_get_count();
+  vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+  lua_pushinteger(L, vm_time_ust_get_duration(startt, vm_time_ust_get_count()));
+
+  i = tmo;
+  startt = vm_time_ust_get_count();
+  //imask = vm_irq_mask();
+  while (i > 0) {
+	  vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+	i--;
+  }
+  //vm_irq_restore(imask);
+  lua_pushinteger(L, vm_time_ust_get_duration(startt, vm_time_ust_get_count()));
+
+  startt = vm_time_ust_get_count();
+  vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+  vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+  lua_pushinteger(L, vm_time_ust_get_duration(startt, vm_time_ust_get_count()));
+
+  i = tmo1;
+  startt = vm_time_ust_get_count();
+  //imask = vm_irq_mask();
+  while (i > 0) {
+		vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_READ, &data);
+		if (data.level_status == 0) {
+			bit = 0;
+		}
+		i--;
+  }
+  //vm_irq_restore(imask);
+  lua_pushinteger(L, vm_time_ust_get_duration(startt, vm_time_ust_get_count()));
+  return 4;
+}
+
+
+
+
 #define MOD_REG_NUMBER(L, name, value) \
     lua_pushnumber(L, value);          \
     lua_setfield(L, -2, name)
@@ -1312,18 +1409,18 @@ static int lsensor_ow_search( lua_State* L )
 #include "lrodefs.h"
 static const LUA_REG_TYPE sensor_map[] =
 {
-  { LSTRKEY( "dht_init" ), LFUNCVAL ( lsensor_dht11_init ) },
-  { LSTRKEY( "dht_get" ),  LFUNCVAL ( lsensor_dht11_get ) },
+  { LSTRKEY( "test" ),       LFUNCVAL(lsensor_test) },
+  { LSTRKEY( "dht_get" ),    LFUNCVAL(lsensor_dht11_get ) },
   { LSTRKEY( "ds_init" ),    LFUNCVAL(lsensor_ow_init ) },
   { LSTRKEY( "ds_gettemp" ), LFUNCVAL(lsensor_18b20_gettemp ) },
-  { LSTRKEY( "ds_get" ),  LFUNCVAL(lsensor_18b20_get ) },
+  { LSTRKEY( "ds_get" ),     LFUNCVAL(lsensor_18b20_get ) },
   { LSTRKEY( "ds_startm" ),  LFUNCVAL(lsensor_18b20_startm ) },
   { LSTRKEY( "ds_search" ),  LFUNCVAL(lsensor_18b20_search ) },
   { LSTRKEY( "ds_getres" ),  LFUNCVAL(lsensor_18b20_getres ) },
   { LSTRKEY( "ds_setres" ),  LFUNCVAL(lsensor_18b20_setres ) },
   { LSTRKEY( "ds_getrom" ),  LFUNCVAL(lsensor_ow_getrom ) },
-  { LSTRKEY( "ow_init" ),   LFUNCVAL(lsensor_ow_init ) },
-  { LSTRKEY( "ow_search" ), LFUNCVAL(lsensor_ow_search ) },
+  { LSTRKEY( "ow_init" ),    LFUNCVAL(lsensor_ow_init ) },
+  { LSTRKEY( "ow_search" ),  LFUNCVAL(lsensor_ow_search ) },
 #if LUA_OPTIMIZE_MEMORY > 0
   { LSTRKEY( "DS18B20_RES9" ),  LNUMVAL( TM_DS18B20_Resolution_9bits ) },
   { LSTRKEY( "DS18B20_RES10" ), LNUMVAL( TM_DS18B20_Resolution_10bits ) },

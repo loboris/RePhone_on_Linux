@@ -27,7 +27,7 @@ static unsigned retarget_rx_buffer_tail = 0;
 static VM_SIGNAL_ID retarget_rx_signal_id;
 
 extern int sys_wdt_rst_time;
-extern int no_input_time;
+extern int no_activity_time;
 extern void _reset_wdg(void);
 
 //-------------------------
@@ -60,13 +60,13 @@ int retarget_getc(void)
 	vm_mutex_lock(&retarget_rx_mutex);
 	while (retarget_rx_buffer_head == retarget_rx_buffer_tail) {
 		vm_mutex_unlock(&retarget_rx_mutex);
-		// wait for character
+		// wait 1 second for character
 		vm_signal_timed_wait(retarget_rx_signal_id, 1000);
 
 		vm_mutex_lock(&retarget_rx_mutex);
 		if (retarget_rx_buffer_head == retarget_rx_buffer_tail) {
 			sys_wdt_rst_time = 0;	// wdg reset
-			no_input_time++;		// increase no input counter
+			no_activity_time++;		// increase no activity counter
 		}
 		else break;
 	}
@@ -76,7 +76,7 @@ int retarget_getc(void)
 
 	vm_mutex_unlock(&retarget_rx_mutex);
 	sys_wdt_rst_time = 0;  // wdg reset
-	no_input_time = 0;
+	no_activity_time = 0;
 	return ch;
 }
 
