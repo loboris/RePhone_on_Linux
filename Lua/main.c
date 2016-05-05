@@ -26,14 +26,16 @@
 #include "lualib.h"
 #include "lauxlib.h"
 
+//#define USE_SCREEN_MODULE
+
 // used external functions
 extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
 extern void retarget_setup();
 extern int luaopen_audio(lua_State *L);
 extern int luaopen_gsm(lua_State *L);
+extern int luaopen_bt(lua_State *L);
 extern int luaopen_timer(lua_State *L);
 extern int luaopen_gpio(lua_State *L);
-//extern int luaopen_screen(lua_State *L);
 extern int luaopen_i2c(lua_State *L);
 extern int luaopen_tcp(lua_State* L);
 extern int luaopen_https(lua_State* L);
@@ -44,6 +46,9 @@ extern int luaopen_cjson(lua_State *l);
 extern int luaopen_hash_md5(lua_State *L);
 extern int luaopen_hash_sha1(lua_State *L);
 extern int luaopen_hash_sha2(lua_State *L);
+#if defined USE_SCREEN_MODULE
+extern int luaopen_screen(lua_State *L);
+#endif
 
 
 #define REDLED               17
@@ -60,15 +65,19 @@ int max_no_activity_time = 300;	    // time with no activity before shut down in
 int wakeup_interval = 20*60;		// regular wake up interval in seconds
 int led_blink = BLUELED;			// led blinking during session, set to 0 for no led blink
 int sys_wdt_time = 0;
+int wdg_reboot_cb = LUA_NOREF;		// Lua callback function called before reboot
+int shutdown_cb = LUA_NOREF;		// Lua callback function called before shutdown
+
 
 // Local variables
 static int sys_wdt_tmo = 13001;		// in ticks, 13001 = 59.999615 seconds
 static int sys_wdt_rst = 10834;		// time at which wdt is reset in ticks, 10834 = 49.99891 seconds
-static int sys_wdt_rst_count = 0;
-static VM_TIMER_ID_NON_PRECISE wdg_timer_id = NULL;
-static int sys_timer_tick = 0;
+static int sys_wdt_rst_count = 0;	// watchdog resets counter
+static int sys_timer_tick = 0;		// used for timing inside HISR timer callback function
+static int do_wdt_reset = 0;		// used for communication between HISR timer and wdg system timer
+
 static VM_WDT_HANDLE wdg_handle = -1;
-static int do_wdt_reset = 0;
+static VM_TIMER_ID_NON_PRECISE wdg_timer_id = NULL;
 
 
 //--------------------------
@@ -122,6 +131,16 @@ void _reset_wdg(void)
 		   ***********************************************************************/
 		if (sys_wdt_rst_count > MAX_WDT_RESET_COUNT) {
 			vm_log_debug("[SYSTMR] WDT MAX RESETS, REBOOT");
+			if (wdg_reboot_cb != LUA_NOREF) {
+				// execute callback function
+			    lua_rawgeti(L, LUA_REGISTRYINDEX, wdg_reboot_cb);
+				if ((lua_type(L, -1) == LUA_TFUNCTION) || (lua_type(L, -1) == LUA_TLIGHTFUNCTION)) {
+					lua_call(L, 0, 0);
+				}
+				else {
+					lua_remove(L, -1);
+				}
+			}
 			vm_pwr_reboot();
 		}
 		vm_wdt_reset(wdg_handle);
@@ -166,6 +185,18 @@ static void wdg_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data
 {
 	_reset_wdg();
 	if (no_activity_time > max_no_activity_time) {
+		if ((wakeup_interval > 0) && (shutdown_cb != LUA_NOREF)) {
+			// execute callback function
+		    lua_rawgeti(L, LUA_REGISTRYINDEX, shutdown_cb);
+			if ((lua_type(L, -1) == LUA_TFUNCTION) || (lua_type(L, -1) == LUA_TLIGHTFUNCTION)) {
+				lua_call(L, 0, 0);
+			}
+			else {
+				lua_remove(L, -1);
+			}
+			// Check again
+			if (no_activity_time <= max_no_activity_time) return;
+		}
 		no_activity_time = 0;
 		if (wakeup_interval > 0) {
 			VM_USB_CABLE_STATUS usb_stat = vm_usb_get_cable_status();
@@ -231,9 +262,12 @@ static void lua_setup()
     // ** If not needed, comment any of the fallowing "luaopen..."
     luaopen_audio(L);
     luaopen_gsm(L);
+    luaopen_bt(L);
     luaopen_timer(L);
     luaopen_gpio(L);
-    //luaopen_screen(L);
+	#if defined USE_SCREEN_MODULE
+    luaopen_screen(L);
+	#endif
     luaopen_i2c(L);
     luaopen_tcp(L);
     luaopen_https(L);

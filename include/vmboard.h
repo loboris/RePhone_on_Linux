@@ -78,6 +78,7 @@ typedef enum
 #define VM_PIN_P18  48
 #define VM_PIN_P19  49
 #define VM_PIN_P20  50
+#define VM_PIN_P21  46
 
 
 #ifdef __cplusplus

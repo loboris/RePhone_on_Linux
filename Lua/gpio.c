@@ -4,6 +4,8 @@
 #include "vmdcl.h"
 #include "vmdcl_gpio.h"
 #include "vmdcl_eint.h"
+#include "vmdcl_pwm.h"
+#include "vmdcl_adc.h"
 #include "vmfirmware.h"
 #include "vmdatetime.h"
 #include "vmlog.h"
@@ -27,9 +29,11 @@
 #define HIGH              1
 #define LOW               0
 
-#define MAX_EINT_PINS     5
+#define MAX_EINT_PINS     6
+#define MAX_PWM_PINS      2
 
 extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
+extern lua_State *L;
 
 
 typedef struct {
@@ -42,8 +46,6 @@ typedef struct {
 	vm_dcl_eint_control_auto_change_polarity_t	auto_change;
 } gpio_eint_t;
 
-gpio_eint_t gpio_eint_pins[MAX_EINT_PINS];
-
 typedef struct {
 	VMUINT8 autounmask;
 	VMUINT8 sensit;
@@ -53,6 +55,17 @@ typedef struct {
 	int autopol;
 } gpio_eint_config_t;
 
+static gpio_eint_t gpio_eint_pins[MAX_EINT_PINS];
+
+static VM_DCL_HANDLE pwm_handles[MAX_PWM_PINS];
+static VMUINT32 pwm_clk[MAX_PWM_PINS];
+
+static VM_DCL_HANDLE adc_handle;
+static VMUINT32 g_adc_result = 0;
+static VMINT32 g_adc_vresult = -1;
+static int adc_cb_ref= LUA_NOREF;
+static VMINT8 g_adc_new = 0;
+static VMINT8 g_adc_once = 1;
 
 //--------------
 void _delay_us()
@@ -411,6 +424,290 @@ static int gpio_toggle(lua_State* L)
     return 0;
 }
 
+/* Start PWM
+ * gpio.pwm_start(pwm_id)
+ * pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3)
+ */
+//=====================================
+static int gpio_pwm_start(lua_State* L)
+{
+    VM_DCL_PWM_DEVICE dev = VM_DCL_PWM_START;
+    int gpio_pin = -1;
+
+    int pin = luaL_checkinteger(L, 1);
+
+    if (pin == 0) gpio_pin = 13;
+    else if (pin == 1) gpio_pin = 3;
+
+    //set pin mode as PWM
+    int status = vm_dcl_config_pin_mode(gpio_pin,VM_DCL_PIN_MODE_PWM);
+    if (status != VM_DCL_STATUS_OK) {
+        return luaL_error(L, "pin PWM mode error");
+    }
+    // get pin's pwm device for the input of vm_dcl_open
+    dev = PIN2PWM(gpio_pin);
+    pwm_handles[pin] = vm_dcl_open(dev,0);
+
+    int ret = vm_dcl_control(pwm_handles[pin], VM_PWM_CMD_START,0);
+
+    return 0;
+}
+
+/* Set PWM clock source
+ * gpio.pwm_clock(pwm_id, clksrc, div)
+ * pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3)
+ * clksrc: clock source 0 -> 13MHz; 1 -> 32.768 kHz
+ *    div:     division 0->1, 1->2, 2->4, 3->8
+ * !! Main PWM clock (pwm_clk) is 13000000 / div or 32768 / div !!
+ */
+//=====================================
+static int gpio_pwm_clock(lua_State* L)
+{
+    vm_dcl_pwm_set_clock_t clock;
+
+    int pin = luaL_checkinteger(L, 1);
+    int clk = luaL_checkinteger(L, 2);
+    int div = luaL_checkinteger(L, 3);
+    pin &=1;
+    if (pwm_handles[pin] < 0) {
+        return luaL_error(L, "PWM not opened");
+    }
+    clk &= 1;
+    div &= 0x03;
+    clock.source_clock = clk;
+    clock.source_clock_division = div;
+    int ret = vm_dcl_control(pwm_handles[pin],VM_PWM_CMD_SET_CLOCK,(void *)(&clock));
+
+    if (clk == 0) pwm_clk[pin] = 13000000;
+    else pwm_clk[pin] = 32768;
+    pwm_clk[pin] /= (1 << div);
+	return 0;
+}
+
+/* Set PWM in count mode
+ * gpio.pwm_count(pwm_id, count, treshold)
+ *    pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3)
+ *     count: the pwm cycle: 0 ~ 8191
+ *  treshold: value at which pwm gpio goes to LOW state: 0 ~ count
+ *  !! PWM FREQUENCY IS pwm_clk / count !!
+ */
+//=====================================
+static int gpio_pwm_count(lua_State* L)
+{
+    vm_dcl_pwm_set_counter_threshold_t counter;
+
+    int pin = luaL_checkinteger(L, 1);
+    int count = luaL_checkinteger(L, 2);
+    int duty = luaL_checkinteger(L, 3);
+    pin &=1;
+    if (pwm_handles[pin] < 0) {
+        return luaL_error(L, "PWM not opened");
+    }
+    count &= 0x1FFF;
+    duty &= 0x1FFF;
+    if (duty > count) duty = count;
+    counter.counter = count;
+    counter.threshold = duty;
+    int ret = vm_dcl_control(pwm_handles[pin], VM_PWM_CMD_SET_COUNTER_AND_THRESHOLD,(void *)(&counter));
+
+	return 0;
+}
+
+/* Set PWM in frequency mode
+ * gpio.pwm_freq(pwm_id, freq, duty)
+ * pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3)
+ *   freq: the pwm frequency in Hz: 0 ~ pwm_clk
+ *   duty: PWM duty cycle: 0 ~ 100
+ */
+//====================================
+static int gpio_pwm_freq(lua_State* L)
+{
+    vm_dcl_pwm_config_t config;
+
+    int pin = luaL_checkinteger(L, 1);
+    int freq = luaL_checkinteger(L, 2);
+    int duty = luaL_checkinteger(L, 3);
+    pin &=1;
+    if (pwm_handles[pin] < 0) {
+        return luaL_error(L, "PWM not opened");
+    }
+    duty &= 0x007F;
+    if (duty > 100) duty = 100;
+    if (freq > pwm_clk[pin]) freq = pwm_clk[pin];
+    if (freq < 0) freq = 0;
+    config.frequency = freq;
+    config.duty = duty;
+    int ret = vm_dcl_control(pwm_handles[pin], VM_PWM_CMD_CONFIG,(void *)(&config));
+
+	return 0;
+}
+
+/* Stop PWM
+ * gpio.pwm_stop(pwm_id)
+ * pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3)
+ */
+//====================================
+static int gpio_pwm_stop(lua_State* L)
+{
+    int pin = luaL_checkinteger(L, 1);
+    pin &=1;
+    if (pwm_handles[pin] < 0) {
+        return luaL_error(L, "PWM not opened");
+    }
+    int ret = vm_dcl_control(pwm_handles[pin],VM_PWM_CMD_STOP, 0);
+    pwm_handles[pin] = -1;
+
+	return 0;
+}
+
+//--------------------------------------------------------------------------------------
+void adc_callback(void* parameter, VM_DCL_EVENT event, VM_DCL_HANDLE device_handle)
+{
+    vm_dcl_callback_data_t *data;
+    vm_dcl_adc_measure_done_confirm_t * result;
+    VMINT status = 0;
+
+    g_adc_new = 0;
+    if (parameter != NULL) {
+        data = ( vm_dcl_callback_data_t*)parameter;
+        result = (vm_dcl_adc_measure_done_confirm_t *)(data->local_parameters);
+
+        if( result != NULL )
+        {
+            double *p;
+            int *v;
+            p =(double*)&(result->value);
+            g_adc_result = (unsigned int)*p;
+            v =(int*)&(result->volt_value);
+            g_adc_vresult = (int)*v;
+            g_adc_new = 1;
+        }
+    }
+
+    if (g_adc_once) {
+        vm_dcl_adc_control_send_stop_t stop_data;
+        stop_data.owner_id = vm_dcl_get_owner_id();
+    	status = vm_dcl_control(adc_handle,VM_DCL_ADC_COMMAND_SEND_STOP,(void *)&stop_data);
+        vm_dcl_close(adc_handle);
+        adc_handle = -1;
+    }
+
+    if (adc_cb_ref != LUA_NOREF) {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, adc_cb_ref);
+       	lua_pushinteger(L, g_adc_result);
+       	lua_pushnumber(L, (float)g_adc_vresult / 1000000.0);
+        lua_pushinteger(L, g_adc_new);
+        lua_call(L, 3, 0);
+    }
+}
+
+/* Start ADC
+ * gpio.adc_start(channel, [cb_func, period, count, once])
+ * channel: adc channel, 21 -> ADC15 (GPIO1), 22 -> ADC13 (GPIO2), 23 -> GPIO3
+ * cb_func: Lua function to call after result is ready
+ *  period: measurement period in ticks
+ *   count: how many measurement to take before issuing the result, time between measurements is 'period'
+ *    once: 0 -> continuous measurement; 1 -> measure only once
+ *
+ */
+//=====================================
+static int gpio_adc_start(lua_State* L)
+{
+    vm_dcl_adc_control_create_object_t obj_data;
+    vm_dcl_adc_control_send_start_t start_data;
+    VM_DCL_HANDLE handle;
+    VM_DCL_STATUS status;
+    int gpio_pin = -1;
+    int period = 1000;
+    int count = 1;
+    int chan = luaL_checkinteger(L, 1);
+
+    if (adc_handle >= 0) {
+        vm_dcl_adc_control_send_stop_t stop_data;
+        stop_data.owner_id = vm_dcl_get_owner_id();
+    	status = vm_dcl_control(adc_handle,VM_DCL_ADC_COMMAND_SEND_STOP,(void *)&stop_data);
+        vm_dcl_close(adc_handle);
+        adc_handle = -1;
+    }
+    g_adc_once = 1;
+
+    if (chan > 20) {
+    	chan -= 20;
+		if (chan > 3) {
+	        return luaL_error(L, "not pin adc");
+		}
+
+		status = vm_dcl_config_pin_mode(chan, VM_DCL_PIN_MODE_ADC); // Sets the pin to ADC mode
+		if (status != VM_DCL_STATUS_OK) {
+	        return luaL_error(L, "pin ADC mode error");
+		}
+	    chan = PIN2CHANNEL(chan);
+
+    }
+    if (lua_gettop(L) > 1) {
+		if ((lua_type(L, 2) == LUA_TFUNCTION) || (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
+			if (adc_cb_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, adc_cb_ref);
+			lua_pushvalue(L, 2);
+			adc_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+		}
+    }
+    if (lua_gettop(L) > 2) period = luaL_checkinteger(L, 3);
+    if (lua_gettop(L) > 3) count = luaL_checkinteger(L, 4) & 0x00FF;
+    if (lua_gettop(L) > 4) g_adc_once = luaL_checkinteger(L, 5) & 0x0001;
+
+    // Open ANALOG_PIN as ADC device
+    adc_handle = vm_dcl_open(VM_DCL_ADC,0);
+    // register ADC result callback
+    status = vm_dcl_register_callback(adc_handle, VM_DCL_ADC_GET_RESULT ,(vm_dcl_callback)adc_callback, (void *)NULL);
+
+    // Indicate to the ADC module driver to notify the result.
+    obj_data.owner_id = vm_dcl_get_owner_id();
+    // Set physical ADC channel which should be measured.
+    obj_data.channel = chan; //VM_DCL_ADC_VBAT_CHANNEL;
+    // Set measurement period, the unit is in ticks.
+    obj_data.period = period;
+    // Measurement count.
+    obj_data.evaluate_count = count;
+    // Whether to send message to owner module or not.
+    obj_data.send_message_primitive = 1;
+
+    // setup ADC object
+    status = vm_dcl_control(adc_handle,VM_DCL_ADC_COMMAND_CREATE_OBJECT,(void *)&obj_data);
+
+    // start ADC
+    g_adc_result = 0;
+    g_adc_vresult = -1;
+    g_adc_new = 0;
+    start_data.owner_id = vm_dcl_get_owner_id();
+    status = vm_dcl_control(adc_handle,VM_DCL_ADC_COMMAND_SEND_START,(void *)&start_data);
+
+    return 0;
+}
+
+//===================================
+static int gpio_adc_get(lua_State* L)
+{
+	lua_pushinteger(L, g_adc_result);
+	lua_pushnumber(L, (float)g_adc_vresult / 1000000.0);
+    lua_pushinteger(L, g_adc_new);
+    g_adc_new = 0;
+    return 3;
+}
+
+//====================================
+static int gpio_adc_stop(lua_State* L)
+{
+    if (adc_handle >= 0) {
+        vm_dcl_adc_control_send_stop_t stop_data;
+        stop_data.owner_id = vm_dcl_get_owner_id();
+        VM_DCL_STATUS status = vm_dcl_control(adc_handle,VM_DCL_ADC_COMMAND_SEND_STOP,(void *)&stop_data);
+        vm_dcl_close(adc_handle);
+        adc_handle = -1;
+    }
+    return 0;
+}
+
+
 
 #undef MIN_OPT_LEVEL
 #define MIN_OPT_LEVEL 0
@@ -431,6 +728,14 @@ const LUA_REG_TYPE gpio_map[] = { { LSTRKEY("mode"), LFUNCVAL(gpio_mode) },
                                   { LSTRKEY("read"), LFUNCVAL(gpio_read) },
                                   { LSTRKEY("write"), LFUNCVAL(gpio_write) },
                                   { LSTRKEY("toggle"), LFUNCVAL(gpio_toggle) },
+                                  { LSTRKEY("pwm_start"), LFUNCVAL(gpio_pwm_start) },
+                                  { LSTRKEY("pwm_stop"), LFUNCVAL(gpio_pwm_stop) },
+                                  { LSTRKEY("pwm_freq"), LFUNCVAL(gpio_pwm_freq) },
+                                  { LSTRKEY("pwm_count"), LFUNCVAL(gpio_pwm_count) },
+                                  { LSTRKEY("pwm_clock"), LFUNCVAL(gpio_pwm_clock) },
+                                  { LSTRKEY("adc_start"), LFUNCVAL(gpio_adc_start) },
+                                  { LSTRKEY("adc_stop"), LFUNCVAL(gpio_adc_stop) },
+                                  { LSTRKEY("adc_get"), LFUNCVAL(gpio_adc_get) },
 #if LUA_OPTIMIZE_MEMORY > 0
                                   { LSTRKEY("OUTPUT"), LNUMVAL(OUTPUT) },
                                   { LSTRKEY("INPUT"), LNUMVAL(INPUT) },
@@ -445,6 +750,10 @@ LUALIB_API int luaopen_gpio(lua_State* L)
 {
     for (int i=0; i<MAX_EINT_PINS; i++) {
     	_clear_eint_entry(i);
+    }
+    for (int i=0; i<MAX_PWM_PINS; i++) {
+    	pwm_handles[i] = -1;
+    	pwm_clk[i] = -1;
     }
 
     lua_register(L, "pinMode", gpio_mode);

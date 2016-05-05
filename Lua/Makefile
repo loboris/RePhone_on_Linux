@@ -3,7 +3,7 @@ WORKSPACE_PATH = ../
 
 PROJECT = lua
 
-OBJECTS += main.o retarget.o shell.o audio.o gsm.o timer.o gpio.o i2c.o tcp.o https.o gprs.o sntp.o struct.o sensor.o
+OBJECTS += main.o retarget.o shell.o audio.o bt.o gsm.o timer.o gpio.o i2c.o tcp.o https.o gprs.o sntp.o struct.o sensor.o
 OBJECTS += screen.o lua_cjson.o fpconv.o strbuf.o md5.o sha1.o sha2.o
 
 OBJECTS += lua/lapi.o lua/lcode.o lua/ldebug.o lua/ldo.o lua/ldump.o lua/lfunc.o lua/lgc.o lua/llex.o \

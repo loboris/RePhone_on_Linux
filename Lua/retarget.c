@@ -9,6 +9,7 @@
 #include "vmlog.h"
 #include "shell.h"
 #include "vmwdt.h"
+#include "vmbt_spp.h"
 
 #define USE_UART1_TARGET
 
@@ -19,22 +20,26 @@ VM_DCL_OWNER_ID g_owner_id = 0;  // Module owner of APP
 VM_DCL_HANDLE retarget_device_handle = -1;
 VM_DCL_HANDLE retarget_uart1_handle = -1;
 int retarget_target = -1;
-static vm_mutex_t retarget_rx_mutex;
 
-static char retarget_rx_buffer[SERIAL_BUFFER_SIZE];
-static unsigned retarget_rx_buffer_head = 0;
-static unsigned retarget_rx_buffer_tail = 0;
-static VM_SIGNAL_ID retarget_rx_signal_id;
+vm_mutex_t retarget_rx_mutex;
+
+char retarget_rx_buffer[SERIAL_BUFFER_SIZE];
+unsigned retarget_rx_buffer_head = 0;
+unsigned retarget_rx_buffer_tail = 0;
+VM_SIGNAL_ID retarget_rx_signal_id;
 
 extern int sys_wdt_rst_time;
 extern int no_activity_time;
 extern void _reset_wdg(void);
+extern VMINT g_btspp_connected;		// spp device connected flag
+extern VMINT g_btspp_id;			// connected spp device id
 
 //-------------------------
 void retarget_putc(char ch)
 {
     VM_DCL_BUFFER_LENGTH writen_len = 0;
-   	vm_dcl_write(retarget_target, (VM_DCL_BUFFER *)&ch, 1, &writen_len, g_owner_id);
+   	if (retarget_target >= 0) vm_dcl_write(retarget_target, (VM_DCL_BUFFER *)&ch, 1, &writen_len, g_owner_id);
+   	else if ((g_btspp_connected) && (retarget_target == -1000)) vm_bt_spp_write(g_btspp_id, &ch, 1);
 }
 
 //---------------------------------
@@ -43,14 +48,16 @@ void retarget_puts(const char *str)
     VM_DCL_BUFFER_LENGTH writen_len = 0;
     VM_DCL_BUFFER_LENGTH len = strlen(str);
 
-   	vm_dcl_write(retarget_target, (VM_DCL_BUFFER *)str, len, &writen_len, g_owner_id);
+    if (retarget_target >= 0) vm_dcl_write(retarget_target, (VM_DCL_BUFFER *)str, len, &writen_len, g_owner_id);
+    else if ((g_btspp_connected) && (retarget_target == -1000)) vm_bt_spp_write(g_btspp_id, (char *)str, len);
 }
 
 //----------------------------------------------------
 void retarget_write(const char *str, unsigned int len)
 {
     VM_DCL_BUFFER_LENGTH writen_len = 0;
-   	vm_dcl_write(retarget_target, (VM_DCL_BUFFER *)str, len, &writen_len, g_owner_id);
+    if (retarget_target >= 0) vm_dcl_write(retarget_target, (VM_DCL_BUFFER *)str, len, &writen_len, g_owner_id);
+    else if ((g_btspp_connected) && (retarget_target == -1000)) vm_bt_spp_write(g_btspp_id, (char *)str, len);
 }
 
 // !!this runs from lua thread!!
@@ -84,6 +91,8 @@ int retarget_getc(void)
 //-----------------------------------------------------------------
 int retarget_waitchars(unsigned char *buf, int *count, int timeout)
 {
+	if (retarget_target < 0) return -1;
+
     VM_DCL_STATUS status;
     VM_DCL_BUFFER_LENGTH returned_len = 0;
     VM_DCL_BUFFER_LENGTH total_read = 0;

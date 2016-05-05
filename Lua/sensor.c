@@ -15,6 +15,12 @@
 #include "vmdcl_eint.h"
 #include "vmdatetime.h"
 #include "vmthread.h"
+#include "vmlog.h"
+
+
+//#define DS18B20ALARMFUNC
+//#define DS18B20_USE_CRC
+
 
 /* OneWire commands */
 #define ONEWIRE_CMD_RSCRATCHPAD		0xBE
@@ -27,12 +33,14 @@
 #define ONEWIRE_CMD_MATCHROM		0x55
 #define ONEWIRE_CMD_SKIPROM			0xCC
 
-//#define DS18B20ALARMFUNC
 
 //* TM_DS18B20_Macros
 /* Every onewire chip has different ROM code, but all the same chips has same family code */
 /* in case of DS18B20 this is 0x28 and this is first byte of ROM address */
 #define DS18B20_FAMILY_CODE			0x28
+#define DS18S20_FAMILY_CODE			0x10
+#define DS1822_FAMILY_CODE			0x22
+#define DS28EA00_FAMILY_CODE		0x42
 #define DS18B20_CMD_ALARMSEARCH		0xEC
 
 /* DS18B20 read temperature command */
@@ -69,7 +77,9 @@ typedef enum {
   owError_NoDevice,
   owError_Not18b20,
   owError_NotFinished,
-  owError_BadCRC
+  owError_BadCRC,
+  owError_NotReady,
+  owError_Convert
 } owState_t;
 
 typedef struct {
@@ -80,21 +90,23 @@ typedef struct {
 	unsigned char ROM_NO[8];             /*!< 8-bytes address of last search device */
 } TM_OneWire_t;
 
-static TM_OneWire_t OW_DEVICE;
 
 #define MAX_ONEWIRE_SENSORS 2
 
-unsigned char ow_numdev = 0;
-unsigned char ow_roms[MAX_ONEWIRE_SENSORS][8];
+static TM_OneWire_t OW_DEVICE;
+static int ds_parasite_pwr = 0;
+static unsigned char ow_numdev = 0;
+static unsigned char ow_roms[MAX_ONEWIRE_SENSORS][8];
+static int ds_measure_time = 800;
+static VM_TIME_UST_COUNT ds_start_measure_time = 0;
+
 #ifdef DS18B20ALARMFUNC
-unsigned char ow_alarm_device [MAX_ONEWIRE_SENSORS][8];
+static unsigned char ow_alarm_device [MAX_ONEWIRE_SENSORS][8];
 #endif
 
 //**************************************************
 
 extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
-extern int sys_wdt_rst_time;
-extern void _reset_wdg(void);
 
 
 //******************
@@ -214,7 +226,7 @@ static unsigned char TM_OneWire_ReadBit() {
   return bit;
 }
 
-//----------------------------------------------
+//----------------------------------------------------
 static void TM_OneWire_WriteByte(unsigned char byte) {
   unsigned char i = 8;
   // Write 8 bits
@@ -225,7 +237,7 @@ static void TM_OneWire_WriteByte(unsigned char byte) {
   }
 }
 
-//------------------------------------
+//------------------------------------------
 static unsigned char TM_OneWire_ReadByte() {
   unsigned char i = 8, byte = 0;
   while (i--) {
@@ -243,7 +255,7 @@ static void TM_OneWire_ResetSearch() {
   OW_DEVICE.LastFamilyDiscrepancy = 0;
 }
 
-//-------------------------------------------------
+//-------------------------------------------------------------
 static unsigned char TM_OneWire_Search(unsigned char command) {
   unsigned char id_bit_number;
   unsigned char last_zero, rom_byte_number, search_result;
@@ -343,7 +355,7 @@ static unsigned char TM_OneWire_Search(unsigned char command) {
   return search_result;
 }
 
-//----------------------------------
+//---------------------------------------
 static unsigned char TM_OneWire_First() {
   // Reset search values
   TM_OneWire_ResetSearch();
@@ -351,7 +363,7 @@ static unsigned char TM_OneWire_First() {
   return TM_OneWire_Search(ONEWIRE_CMD_SEARCHROM);
 }
 
-//--------------------------------
+//--------------------------------------
 static unsigned char TM_OneWire_Next() {
   // Leave the search state alone
   return TM_OneWire_Search(ONEWIRE_CMD_SEARCHROM);
@@ -437,7 +449,7 @@ static void TM_OneWire_Select(unsigned char* addr) {
 }
 */
 
-//------------------------------------------------------
+//-------------------------------------------------------------
 static void TM_OneWire_SelectWithPointer(unsigned char *ROM) {
   unsigned char i;
   TM_OneWire_WriteByte(ONEWIRE_CMD_MATCHROM);
@@ -446,7 +458,7 @@ static void TM_OneWire_SelectWithPointer(unsigned char *ROM) {
   }	
 }
 
-//------------------------------------------------------
+//------------------------------------------------------------
 static void TM_OneWire_GetFullROM(unsigned char *firstIndex) {
   unsigned char i;
   for (i = 0; i < 8; i++) {
@@ -454,7 +466,7 @@ static void TM_OneWire_GetFullROM(unsigned char *firstIndex) {
   }
 }
 
-//----------------------------------------------------------
+//----------------------------------------------------------------------------
 static unsigned char TM_OneWire_CRC8(unsigned char *addr, unsigned char len) {
   unsigned char crc = 0, inbyte, i, mix;
 	
@@ -478,10 +490,13 @@ static unsigned char TM_OneWire_CRC8(unsigned char *addr, unsigned char len) {
 // TM_DS18B20_Functions
 //*********************
 
-//------------------------------------------
+//------------------------------------------------------
 static unsigned char TM_DS18B20_Is(unsigned char *ROM) {
   /* Checks if first byte is equal to DS18B20's family code */
-  if (*ROM == DS18B20_FAMILY_CODE) {
+  if ((*ROM == DS18B20_FAMILY_CODE) ||
+	  (*ROM == DS18S20_FAMILY_CODE) ||
+	  (*ROM == DS1822_FAMILY_CODE)  ||
+	  (*ROM == DS28EA00_FAMILY_CODE)) {
     return 1;
   }
   return 0;
@@ -508,15 +523,30 @@ static owState_t TM_DS18B20_Start(unsigned char *ROM) {
 
 //---------------------------------
 static void TM_DS18B20_StartAll() {
-  /* Reset pulse */
+  // Reset pulse
   if (TM_OneWire_Reset() != 0) return;
-  /* Skip rom */
+  // Skip rom
   TM_OneWire_WriteByte(ONEWIRE_CMD_SKIPROM);
-  /* Start conversion on all connected devices */
+  // Test parasite power
+  TM_OneWire_WriteByte(ONEWIRE_CMD_RPWRSUPPLY);
+  if (TM_OneWire_ReadBit() == 0) ds_parasite_pwr = 1;
+  else ds_parasite_pwr = 0;
+  //vm_log_debug("DS18B20 Parasite Pwr = %d", ds_parasite_pwr);
+
+  // Reset pulse
+  if (TM_OneWire_Reset() != 0) return;
+  // Skip rom
+  TM_OneWire_WriteByte(ONEWIRE_CMD_SKIPROM);
+  // Start conversion on all connected devices
   TM_OneWire_WriteByte(DS18B20_CMD_CONVERTTEMP);
+  if (ds_parasite_pwr) {
+	  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+	  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+	  ds_start_measure_time = vm_time_ust_get_count();
+  }
 }
 
-//------------------------------------------------------------------
+//------------------------------------------------------------------------
 static owState_t TM_DS18B20_Read(unsigned char *ROM, float *destination) {
   unsigned int temperature;
   unsigned char resolution;
@@ -561,61 +591,82 @@ static owState_t TM_DS18B20_Read(unsigned char *ROM, float *destination) {
   temperature = data[0] | (data[1] << 8);
   /* Reset line */
   TM_OneWire_Reset();
-  /* Check if temperature is negative */
-  if (temperature & 0x8000) {
-    /* Two's complement, temperature is negative */
-    temperature = ~temperature + 1;
-    minus = 1;
-  }
-  /* Get sensor resolution */
-  resolution = ((data[4] & 0x60) >> 5) + 9;
-  /* Store temperature integer digits and decimal digits */
-  digit = temperature >> 4;
-  digit |= ((temperature >> 8) & 0x7) << 4;
+  if (*ROM != DS18S20_FAMILY_CODE) {
+	  /* Check if temperature is negative */
+	  if (temperature & 0x8000) {
+		/* Two's complement, temperature is negative */
+		temperature = ~temperature + 1;
+		minus = 1;
+	  }
+	  /* Get sensor resolution */
+	  resolution = ((data[4] & 0x60) >> 5) + 9;
+	  /* Store temperature integer digits and decimal digits */
+	  digit = temperature >> 4;
+	  digit |= ((temperature >> 8) & 0x7) << 4;
 
-  /* Store decimal digits */
-  switch (resolution) {
-    case 9: {
-      decimal = (temperature >> 3) & 0x01;
-      decimal *= (float)DS18B20_DECIMAL_STEPS_9BIT;
-    } break;
-    case 10: {
-      decimal = (temperature >> 2) & 0x03;
-      decimal *= (float)DS18B20_DECIMAL_STEPS_10BIT;
-    } break;
-    case 11: {
-      decimal = (temperature >> 1) & 0x07;
-      decimal *= (float)DS18B20_DECIMAL_STEPS_11BIT;
-    } break;
-    case 12: {
-      decimal = temperature & 0x0F;
-      decimal *= (float)DS18B20_DECIMAL_STEPS_12BIT;
-    } break;
-    default: {
-      decimal = 0xFF;
-      digit = 0;
-    }
-  }
+	  /* Store decimal digits */
+	  switch (resolution) {
+		case 9: {
+		  decimal = (temperature >> 3) & 0x01;
+		  decimal *= (float)DS18B20_DECIMAL_STEPS_9BIT;
+		} break;
+		case 10: {
+		  decimal = (temperature >> 2) & 0x03;
+		  decimal *= (float)DS18B20_DECIMAL_STEPS_10BIT;
+		} break;
+		case 11: {
+		  decimal = (temperature >> 1) & 0x07;
+		  decimal *= (float)DS18B20_DECIMAL_STEPS_11BIT;
+		} break;
+		case 12: {
+		  decimal = temperature & 0x0F;
+		  decimal *= (float)DS18B20_DECIMAL_STEPS_12BIT;
+		} break;
+		default: {
+		  decimal = 0xFF;
+		  digit = 0;
+		}
+	  }
 
-  /* Check for negative part */
-  decimal = digit + decimal;
-  if (minus) {
-    decimal = 0 - decimal;
-  }
-  /* Set to pointer */
-  *destination = decimal;
+	  /* Check for negative part */
+	  decimal = digit + decimal;
+	  if (minus) {
+		decimal = 0 - decimal;
+	  }
+	  /* Set to pointer */
+	  *destination = decimal;
 
+  }
+  else {
+	if (!data[7]) {
+	    return owError_Convert;
+	}
+	if (data[1] == 0) {
+		temperature = ((int)(data[0] >> 1))*1000;
+	}
+	else { // negative
+		temperature = 1000*(-1*(int)(0x100-data[0]) >> 1);
+	}
+	temperature -= 250;
+	decimal = 1000*((int)(data[7] - data[6]));
+	decimal /= (int)data[7];
+	temperature += decimal;
+    /* Set to pointer */
+	*destination = (float)temperature / 1000.0;
+  }
   /* Return 1, temperature valid */
   return owOK;
 }
 
-//-----------------------------------------------------
+//-----------------------------------------------------------------
 static unsigned char TM_DS18B20_GetResolution(unsigned char *ROM) {
   unsigned char conf;
 
   if (!TM_DS18B20_Is(ROM)) {
     return owError_Not18b20;
   }
+
+  if (*ROM == DS18S20_FAMILY_CODE) return TM_DS18B20_Resolution_12bits;
 
   /* Reset line */
   if (TM_OneWire_Reset() != 0) {
@@ -639,12 +690,14 @@ static unsigned char TM_DS18B20_GetResolution(unsigned char *ROM) {
   return ((conf & 0x60) >> 5) + 9;
 }
 
-//-------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
 static owState_t TM_DS18B20_SetResolution(unsigned char *ROM, TM_DS18B20_Resolution_t resolution) {
   unsigned char th, tl, conf;
   if (!TM_DS18B20_Is(ROM)) {
     return owError_Not18b20;
   }
+
+  if (*ROM == DS18S20_FAMILY_CODE) return owOK;
 
   /* Reset line */
   if (TM_OneWire_Reset() != 0) {
@@ -699,6 +752,15 @@ static owState_t TM_DS18B20_SetResolution(unsigned char *ROM, TM_DS18B20_Resolut
   TM_OneWire_SelectWithPointer(ROM);
   /* Copy scratchpad to EEPROM of DS18B20 */
   TM_OneWire_WriteByte(ONEWIRE_CMD_CPYSCRATCHPAD);
+  if (ds_parasite_pwr) {
+	  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+	  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+  }
+  vm_thread_sleep(12);
+  if (ds_parasite_pwr) {
+	  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+	  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+  }
 
   return owOK;
 }
@@ -897,6 +959,28 @@ unsigned char check_dev(unsigned char n) {
   return 0;  
 }
 
+//-------------------------------------------
+static void _set_measure_time(int resolution)
+{
+  switch (resolution) {
+	case 9:
+	  ds_measure_time = 100;
+	  break;
+	case 10:
+	  ds_measure_time = 200;
+	  break;
+	case 11:
+	  ds_measure_time = 400;
+	  break;
+	case 12:
+	  ds_measure_time = 800;
+	  break;
+	default:
+	  ds_measure_time = 800;
+  }
+}
+
+// Set DS1820 resolution
 //=============================================
 static int lsensor_18b20_getres( lua_State* L )
 {
@@ -909,13 +993,17 @@ static int lsensor_18b20_getres( lua_State* L )
      return 1;
   }
 
-  /* Get resolution */
+  // Get resolution
   res = TM_DS18B20_GetResolution(ow_roms[dev-1]);
+  _set_measure_time(res);
+
   lua_pushinteger(L, res);
+  lua_pushinteger(L, ds_measure_time);
   
-  return 1;
+  return 2;
 }
 
+// Set DS1820 resolution
 //=============================================
 static int lsensor_18b20_setres( lua_State* L )
 {
@@ -925,6 +1013,7 @@ static int lsensor_18b20_setres( lua_State* L )
   
   dev = luaL_checkinteger( L, 1 );
   res = luaL_checkinteger( L, 2 );
+
   if (check_dev(dev)) {
      lua_pushnil(L);
      return 1;
@@ -934,27 +1023,33 @@ static int lsensor_18b20_setres( lua_State* L )
        res!=TM_DS18B20_Resolution_10bits && 
        res!=TM_DS18B20_Resolution_11bits &&
        res!=TM_DS18B20_Resolution_12bits ) {
-    res = 12;     
+    res = TM_DS18B20_Resolution_12bits;
   }
-  /* Set resolution */
-  stat = TM_DS18B20_SetResolution(ow_roms[dev-1], (TM_DS18B20_Resolution_t)res);
-  if (stat != owOK) {
-    lua_pushinteger(L, stat);
+  // Set resolution
+  if (ow_roms[dev-1][0] == DS18S20_FAMILY_CODE) {
+    res = TM_DS18B20_Resolution_12bits;
+    stat = owOK;
   }
   else {
-    lua_pushinteger(L, TM_DS18B20_GetResolution(ow_roms[dev-1]));
+	stat = TM_DS18B20_SetResolution(ow_roms[dev-1], (TM_DS18B20_Resolution_t)res);
   }
   
+  if (stat != owOK) lua_pushinteger(L, stat);
+  else {
+	  res = TM_DS18B20_GetResolution(ow_roms[dev-1]);
+	  lua_pushinteger(L, res);
+  }
+  _set_measure_time(res);
+
   return 1;
 }
 
+// Start temperature measurement and wait for result
 //==============================================
 static int lsensor_18b20_gettemp( lua_State* L )
 {
   unsigned char dev = 0;
-  unsigned char n = 0;
   owState_t stat;
-  unsigned int tmo = 0;
   float temper;
   
   dev = luaL_checkinteger( L, 1 );
@@ -964,38 +1059,42 @@ static int lsensor_18b20_gettemp( lua_State* L )
     return 2;
   }
 
-  /* Start temperature conversion on all devices on one bus */
+  int res = TM_DS18B20_GetResolution(ow_roms[dev-1]);
+  _set_measure_time(res);
+
+  // Start temperature conversion on all devices on one bus
   TM_DS18B20_StartAll();
 
-  /* Wait until all are done on one onewire port */
-  vm_thread_sleep(50);
-  tmo = 0;
-  n = 0;
-  while (tmo < 1000) {
-	sys_wdt_rst_time = 0;
-	_reset_wdg();
-
-	vm_thread_sleep(5);
-    if (TM_OneWire_ReadBit()) {
-      n += 1;
-      if (n > 2) {
-        break;
-      }
-    }
-    else {
-      n = 0;
-    }
-    tmo += 1;
+  // Wait until all are done on one onewire port (max 1.5 second)
+  unsigned int tmo;
+  if (ds_parasite_pwr) {
+	  tmo = 0;
+	  while (tmo < ds_measure_time) {
+		vm_thread_sleep(10);
+		tmo += 10;
+	  }
+      vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+	  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+	  ds_start_measure_time = 0;
+	  vm_thread_sleep(2);
   }
-  if (tmo >= 1000) {
-    /* Timeout */
-    lua_pushinteger(L, -9999);
-    lua_pushinteger(L, -2);
-    return 2;
+  else {
+	  tmo = 0;
+	  while (tmo < ds_measure_time) {
+		vm_thread_sleep(10);
+		if (TM_OneWire_ReadBit()) break;
+		tmo += 10;
+	  }
+	  if (tmo >= ds_measure_time) {
+		/* Timeout */
+		lua_pushinteger(L, -9999);
+		lua_pushinteger(L, owError_NotReady);
+		return 2;
+	  }
   }
   
-  /* Read temperature from selected device */
-  /* Read temperature from ROM address and store it to temps variable */
+  // Read temperature from selected device
+  // Read temperature from ROM address and store it to temper variable
   stat = TM_DS18B20_Read(ow_roms[dev-1], &temper);
   if ( stat == owOK) {
     lua_pushnumber(L, temper);
@@ -1010,24 +1109,24 @@ static int lsensor_18b20_gettemp( lua_State* L )
   return 2;
 }
 
+// Start temperature measurement on all devices
 //=============================================
 static int lsensor_18b20_startm( lua_State* L )
 {
-  unsigned char dev = 0;
-  
-  dev = luaL_checkinteger( L, 1 );
-  if (check_dev(dev)) {
-    lua_pushinteger(L, 1);
+  if (ow_numdev == 0) {
+	// no devices
+    lua_pushinteger(L, -1);
     return 1;
   }
 
-  /* Start temperature conversion on all devices on one bus */
+  // Start temperature conversion on all devices on one bus
   TM_DS18B20_StartAll();
 
   lua_pushinteger(L, 0);
   return 1;
 }
 
+// Get the last measured value from device
 //==========================================
 static int lsensor_18b20_get( lua_State* L )
 {
@@ -1036,60 +1135,94 @@ static int lsensor_18b20_get( lua_State* L )
   dev = luaL_checkinteger( L, 1 );
   if (check_dev(dev)) {
     lua_pushinteger(L, -9999);
-    return 1;
+	lua_pushinteger(L, owError_Not18b20);
+	return 2;
+  }
+
+  // Check if measurement finished
+  if (ds_parasite_pwr) {
+	  if (vm_time_ust_get_duration(ds_start_measure_time, vm_time_ust_get_count()) < (ds_measure_time * 1000)) {
+		lua_pushinteger(L, -9999);
+		lua_pushinteger(L, owError_NotReady);
+		return 2;
+	  }
+      vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+	  vm_dcl_control(OW_DEVICE.handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+	  ds_start_measure_time = 0;
+	  vm_thread_sleep(2);
+  }
+  else {
+	  if (TM_OneWire_ReadBit() == 0) {
+		lua_pushinteger(L, -9999);
+		lua_pushinteger(L, owError_NotReady);
+		return 2;
+	  }
   }
 
   owState_t stat;
   float temper;
 
-  /* Wait until all are done on one onewire port */
-  if (TM_OneWire_ReadBit() == 0) {
-   lua_pushinteger(L, -9999);
-    return 1;
-  }
-  
-  /* Read temperature from selected device */
-  /* Read temperature from ROM address and store it to temps variable */
+  // Read temperature from selected device
+  // Read temperature from ROM address and store it to temper variable
   stat = TM_DS18B20_Read(ow_roms[dev-1], &temper);
-  if ( stat == owOK) {
-    lua_pushnumber(L, temper);
-  }
-  else {
-    /* Reading error */
-    lua_pushinteger(L, -9999);
-  }
+
+  if ( stat == owOK) lua_pushnumber(L, temper);
+  else lua_pushinteger(L, -9999); // error
+  lua_pushinteger(L, stat);
   
-  return 1;
+  return 2;
 }
 
+// Search for DS1820 devices
 //=============================================
 static int lsensor_18b20_search( lua_State* L )
 {
   unsigned char count = 0;
   unsigned char owdev = 0;
     
-  ow_numdev = 0;
-  
+  // Get first device
   owdev = TM_OneWire_First();
   while (owdev) {
-    /* Increase counter */
-    count++;
-    
-    /* Get full ROM value, 8 bytes, give location of first byte where to save */
+    count++; // Increase device counter
+    // Get full ROM value, 8 bytes, give location of first byte where to save
     TM_OneWire_GetFullROM(ow_roms[count - 1]);
-    if (!TM_DS18B20_Is(ow_roms[count - 1])) {
-      count--;
-    }
-    /* Get next device */
+    // Check if it is DS1820 device
+    if (!TM_DS18B20_Is(ow_roms[count - 1])) count--; // error
+    // Get next device
     owdev = TM_OneWire_Next();
     if (count >= MAX_ONEWIRE_SENSORS) break;
   }
   
   ow_numdev = count;
-  lua_pushinteger(L,count);
+  lua_pushinteger(L, count);
   return 1;
 }
 
+// Search for any 1-wire device
+//==========================================
+static int lsensor_ow_search( lua_State* L )
+{
+  unsigned char count = 0;
+  unsigned char owdev = 0;
+
+  owdev = TM_OneWire_First();
+  while (owdev) {
+    count++;  // Increase device counter
+
+    // Get full ROM value, 8 bytes, give location of first byte where to save
+    TM_OneWire_GetFullROM(ow_roms[count - 1]);
+
+    // Get next device
+    owdev = TM_OneWire_Next();
+    if (count >= MAX_ONEWIRE_SENSORS) break;
+  }
+
+  ow_numdev = count;
+  lua_pushinteger(L, ow_numdev);
+  return 1;
+}
+
+// Initialize 1-wire bus on given gpio
 //========================================
 static int lsensor_ow_init( lua_State* L )
 {
@@ -1108,13 +1241,13 @@ static int lsensor_ow_init( lua_State* L )
   vm_thread_sleep(2);
   
   ow_numdev = 0;
-  if (TM_OneWire_Reset() == 0)
-    lua_pushinteger(L, 1);
-  else
-     lua_pushinteger(L, 0);
+  // Check if any device connected
+  if (TM_OneWire_Reset() == 0) lua_pushinteger(L, 1);
+  else lua_pushinteger(L, 0);
   return 1;
 }
 
+// Get device ROM (8 bytes) to Lua table or string
 //==========================================
 static int lsensor_ow_getrom( lua_State* L )
 {
@@ -1132,30 +1265,6 @@ static int lsensor_ow_getrom( lua_State* L )
     lua_pushinteger( L, ow_roms[dev-1][i] );
     lua_rawseti(L,-2,i + 1);
   }
-  return 1;
-}
-
-//==========================================
-static int lsensor_ow_search( lua_State* L )
-{
-  unsigned char count = 0;
-  unsigned char owdev = 0;
-    
-  owdev = TM_OneWire_First();
-  while (owdev) {
-    /* Increase counter */
-    count++;
-    
-    /* Get full ROM value, 8 bytes, give location of first byte where to save */
-    TM_OneWire_GetFullROM(ow_roms[count - 1]);
-    
-    /* Get next device */
-    owdev = TM_OneWire_Next();
-    if (count >= MAX_ONEWIRE_SENSORS) break;
-  }
-  
-  ow_numdev = count;
-  lua_pushinteger(L,ow_numdev);
   return 1;
 }
 

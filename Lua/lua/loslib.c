@@ -56,6 +56,9 @@ extern int no_activity_time;		// no activity counter
 extern int max_no_activity_time;	// time with no activity before shut down in seconds
 extern int wakeup_interval;			// regular wake up interval in seconds
 extern int led_blink;				// led blink during session
+extern int wdg_reboot_cb;			// Lua callback function called before reboot
+extern int shutdown_cb;				// Lua callback function called before shutdown
+extern VMINT g_btspp_connected;		// spp device connected flag
 
 
 //-----------------------------------------------------------------------------
@@ -561,6 +564,7 @@ static int os_retarget (lua_State *L) {
 
 	if ((targ == 0) && (retarget_device_handle >= 0)) retarget_target = retarget_device_handle;
 	else if ((targ == 1) && (retarget_uart1_handle >= 0)) retarget_target = retarget_uart1_handle;
+	else if ((targ == 2) && (g_btspp_connected)) retarget_target = -1000;
 	return 0;
 }
 
@@ -625,8 +629,10 @@ static int os_wakeup_int (lua_State *L) {
 //=======================================
 static int os_noact_time (lua_State *L) {
 	if (lua_gettop(L) >= 1) {
-		int noact = luaL_checkinteger(L,1);  // maximum time with no activity in minutes
-		if (noact > 0) max_no_activity_time = noact * 60;
+		int noact = luaL_checkinteger(L,1);					// maximum time with no activity in minutes
+
+		if (noact > 0) max_no_activity_time = noact * 60;	// set max no activity limit
+		else no_activity_time = 0;							// reset no activity counter
 	}
 	lua_pushinteger(L, max_no_activity_time / 60);
 	return 1;
@@ -636,6 +642,36 @@ static int os_noact_time (lua_State *L) {
 static int os_usb (lua_State *L) {
 	lua_pushinteger(L, vm_usb_get_cable_status());
 	return 1;
+}
+
+//=====================================
+static int os_onwdg_cb (lua_State *L) {
+	if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
+	    if (wdg_reboot_cb != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, wdg_reboot_cb);
+	    lua_pushvalue(L, 1);
+	    wdg_reboot_cb = luaL_ref(L, LUA_REGISTRYINDEX);
+
+	    lua_pushinteger(L, 0);
+	}
+	else {
+		lua_pushinteger(L, -1);
+	}
+    return 1;
+}
+
+//=======================================
+static int os_onshdwn_cb (lua_State *L) {
+	if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
+	    if (shutdown_cb != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, shutdown_cb);
+	    lua_pushvalue(L, 1);
+	    shutdown_cb = luaL_ref(L, LUA_REGISTRYINDEX);
+
+	    lua_pushinteger(L, 0);
+	}
+	else {
+		lua_pushinteger(L, -1);
+	}
+    return 1;
 }
 
 
@@ -754,39 +790,41 @@ extern int luaB_dofile (lua_State *L);
 #define MIN_OPT_LEVEL 1
 #include "lrodefs.h"
 const LUA_REG_TYPE syslib[] = {
-  {LSTRKEY("ntptime"),  LFUNCVAL(os_ntptime)},
-  {LSTRKEY("shutdown"), LFUNCVAL(os_shutdown)},
-  {LSTRKEY("reboot"),   LFUNCVAL(os_reboot)},
-  {LSTRKEY("battery"),  LFUNCVAL(os_battery)},
-  {LSTRKEY("ver"),  	LFUNCVAL(os_getver)},
-  {LSTRKEY("mem"),  	LFUNCVAL(os_getmem)},
-  {LSTRKEY("schedule"), LFUNCVAL(os_scheduled_startup)},
-  {LSTRKEY("clock"),    LFUNCVAL(os_clock)},
-  {LSTRKEY("date"),     LFUNCVAL(os_date)},
-  {LSTRKEY("difftime"), LFUNCVAL(os_difftime)},
-  {LSTRKEY("execute"),  LFUNCVAL(luaB_dofile)},
-  {LSTRKEY("exit"),     LFUNCVAL(os_exit)},
-  //{LSTRKEY("getenv"), LFUNCVAL(os_getenv)},
-  {LSTRKEY("remove"),   LFUNCVAL(os_remove)},
-  {LSTRKEY("rename"),   LFUNCVAL(os_rename)},
-  {LSTRKEY("copy"),     LFUNCVAL(os_copy)},
-  {LSTRKEY("mkdir"),    LFUNCVAL(os_mkdir)},
-  {LSTRKEY("rmdir"),    LFUNCVAL(os_rmdir)},
-  {LSTRKEY("setlocale"),LFUNCVAL(os_setlocale)},
-  {LSTRKEY("time"),     LFUNCVAL(os_time)},
-  {LSTRKEY("list"),     LFUNCVAL(os_listfiles)},
-  //{LSTRKEY("tmpname"),   LFUNCVAL(os_tmpname)},
-  {LSTRKEY("retarget"), LFUNCVAL(os_retarget)},
-  {LSTRKEY("getchar"),  LFUNCVAL(os_getchar)},
-  {LSTRKEY("getstring"),LFUNCVAL(os_getstring)},
-  {LSTRKEY("putchar"),  LFUNCVAL(os_putchar)},
-  {LSTRKEY("ledblink"), LFUNCVAL(os_ledblink)},
-  {LSTRKEY("wkupint"),  LFUNCVAL(os_wakeup_int)},
-  {LSTRKEY("noacttime"),LFUNCVAL(os_noact_time)},
-  {LSTRKEY("usb"),      LFUNCVAL(os_usb)},
+  {LSTRKEY("ntptime"),  	LFUNCVAL(os_ntptime)},
+  {LSTRKEY("shutdown"), 	LFUNCVAL(os_shutdown)},
+  {LSTRKEY("reboot"),   	LFUNCVAL(os_reboot)},
+  {LSTRKEY("battery"),  	LFUNCVAL(os_battery)},
+  {LSTRKEY("ver"),  		LFUNCVAL(os_getver)},
+  {LSTRKEY("mem"),  		LFUNCVAL(os_getmem)},
+  {LSTRKEY("schedule"), 	LFUNCVAL(os_scheduled_startup)},
+  {LSTRKEY("clock"),    	LFUNCVAL(os_clock)},
+  {LSTRKEY("date"),     	LFUNCVAL(os_date)},
+  {LSTRKEY("difftime"), 	LFUNCVAL(os_difftime)},
+  {LSTRKEY("execute"),  	LFUNCVAL(luaB_dofile)},
+  {LSTRKEY("exit"),     	LFUNCVAL(os_exit)},
+  //{LSTRKEY("getenv"), 	LFUNCVAL(os_getenv)},
+  {LSTRKEY("remove"),   	LFUNCVAL(os_remove)},
+  {LSTRKEY("rename"),   	LFUNCVAL(os_rename)},
+  {LSTRKEY("copy"),     	LFUNCVAL(os_copy)},
+  {LSTRKEY("mkdir"),    	LFUNCVAL(os_mkdir)},
+  {LSTRKEY("rmdir"),    	LFUNCVAL(os_rmdir)},
+  {LSTRKEY("setlocale"),	LFUNCVAL(os_setlocale)},
+  {LSTRKEY("time"),     	LFUNCVAL(os_time)},
+  {LSTRKEY("list"),     	LFUNCVAL(os_listfiles)},
+  //{LSTRKEY("tmpname"),	  LFUNCVAL(os_tmpname)},
+  {LSTRKEY("retarget"), 	LFUNCVAL(os_retarget)},
+  {LSTRKEY("getchar"),  	LFUNCVAL(os_getchar)},
+  {LSTRKEY("getstring"),	LFUNCVAL(os_getstring)},
+  {LSTRKEY("putchar"),  	LFUNCVAL(os_putchar)},
+  {LSTRKEY("ledblink"), 	LFUNCVAL(os_ledblink)},
+  {LSTRKEY("wkupint"),  	LFUNCVAL(os_wakeup_int)},
+  {LSTRKEY("noacttime"),	LFUNCVAL(os_noact_time)},
+  {LSTRKEY("usb"),      	LFUNCVAL(os_usb)},
+  {LSTRKEY("onreboot"), 	LFUNCVAL(os_onwdg_cb)},
+  {LSTRKEY("onshutdown"),	LFUNCVAL(os_onshdwn_cb)},
 #if defined USE_YMODEM
-  {LSTRKEY("yrecv"),    LFUNCVAL(file_recv)},
-  {LSTRKEY("ysend"),    LFUNCVAL(file_send)},
+  {LSTRKEY("yrecv"),    	LFUNCVAL(file_recv)},
+  {LSTRKEY("ysend"),    	LFUNCVAL(file_send)},
 #endif
   {LNILKEY, LNILVAL}
 };
