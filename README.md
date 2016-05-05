@@ -23,11 +23,11 @@ The main project in this repository is Lua implementation on RePhone.
 * Memory available to Lua programs ~700 KB + heap for c functions ~64 KB
 * System functions for <b>watchdog</b>, <b>rtc</b>, scheduled <b>shut down</b> / <b>wake up</b> implemented
 * <b>os</b> module expanded with many new functions ( <b>ntptime</b> function added for adjusting RTC time from NTP server )
-* Lua <B>shell</b> is available on USB port (/dev/ttyACM0) and on RePhone hardware UART
+* Lua <B>shell</b> is available on USB port (/dev/ttyACM0), on RePhone hardware UART and over Bluetooth
 * Many new/RePhone specific modules (written in c)
   * <b>gpio</b>, with added fonctions for gpio toggle and EINT on any eint capable pin
-  * <b>pwm</b> module (<i>in development</i>)
-  * <b>adc</b> module (<i>in development</i>)
+  * <b>pwm</b> module
+  * <b>adc</b> module
   * <b>https</b>, with added post mode (capable of sending file or params from table)
   * <b>gsm</b> module, with complete SMS functionality
   * <b>audio</b> module
@@ -35,6 +35,7 @@ The main project in this repository is Lua implementation on RePhone.
   * <b>i2c</b> module
   * <b>spi</b> module (<i>in development</i>)
   * <b>tcp & udp</b> modules
+  * <b>bt</b> Bluetooth module with possible Lua shell redirect 
   * <b>sensor</b> module (DS18B20, DHT-11, DHT-22 for now)
   * hash modules: <b>md5</b>, <b>SHA1</b>, <b>SHA2</b>
   * complete <b>json</b> module (cjson)
