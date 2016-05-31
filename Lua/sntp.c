@@ -44,10 +44,9 @@
 
 #include "lua.h"
 #include "lauxlib.h"
-//#include "shell.h"
+#include "shell.h"
 
 extern VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type;
-extern lua_State *L;
 
 #define NTP_PACKET_SIZE 48
 #define NTP_TIME_OUT 30
@@ -61,7 +60,8 @@ static VM_TIMER_ID_PRECISE sntp_timer_id;
 static int ntp_time_set = 0;
 static int ntp_time_zone = 0;
 static int ntp_timeout = 0;
-static int ntp_cb_ref = -1;
+int ntp_cb_ref = LUA_NOREF;
+static cb_func_param_int_t ntp_cb_params;
 
 struct NtpPacket
 {
@@ -90,8 +90,16 @@ static void sntp_timer_callback(VM_TIMER_ID_PRECISE timer_id, void* user_data)
 		if (ntp_timeout > NTP_TIME_OUT) {
 			ntp_timeout = 0;
 			vm_udp_close(g_udp);
-            printf("\nNTP ERROR, time not set.\n");
-            vm_timer_delete_precise(sntp_timer_id);
+        	if (ntp_cb_ref != LUA_NOREF) {
+        		ntp_cb_params.par = -1;
+        		ntp_cb_params.cb_ref = ntp_cb_ref;
+                remote_lua_call(CB_FUNC_INT, &ntp_cb_params);
+    			ntp_cb_ref = LUA_NOREF;
+        	}
+        	else {
+				printf("\nNTP ERROR, time not set.\n");
+        	}
+			vm_timer_delete_precise(sntp_timer_id);
 		}
 	}
 	else {
@@ -115,7 +123,7 @@ static void sntp_callback(VM_UDP_HANDLE handle, VM_UDP_EVENT event)
     {
         case VM_UDP_EVENT_READ:
             ret = vm_udp_receive(g_udp, &buf, 100, &g_address);
-            if(ret > 0)
+            if (ret > 0)
             {
                 vm_timer_delete_precise(sntp_timer_id);
                 //the timestamp starts at byte 40 of the received packet and is four bytes,
@@ -146,13 +154,10 @@ static void sntp_callback(VM_UDP_HANDLE handle, VM_UDP_EVENT event)
                 vm_time_set_date_time(&new_time);
                 ntp_time_set = 1;
             	if (ntp_cb_ref != LUA_NOREF) {
-            		lua_rawgeti(L, LUA_REGISTRYINDEX, ntp_cb_ref);
-            		if ((lua_type(L, -1) == LUA_TFUNCTION) || (lua_type(L, -1) == LUA_TLIGHTFUNCTION)) {
-            			lua_call(L, 0, 0);
-            			luaL_unref(L, LUA_REGISTRYINDEX, ntp_cb_ref);
-            			ntp_cb_ref = LUA_NOREF;
-            		}
-            		else lua_remove(L, -1);
+            		ntp_cb_params.par = 0;
+            		ntp_cb_params.cb_ref = ntp_cb_ref;
+                    remote_lua_call(CB_FUNC_INT, &ntp_cb_params);
+        			ntp_cb_ref = LUA_NOREF;
             	}
             	else {
                     char buf[128] = {0};
@@ -171,13 +176,12 @@ static void sntp_callback(VM_UDP_HANDLE handle, VM_UDP_EVENT event)
 
 }
 
-//-------------------------------------
-void sntp_gettime( int tz, int cb_ref )
+//-------------------------
+void sntp_gettime( int tz )
 {
   ntp_time_set = 0;
   ntp_time_zone = tz;
   ntp_timeout = 0;
-  ntp_cb_ref = cb_ref;
 
   sntp_timer_id = vm_timer_create_precise(500, sntp_timer_callback, NULL);
 

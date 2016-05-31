@@ -30,6 +30,8 @@
 #include "lvm.h"
 #include "lrotable.h"
 
+#include "shell.h"
+#include "vmthread.h"
 
 const char lua_ident[] =
   "$Lua: " LUA_RELEASE " " LUA_COPYRIGHT " $\n"
@@ -1039,6 +1041,7 @@ LUA_API int lua_error (lua_State *L) {
   api_checknelems(L, 1);
   luaG_errormsg(L);
   lua_unlock(L);
+
   return 0;  /* to avoid warnings */
 }
 

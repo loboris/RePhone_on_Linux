@@ -13,6 +13,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lrodefs.h"
+#include "shell.h"
 
 #define INPUT             0
 #define OUTPUT            1
@@ -31,9 +32,9 @@
 
 #define MAX_EINT_PINS     6
 #define MAX_PWM_PINS      2
+#define MAX_ADC_CHAN      4
 
 extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
-extern lua_State *L;
 
 
 typedef struct {
@@ -55,29 +56,28 @@ typedef struct {
 	int autopol;
 } gpio_eint_config_t;
 
+typedef struct {
+	VM_DCL_HANDLE	adc_handle;
+	int				adc_cb_ref;
+	int				repeat;
+	int				time;
+	VMUINT32		result;
+	VMINT32			vresult;
+	VMINT8			chan;
+	VMINT8			cb_wait;
+} gpio_adc_chan_t;
+
 static gpio_eint_t gpio_eint_pins[MAX_EINT_PINS];
 
 static VM_DCL_HANDLE pwm_handles[MAX_PWM_PINS];
 static VMUINT32 pwm_clk[MAX_PWM_PINS];
 
-static VM_DCL_HANDLE adc_handle;
-static VMUINT32 g_adc_result = 0;
-static VMINT32 g_adc_vresult = -1;
-static int adc_cb_ref= LUA_NOREF;
-static VMINT8 g_adc_new = 0;
-static VMINT8 g_adc_once = 1;
-
-//--------------
-void _delay_us()
-{
-	int volatile i = 0;
-	while (i < 19) {
-		i++;
-	}
-}
+static gpio_adc_chan_t adc_chan[MAX_ADC_CHAN];
 
 static int g_eintcount = 0;
 gpio_eint_config_t eint_config;
+
+static cb_func_param_adc_t adc_cb_params;
 
 
 // EINT callback, to be invoked when EINT triggers.
@@ -424,6 +424,8 @@ static int gpio_toggle(lua_State* L)
     return 0;
 }
 
+// ==== PWM ============================================================================
+
 /* Start PWM
  * gpio.pwm_start(pwm_id)
  * pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3)
@@ -481,6 +483,7 @@ static int gpio_pwm_clock(lua_State* L)
     if (clk == 0) pwm_clk[pin] = 13000000;
     else pwm_clk[pin] = 32768;
     pwm_clk[pin] /= (1 << div);
+
 	return 0;
 }
 
@@ -560,153 +563,282 @@ static int gpio_pwm_stop(lua_State* L)
 	return 0;
 }
 
-//--------------------------------------------------------------------------------------
+// ==== ADC ============================================================================
+
+//---------------------------------------------------------------------------------
 void adc_callback(void* parameter, VM_DCL_EVENT event, VM_DCL_HANDLE device_handle)
 {
-    vm_dcl_callback_data_t *data;
-    vm_dcl_adc_measure_done_confirm_t * result;
-    VMINT status = 0;
+	int _chan = -1;
+	for (int i=0;i<MAX_ADC_CHAN;i++) {
+		if (adc_chan[i].adc_handle == device_handle) {
+			_chan = i;
+			break;
+		}
+	}
+	if (_chan < 0) {
+		vm_log_debug("[ADC CB] no handle found");
+		return;
+	}
+	if ((adc_chan[_chan].repeat > 0) && (adc_chan[_chan].repeat < 1000)) adc_chan[_chan].repeat--;
 
-    g_adc_new = 0;
-    if (parameter != NULL) {
-        data = ( vm_dcl_callback_data_t*)parameter;
-        result = (vm_dcl_adc_measure_done_confirm_t *)(data->local_parameters);
+    if ((adc_chan[_chan].adc_cb_ref != LUA_NOREF) || (adc_chan[_chan].cb_wait != 0)) {
+		vm_dcl_callback_data_t *data;
+		vm_dcl_adc_measure_done_confirm_t * result;
+		VMINT status = 0;
 
-        if( result != NULL )
-        {
-            double *p;
-            int *v;
-            p =(double*)&(result->value);
-            g_adc_result = (unsigned int)*p;
-            v =(int*)&(result->volt_value);
-            g_adc_vresult = (int)*v;
-            g_adc_new = 1;
-        }
+		if (parameter != NULL) {
+			data = ( vm_dcl_callback_data_t*)parameter;
+			result = (vm_dcl_adc_measure_done_confirm_t *)(data->local_parameters);
+
+			if ( result != NULL )
+			{
+				double *p;
+				int *v;
+				p =(double*)&(result->value);
+				adc_chan[_chan].result = (unsigned int)*p;
+				v =(int*)&(result->volt_value);
+				adc_chan[_chan].vresult = (int)*v;
+			}
+		}
+
+		//if (repeat) _stop_adc();
+
+		adc_cb_params.fval = (float)adc_chan[_chan].vresult / 1000000.0;
+		if (adc_chan[_chan].adc_cb_ref != LUA_NOREF) {
+			// Lua callback function
+			if (adc_cb_params.busy == 0) {
+				adc_cb_params.busy = 1;
+				adc_cb_params.cb_ref = adc_chan[_chan].adc_cb_ref;
+				adc_cb_params.ival = adc_chan[_chan].result;
+				adc_cb_params.chan = adc_chan[_chan].chan;
+				remote_lua_call(CB_FUNC_ADC, &adc_cb_params);
+			}
+		    //else vm_log_debug("[ADC CB] busy");
+		}
+		else if (adc_chan[_chan].cb_wait != 0) {
+			vm_signal_post(g_shell_signal);
+			adc_chan[_chan].cb_wait = 0;
+		}
     }
-
-    if (g_adc_once) {
+	if (adc_chan[_chan].repeat == 0) {
         vm_dcl_adc_control_send_stop_t stop_data;
         stop_data.owner_id = vm_dcl_get_owner_id();
-    	status = vm_dcl_control(adc_handle,VM_DCL_ADC_COMMAND_SEND_STOP,(void *)&stop_data);
-        vm_dcl_close(adc_handle);
-        adc_handle = -1;
-    }
-
-    if (adc_cb_ref != LUA_NOREF) {
-        lua_rawgeti(L, LUA_REGISTRYINDEX, adc_cb_ref);
-       	lua_pushinteger(L, g_adc_result);
-       	lua_pushnumber(L, (float)g_adc_vresult / 1000000.0);
-        lua_pushinteger(L, g_adc_new);
-        lua_call(L, 3, 0);
-    }
+    	int status = vm_dcl_control(adc_chan[_chan].adc_handle,VM_DCL_ADC_COMMAND_SEND_STOP,(void *)&stop_data);
+    	if (status < 0) {
+    		vm_log_debug("[ADC CB] stop error %d", status);
+    	}
+	}
 }
 
-/* Start ADC
- * gpio.adc_start(channel, [cb_func, period, count, once])
- * channel: adc channel, 21 -> ADC15 (GPIO1), 22 -> ADC13 (GPIO2), 23 -> GPIO3
- * cb_func: Lua function to call after result is ready
- *  period: measurement period in ticks
+/* Configure ADC channel
+ * gpio.adc_start(channel, [period, count])
+ * channel: 0 -> Battery voltage, 1 -> ADC15 (GPIO1), 2 -> ADC13 (GPIO2), 3 -> GPIO3
+ *  period: measurement period in miliseconds
  *   count: how many measurement to take before issuing the result, time between measurements is 'period'
- *    once: 0 -> continuous measurement; 1 -> measure only once
- *
+ *   		time between results is 'period' * 'count'
+ */
+//======================================
+static int gpio_adc_config(lua_State* L)
+{
+    VM_DCL_STATUS status;
+    VMINT32 period = 1;
+    VMUINT8 count = 1;
+    VMUINT adcchan = 0;
+    int err = 0;
+
+    // === Get arguments
+    VMUINT8 chan = luaL_checkinteger(L, 1);
+	if ((chan < 0) || (chan >= MAX_ADC_CHAN)) return luaL_error(L, "not valid adc channel");
+
+    if (chan > 0) {
+    	// adc pin #1 or #2
+		status = vm_dcl_config_pin_mode(chan, VM_DCL_PIN_MODE_ADC); // Sets the pin to ADC mode
+		if (status != VM_DCL_STATUS_OK) {
+			err = -1;
+			vm_log_error("pin ADC mode error (chan %d)", chan);
+			goto exit;
+		}
+		adcchan = PIN2CHANNEL(chan);
+    }
+
+    if (lua_gettop(L) > 1) period = (luaL_checkinteger(L, 2) * 1000) / 4615;
+    if (period < 1) period = 1;
+    if (lua_gettop(L) > 2) count = luaL_checkinteger(L, 3) & 0x00FF;
+
+    // === Setup channel variables
+    adc_chan[chan].cb_wait = 0;
+    adc_chan[chan].repeat = 0;
+    adc_chan[chan].chan = chan;
+	adc_chan[chan].vresult = -999999.9;
+	adc_chan[chan].result = -999999;
+	adc_chan[chan].time = (period * count) * 5;
+
+    // Check if we already have adc handle
+	if (adc_chan[chan].adc_handle >= 0) {
+		vm_dcl_adc_control_modify_parameter_t obj_data;
+	    // Set measurement period, the unit is in ticks.
+	    obj_data.period = period;
+	    // Measurement count before issuing the result
+	    obj_data.evaluate_count = count;
+	    // Modify ADC object
+	    status = vm_dcl_control(adc_chan[chan].adc_handle,VM_DCL_ADC_COMMAND_MODIFY_PARAMETER,(void *)&obj_data);
+		if (status != VM_DCL_STATUS_OK) {
+			err = status;
+			vm_log_error("Setup ADC object error %d", status);
+			goto exit;
+		}
+	}
+	else {
+		adc_chan[chan].adc_handle = vm_dcl_open(VM_DCL_ADC,0);
+		if (adc_chan[chan].adc_handle < 0) {
+			err = adc_chan[chan].adc_handle;
+			vm_log_error("ADC open error %d", err);
+			goto exit;
+		}
+
+	    vm_dcl_adc_control_create_object_t obj_data;
+	    // Configure ADC module driver
+	    obj_data.owner_id = vm_dcl_get_owner_id();
+	    // Set physical ADC channel which should be measured.
+	    obj_data.channel = adcchan;
+	    // Set measurement period, the unit is in ticks.
+	    obj_data.period = period;
+	    // Measurement count before issuing the result
+	    obj_data.evaluate_count = count;
+	    // Send message to owner module
+	    obj_data.send_message_primitive = 1;
+
+	    // Create ADC object
+	    status = vm_dcl_control(adc_chan[chan].adc_handle,VM_DCL_ADC_COMMAND_CREATE_OBJECT,(void *)&obj_data);
+		if (status != VM_DCL_STATUS_OK) {
+			err = status;
+			vm_log_error("Setup ADC object error %d", status);
+			goto exit;
+		}
+
+		// register ADC result callback
+		status = vm_dcl_register_callback(adc_chan[chan].adc_handle, VM_DCL_ADC_GET_RESULT ,(vm_dcl_callback)adc_callback, (void *)NULL);
+		if (status != VM_DCL_STATUS_OK) {
+			err = status;
+			vm_log_error("ADC register callback error %d", status);
+			goto exit;
+		}
+	}
+
+exit:
+	lua_pushinteger(L, err);
+    return 1;
+}
+
+/* Stop ADC
+ * gpio.adc_stop(channel)
+ * channel: 0 -> Battery voltage, 1 -> ADC15 (GPIO1), 2 -> ADC13 (GPIO2), 3 -> GPIO3
+ */
+//====================================
+static int gpio_adc_stop(lua_State* L)
+{
+    VMUINT8 chan = luaL_checkinteger(L, 1);
+	if ((chan < 0) || (chan >= MAX_ADC_CHAN)) return luaL_error(L, "not valid adc channel");
+
+	VM_DCL_STATUS status = 1;
+    if (adc_chan[chan].adc_handle >= 0) {
+		if (adc_chan[chan].repeat > 0) {
+			adc_chan[chan].repeat = 0;
+			vm_dcl_adc_control_send_stop_t stop_data;
+			stop_data.owner_id = vm_dcl_get_owner_id();
+			status = vm_dcl_control(adc_chan[chan].adc_handle,VM_DCL_ADC_COMMAND_SEND_STOP,(void *)&stop_data);
+			if (status != VM_DCL_STATUS_OK) {
+				vm_log_debug("ADC send stop error %d", status);
+			}
+		}
+		else status = 2;
+    }
+    lua_pushinteger(L, status);
+    return 1;
+}
+
+/* Start ADC, return result if no callback function is given
+ * gpio.adc_start(channel, [repeat], [cb_func])
+ * channel: 0 -> Battery voltage, 1 -> ADC15 (GPIO1), 2 -> ADC13 (GPIO2), 3 -> GPIO3
+ *  repeat: >=1000 -> continuous measurement; 1 -> measure only once; >0 -> measure 'repeat' times
+ * cb_func: Lua function to call after result is ready
  */
 //=====================================
 static int gpio_adc_start(lua_State* L)
 {
-    vm_dcl_adc_control_create_object_t obj_data;
-    vm_dcl_adc_control_send_start_t start_data;
-    VM_DCL_HANDLE handle;
-    VM_DCL_STATUS status;
-    int gpio_pin = -1;
-    int period = 1000;
-    int count = 1;
-    int chan = luaL_checkinteger(L, 1);
+	int repeat = 1;
 
-    if (adc_handle >= 0) {
-        vm_dcl_adc_control_send_stop_t stop_data;
-        stop_data.owner_id = vm_dcl_get_owner_id();
-    	status = vm_dcl_control(adc_handle,VM_DCL_ADC_COMMAND_SEND_STOP,(void *)&stop_data);
-        vm_dcl_close(adc_handle);
-        adc_handle = -1;
-    }
-    g_adc_once = 1;
+	VMUINT8 chan = luaL_checkinteger(L, 1);
+	if ((chan < 0) || (chan >= MAX_ADC_CHAN)) return luaL_error(L, "not valid adc channel");
 
-    if (chan > 20) {
-    	chan -= 20;
-		if (chan > 3) {
-	        return luaL_error(L, "not pin adc");
-		}
+	if (adc_chan[chan].adc_handle < 0) return luaL_error(L, "adc channel not configured");
 
-		status = vm_dcl_config_pin_mode(chan, VM_DCL_PIN_MODE_ADC); // Sets the pin to ADC mode
-		if (status != VM_DCL_STATUS_OK) {
-	        return luaL_error(L, "pin ADC mode error");
-		}
-	    chan = PIN2CHANNEL(chan);
+	if (lua_isnumber(L, 2)) {
+		repeat = luaL_checkinteger(L, 2);
+	}
 
-    }
-    if (lua_gettop(L) > 1) {
-		if ((lua_type(L, 2) == LUA_TFUNCTION) || (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
-			if (adc_cb_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, adc_cb_ref);
-			lua_pushvalue(L, 2);
-			adc_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    // === Check callback function
+	if (adc_chan[chan].adc_cb_ref != LUA_NOREF) {
+		luaL_unref(L, LUA_REGISTRYINDEX, adc_chan[chan].adc_cb_ref);
+		adc_chan[chan].adc_cb_ref = LUA_NOREF;
+	}
+
+	// === Stop adc if running
+	VM_DCL_STATUS status = 0;
+    if (adc_chan[chan].adc_handle >= 0) {
+		if (adc_chan[chan].repeat > 0) {
+			adc_chan[chan].repeat = 0;
+			vm_dcl_adc_control_send_stop_t stop_data;
+			stop_data.owner_id = vm_dcl_get_owner_id();
+			status = vm_dcl_control(adc_chan[chan].adc_handle,VM_DCL_ADC_COMMAND_SEND_STOP,(void *)&stop_data);
+			if (status != VM_DCL_STATUS_OK) {
+				vm_log_debug("ADC send stop error %d", status);
+			}
 		}
     }
-    if (lua_gettop(L) > 2) period = luaL_checkinteger(L, 3);
-    if (lua_gettop(L) > 3) count = luaL_checkinteger(L, 4) & 0x00FF;
-    if (lua_gettop(L) > 4) g_adc_once = luaL_checkinteger(L, 5) & 0x0001;
 
-    // Open ANALOG_PIN as ADC device
-    adc_handle = vm_dcl_open(VM_DCL_ADC,0);
-    // register ADC result callback
-    status = vm_dcl_register_callback(adc_handle, VM_DCL_ADC_GET_RESULT ,(vm_dcl_callback)adc_callback, (void *)NULL);
+    // === Register Lua callback function if given as the last argument
+	if ((lua_type(L, -1) == LUA_TFUNCTION) || (lua_type(L, -1) == LUA_TLIGHTFUNCTION)) {
+		// register adc callback function
+		lua_pushvalue(L, -1);
+		adc_chan[chan].adc_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+	}
 
-    // Indicate to the ADC module driver to notify the result.
-    obj_data.owner_id = vm_dcl_get_owner_id();
-    // Set physical ADC channel which should be measured.
-    obj_data.channel = chan; //VM_DCL_ADC_VBAT_CHANNEL;
-    // Set measurement period, the unit is in ticks.
-    obj_data.period = period;
-    // Measurement count.
-    obj_data.evaluate_count = count;
-    // Whether to send message to owner module or not.
-    obj_data.send_message_primitive = 1;
+    if (repeat < 1) repeat = 1;
+    if (repeat > 1000) repeat = 1000;
+    if (adc_chan[chan].adc_cb_ref == LUA_NOREF) repeat = 1;
 
-    // setup ADC object
-    status = vm_dcl_control(adc_handle,VM_DCL_ADC_COMMAND_CREATE_OBJECT,(void *)&obj_data);
+    // === Start ADC
+    if (adc_chan[chan].adc_cb_ref == LUA_NOREF) adc_chan[chan].cb_wait = 1;
+    else adc_chan[chan].cb_wait = 0;
+	adc_chan[chan].vresult = -999999.9;
+	adc_chan[chan].result = -999999;
+	adc_chan[chan].repeat = repeat;
 
-    // start ADC
-    g_adc_result = 0;
-    g_adc_vresult = -1;
-    g_adc_new = 0;
-    start_data.owner_id = vm_dcl_get_owner_id();
-    status = vm_dcl_control(adc_handle,VM_DCL_ADC_COMMAND_SEND_START,(void *)&start_data);
+	vm_dcl_adc_control_send_start_t start_data;
+	start_data.owner_id = vm_dcl_get_owner_id();
+	status = vm_dcl_control(adc_chan[chan].adc_handle,VM_DCL_ADC_COMMAND_SEND_START,(void *)&start_data);
+	if (status != VM_DCL_STATUS_OK) {
+		vm_log_error("ADC send start error %d", status);
+	}
+	else {
+		if (adc_chan[chan].adc_cb_ref != LUA_NOREF) {
+			lua_pushinteger(L, status);
+		}
+		else {
+			// wait for result
+			if (vm_signal_timed_wait(g_shell_signal, adc_chan[chan].time * 2) != 0) {
+				vm_log_debug("No adc result");
+				lua_pushinteger(L, -9);
+			}
+			else lua_pushnumber(L, adc_cb_params.fval);
+			adc_chan[chan].cb_wait = 0;
+			adc_chan[chan].repeat = 0;
+		}
 
-    return 0;
+	}
+    return 1;
 }
-
-//===================================
-static int gpio_adc_get(lua_State* L)
-{
-	lua_pushinteger(L, g_adc_result);
-	lua_pushnumber(L, (float)g_adc_vresult / 1000000.0);
-    lua_pushinteger(L, g_adc_new);
-    g_adc_new = 0;
-    return 3;
-}
-
-//====================================
-static int gpio_adc_stop(lua_State* L)
-{
-    if (adc_handle >= 0) {
-        vm_dcl_adc_control_send_stop_t stop_data;
-        stop_data.owner_id = vm_dcl_get_owner_id();
-        VM_DCL_STATUS status = vm_dcl_control(adc_handle,VM_DCL_ADC_COMMAND_SEND_STOP,(void *)&stop_data);
-        vm_dcl_close(adc_handle);
-        adc_handle = -1;
-    }
-    return 0;
-}
-
 
 
 #undef MIN_OPT_LEVEL
@@ -735,7 +867,7 @@ const LUA_REG_TYPE gpio_map[] = { { LSTRKEY("mode"), LFUNCVAL(gpio_mode) },
                                   { LSTRKEY("pwm_clock"), LFUNCVAL(gpio_pwm_clock) },
                                   { LSTRKEY("adc_start"), LFUNCVAL(gpio_adc_start) },
                                   { LSTRKEY("adc_stop"), LFUNCVAL(gpio_adc_stop) },
-                                  { LSTRKEY("adc_get"), LFUNCVAL(gpio_adc_get) },
+                                  { LSTRKEY("adc_config"), LFUNCVAL(gpio_adc_config) },
 #if LUA_OPTIMIZE_MEMORY > 0
                                   { LSTRKEY("OUTPUT"), LNUMVAL(OUTPUT) },
                                   { LSTRKEY("INPUT"), LNUMVAL(INPUT) },
@@ -755,6 +887,15 @@ LUALIB_API int luaopen_gpio(lua_State* L)
     	pwm_handles[i] = -1;
     	pwm_clk[i] = -1;
     }
+    for (int i=0; i<MAX_ADC_CHAN; i++) {
+    	adc_chan[i].adc_handle = -1;
+    	adc_chan[i].adc_cb_ref = LUA_NOREF;
+    	adc_chan[i].cb_wait = 0;
+    	adc_chan[i].chan = 0;
+    	adc_chan[i].repeat = 0;
+    	adc_chan[i].time = 100;
+    }
+    adc_cb_params.cb_ref = LUA_NOREF;
 
     lua_register(L, "pinMode", gpio_mode);
     lua_register(L, "pinEintOpen", gpio_eint);

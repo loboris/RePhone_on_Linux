@@ -227,7 +227,7 @@ VM_SIGNAL_RESULT vm_signal_wait(VM_SIGNAL_ID signal_id);
  *    thread will resume the execution.
  * PARAMETERS
  *    signal_id: [IN] The ID of the signal the calling thread will be waiting on.
- *    time_out:  [IN] The maximum wait time in microsecond.
+ *    time_out:  [IN] The maximum wait time in MILIsecond.
  * RETURNS
  *    VM_SIGNAL_RESULT
  *****************************************************************************/

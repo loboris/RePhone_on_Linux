@@ -24,7 +24,6 @@
 #define CONTENT_TYPE_OCTET "application/octet-stream"
 #define CONTENT_TYPE_TEXT "text/plain"
 
-extern lua_State* L;
 extern VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type;
 
 static int g_channel_id = 0;
@@ -174,6 +173,10 @@ static void https_send_termination_ind_cb(void)
     vm_log_debug("https_send_termination_ind_cb()");
 }
 
+static cb_func_param_httpsdata_t https_cb_params_data;
+static cb_func_param_httpsheader_t https_cb_params_header;
+
+
 //--------------------------------------------------------------------
 static void https_send_read_request_rsp_cb(VMUINT16 request_id,
                                            VMUINT8 result,
@@ -199,22 +202,10 @@ static void https_send_read_request_rsp_cb(VMUINT16 request_id,
     } else {
         g_request_id = request_id;
     	if (g_https_header_cb_ref != LUA_NOREF) {
-			int i;
-			luaL_Buffer b;
-
-			lua_rawgeti(L, LUA_REGISTRYINDEX, g_https_header_cb_ref);
-			if ((lua_type(L, -1) != LUA_TFUNCTION) && (lua_type(L, -1) != LUA_TLIGHTFUNCTION)) {
-			  // * BAD CB function reference
-			  lua_remove(L, -1);
-			}
-			else {
-				luaL_buffinit(L, &b);
-				for(i = 0; i < reply_header_len; i++) {
-					luaL_addchar(&b, reply_header[i]);
-				}
-				luaL_pushresult(&b);
-				lua_call(L, 1, 0);
-			}
+    		https_cb_params_header.cb_ref = g_https_header_cb_ref;
+    		https_cb_params_header.header = reply_header;
+    		https_cb_params_header.len = reply_header_len;
+    	    remote_lua_call(CB_FUNC_HTTPS_HEADER, &https_cb_params_header);
     	}
     	else {
     		fputs("\n--- Header: ---\n", stdout);
@@ -226,23 +217,11 @@ static void https_send_read_request_rsp_cb(VMUINT16 request_id,
     	}
 
     	if (g_https_response_cb_ref != LUA_NOREF) {
-			int i;
-			luaL_Buffer b;
-
-			lua_rawgeti(L, LUA_REGISTRYINDEX, g_https_response_cb_ref);
-			if ((lua_type(L, -1) != LUA_TFUNCTION) && (lua_type(L, -1) != LUA_TLIGHTFUNCTION)) {
-			  // * BAD CB function reference
-			  lua_remove(L, -1);
-			}
-			else {
-				luaL_buffinit(L, &b);
-				for(i = 0; i < reply_segment_len; i++) {
-					luaL_addchar(&b, reply_segment[i]);
-				}
-				luaL_pushresult(&b);
-				lua_pushinteger(L, more);
-				lua_call(L, 2, 0);
-			}
+    		https_cb_params_data.cb_ref = g_https_response_cb_ref;
+    		https_cb_params_data.more = more;
+    		https_cb_params_data.len = reply_segment_len;
+    		https_cb_params_data.reply = reply_segment;
+    	    remote_lua_call(CB_FUNC_HTTPS_DATA, &https_cb_params_data);
     	}
     	else {
 			for(int i = 0; i < reply_segment_len; i++) {
@@ -272,25 +251,11 @@ static void https_send_read_read_content_rsp_cb(VMUINT16 request_id,
     int ret = -1;
 
 	if (g_https_response_cb_ref != LUA_NOREF) {
-		int i;
-		luaL_Buffer b;
-
-		lua_rawgeti(L, LUA_REGISTRYINDEX, g_https_response_cb_ref);
-		if ((lua_type(L, -1) != LUA_TFUNCTION) && (lua_type(L, -1) != LUA_TLIGHTFUNCTION)) {
-		  // * BAD CB function reference
-		  lua_remove(L, -1);
-		}
-		else {
-			luaL_buffinit(L, &b);
-			for(i = 0; i < reply_segment_len; i++) {
-				luaL_addchar(&b, reply_segment[i]);
-			}
-
-			luaL_pushresult(&b);
-			lua_pushinteger(L, more);
-
-			lua_call(L, 2, 0);
-		}
+		https_cb_params_data.cb_ref = g_https_response_cb_ref;
+		https_cb_params_data.more = more;
+		https_cb_params_data.len = reply_segment_len;
+		https_cb_params_data.reply = reply_segment;
+	    remote_lua_call(CB_FUNC_HTTPS_DATA, &https_cb_params_data);
 	}
 	else {
 		for(int i = 0; i < reply_segment_len; i++) {
@@ -331,7 +296,7 @@ static void https_send_status_query_rsp_cb(VMUINT8 status)
 }
 
 //=========================
-int https_get(lua_State* L)
+int _https_get(lua_State* L)
 {
 	int ret = 0;
     vm_https_callbacks_t callbacks = { (vm_https_set_channel_response_callback)https_send_request_set_channel_rsp_cb,
@@ -357,15 +322,27 @@ int https_get(lua_State* L)
     else {
     	ret = vm_https_set_channel(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
+
     lua_pushinteger(L, ret);
+    g_shell_result = 1;
+	vm_signal_post(g_shell_signal);
 
 	return 1;
 }
 
-//==========================
-int https_post(lua_State* L)
+//=========================
+int https_get(lua_State* L)
+{
+    const char* url = luaL_checkstring(L, 1);
+	remote_CCall(&_https_get);
+	return g_shell_result;
+}
+
+//===========================
+int _https_post(lua_State* L)
 {
 	int ret;
+	size_t sl;
 
 	vm_https_callbacks_t callbacks = { (vm_https_set_channel_response_callback)https_post_request_set_channel_rsp_cb,
     								   (vm_https_unset_channel_response_callback)https_unset_channel_rsp_cb,
@@ -376,34 +353,47 @@ int https_post(lua_State* L)
                                        (vm_https_cancel_response_callback)https_send_cancel_rsp_cb,
 									   (vm_https_status_query_response_callback)https_send_status_query_rsp_cb };
 
-	size_t sl;
+	if (!lua_isstring(L, 1)) {
+	    vm_log_debug("url missing");
+	    ret = -100;
+		goto exit;
+
+	}
+    if ((!lua_istable(L, 2)) && (!lua_isstring(L, 2))) {
+    	free_post_buffers();
+    	vm_log_debug("POST data arg missing" );
+	    ret = -101;
+	    goto exit;
+    }
+
     const char* url = luaL_checklstring(L, 1, &sl);
 
     free_post_buffers();
 
     g_https_url = vm_calloc(sl+1);
 	if (g_https_url == NULL) {
-		return luaL_error(L, "url buffer allocation error");
+	    vm_log_debug("url buffer allocation error");
+	    ret = -102;
+		goto exit;
 	}
     strncpy(g_https_url, url, sl);
     int totalalloc = (sl+1);
-
-    if ((!lua_istable(L, 2)) && (!lua_isstring(L, 2))) {
-      free_post_buffers();
-      return luaL_error(L, "POST data arg missing" );
-    }
 
 	if (lua_isstring(L, 2)) {
 		g_post_type = 0;
 		const char* pdata = luaL_checklstring(L, 2, &sl);
 		if ((sl <= 0) || (pdata == NULL)) {
 		    free_post_buffers();
-			return luaL_error(L, "wrong post data");
+		    vm_log_debug("wrong post data");
+		    ret = -103;
+		    goto exit;
 		}
 		g_postdata = vm_calloc(sl+1);
 		if (g_postdata == NULL) {
 		    free_post_buffers();
-			return luaL_error(L, "buffer allocation error");
+		    vm_log_debug("buffer allocation error");
+		    ret = -104;
+		    goto exit;
 		}
 	    totalalloc += (sl+1);
 
@@ -466,25 +456,33 @@ int https_post(lua_State* L)
 
 	    if (nentries == 0) {
 	        free_post_buffers();
-			return luaL_error(L, "no post entries");
+	        vm_log_debug("no post entries");
+		    ret = -105;
+	        goto exit;
 	    }
 	    if (err != 0) {
 	        free_post_buffers();
-			return luaL_error(L, "file not found");
+	        vm_log_debug("file not found");
+		    ret = -106;
+	        goto exit;
 	    }
 
 		// ** Allocate buffers
         g_post_context = vm_calloc(sizeof(vm_https_request_context_t));
 		if (g_post_context == NULL) {
 		    free_post_buffers();
-			return luaL_error(L, "buffer allocation error 1");
+		    vm_log_debug("buffer allocation error 1");
+		    ret = -107;
+		    goto exit;
 		}
 	    totalalloc += sizeof(vm_https_request_context_t);
 
 	    g_post_content = vm_calloc(sizeof(vm_https_content_t)*nentries);
  		if (g_post_content == NULL) {
  		    free_post_buffers();
-			return luaL_error(L, "buffer allocation error 2");
+ 		    vm_log_debug("buffer allocation error 2");
+ 		    ret = -108;
+ 	        goto exit;
     	}
 	    totalalloc += (sizeof(vm_https_content_t)*nentries);
 
@@ -492,7 +490,9 @@ int https_post(lua_State* L)
 			g_postdata = vm_calloc(pdata_size);
 			if (g_postdata == NULL) {
 				free_post_buffers();
-				return luaL_error(L, "buffer allocation error 3");
+				vm_log_debug("buffer allocation error 3");
+			    ret = -109;
+			    goto exit;
 			}
 		    totalalloc += pdata_size;
  		}
@@ -500,7 +500,9 @@ int https_post(lua_State* L)
 	    g_https_field_names = vm_calloc(fnames_size);
   		if (g_https_field_names == NULL) {
   		    free_post_buffers();
-			return luaL_error(L, "buffer allocation error 4");
+  		    vm_log_debug("buffer allocation error 4");
+  		    ret = -110;
+  		    goto exit;
   		}
 	    totalalloc += fnames_size;
 
@@ -508,7 +510,9 @@ int https_post(lua_State* L)
 			g_https_file_names = vm_calloc(filenames_size);
 			if (g_https_file_names == NULL) {
 				free_post_buffers();
-				return luaL_error(L, "buffer allocation error 5");
+				vm_log_debug("buffer allocation error 5");
+	  		    ret = -111;
+			    goto exit;
 			}
 		    totalalloc += filenames_size;
   		}
@@ -516,7 +520,9 @@ int https_post(lua_State* L)
 			g_https_path_names = vm_calloc(pathnames_size);
 			if (g_https_path_names == NULL) {
 				free_post_buffers();
-				return luaL_error(L, "buffer allocation error 6");
+				vm_log_debug("buffer allocation error 6");
+	  		    ret = -112;
+			    goto exit;
 			}
 		    totalalloc += pathnames_size;
   		}
@@ -618,16 +624,29 @@ int https_post(lua_State* L)
     ret = vm_https_register_context_and_callback(gprs_bearer_type, &callbacks);
     if (ret != 0) {
 		free_post_buffers();
-        l_message(NULL, "register context & cb failed");
+        vm_log_debug("register context & cb failed");
+	    ret = -113;
     }
     else {
     	ret = vm_https_set_channel(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        if (ret != 0) {
+            vm_log_debug("set channel failed");
+        }
     }
-    lua_pushinteger(L, ret);
 
+exit:
+    lua_pushinteger(L, ret);
+    g_shell_result = 1;
+	vm_signal_post(g_shell_signal);
 	return 1;
 }
 
+//==========================
+int https_post(lua_State* L)
+{
+	remote_CCall(&_https_post);
+	return g_shell_result;
+}
 
 //=================================
 static int https_on( lua_State* L )
@@ -669,7 +688,7 @@ static int https_on( lua_State* L )
 }
 
 //=====================================
-static int https_cancel( lua_State* L )
+static int _https_cancel( lua_State* L )
 {
 	if (g_request_id >= 0) {
 		vm_https_cancel(g_request_id);
@@ -678,8 +697,18 @@ static int https_cancel( lua_State* L )
 	g_channel_id = 0;
 	g_read_seg_num = 0;
 
+    g_shell_result = 0;
+	vm_signal_post(g_shell_signal);
 	return 0;
 }
+
+//=====================================
+static int https_cancel( lua_State* L )
+{
+	remote_CCall(&_https_cancel);
+	return g_shell_result;
+}
+
 
 #undef MIN_OPT_LEVEL
 #define MIN_OPT_LEVEL 0

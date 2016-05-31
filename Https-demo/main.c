@@ -19,11 +19,11 @@
 */
 #include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "vmtype.h" 
 #include "vmboard.h"
 #include "vmsystem.h"
-#include "vmlog.h" 
 #include "vmcmd.h" 
 #include "vmdcl.h"
 #include "vmdcl_gpio.h"
@@ -34,6 +34,40 @@
 #include "vmgsm_gprs.h"
 #include "vmwdt.h"
 #include "vmpwr.h"
+
+#include "vmsock.h"
+#include "vmbearer.h"
+
+
+//-----------------------------------------------------------------------------
+void _log_printf(int type, const char *file, int line, const char *msg, ...)
+{
+  //if ((retarget_target != retarget_device_handle) && (retarget_target != retarget_uart1_handle)) return;
+/*
+  va_list ap;
+  char *pos, message[256];
+  int sz;
+  int nMessageLen = 0;
+
+  memset(message, 0, 256);
+  pos = message;
+
+  sz = 0;
+  va_start(ap, msg);
+  nMessageLen = vsnprintf(pos, 256 - sz, msg, ap);
+  va_end(ap);
+
+  if( nMessageLen<=0 ) return;
+
+  if (type == 1) printf("\n[FATAL]");
+  else if (type == 2) printf("\n[ERROR]");
+  else if (type == 3) printf("\n[WARNING]");
+  else if (type == 4) printf("\n[INFO]");
+  else if (type == 5) printf("\n[DEBUG]");
+  if (type > 0) printf(" %s:%d ", file, line);
+*/
+  printf("%s\n", msg);
+}
 
 
 #define CUST_APN    "web.htgprs"      /* !!!=== The APN of your test SIM ===!!! */
@@ -46,9 +80,17 @@
 #define VMHTTPS_TEST_URL "https://amp.dhz.hr"
 //#define VMHTTPS_TEST_URL "https://www.howsmyssl.com/a/check"
 
+#define CONNECT_ADDRESS "82.196.4.208"
+#define CONNECT_PORT 80
+#define MAX_BUF_LEN 512
+
 static VMUINT8 g_channel_id;
 static VMINT g_read_seg_num;
 static int cnt = 0;
+static VM_BEARER_HANDLE g_bearer_hdl;
+static VM_THREAD_HANDLE g_thread_handle;
+static VMINT g_soc_sockname;
+static VMINT g_soc_client;
 
 extern void retarget_setup();
 
@@ -56,7 +98,7 @@ static void https_send_request_set_channel_rsp_cb(VMUINT32 req_id, VMUINT8 chann
 {
     VMINT ret = -1;
 
-    
+
     ret = vm_https_send_request(
         0,                           /* Request ID */
         VM_HTTPS_METHOD_GET,         /* HTTP Method Constant */
@@ -89,12 +131,12 @@ static void https_send_termination_ind_cb(void)
 {
     printf("[HTTPS] https_send_termination_ind_cb()\n");
 }
-static void https_send_read_request_rsp_cb(VMUINT16 request_id, VMUINT8 result, 
-                                         VMUINT16 status, VMINT32 cause, VMUINT8 protocol, 
+static void https_send_read_request_rsp_cb(VMUINT16 request_id, VMUINT8 result,
+                                         VMUINT16 status, VMINT32 cause, VMUINT8 protocol,
                                          VMUINT32 content_length,VMBOOL more,
-                                         VMUINT8 *content_type, VMUINT8 content_type_len,  
+                                         VMUINT8 *content_type, VMUINT8 content_type_len,
                                          VMUINT8 *new_url, VMUINT32 new_url_len,
-                                         VMUINT8 *reply_header, VMUINT32 reply_header_len,  
+                                         VMUINT8 *reply_header, VMUINT32 reply_header_len,
                                          VMUINT8 *reply_segment, VMUINT32 reply_segment_len)
 {
     VMINT ret = -1;
@@ -113,7 +155,7 @@ static void https_send_read_request_rsp_cb(VMUINT16 request_id, VMUINT8 result,
         vm_https_unset_channel(g_channel_id);
     }
     else {
-        
+
         ret = vm_https_read_content(request_id, ++g_read_seg_num, 100);
         if (ret != 0) {
             vm_https_cancel(request_id);
@@ -121,8 +163,8 @@ static void https_send_read_request_rsp_cb(VMUINT16 request_id, VMUINT8 result,
         }
     }
 }
-static void https_send_read_read_content_rsp_cb(VMUINT16 request_id, VMUINT8 seq_num, 
-                                                 VMUINT8 result, VMBOOL more, 
+static void https_send_read_read_content_rsp_cb(VMUINT16 request_id, VMUINT8 seq_num,
+                                                 VMUINT8 result, VMBOOL more,
                                                  VMUINT8 *reply_segment, VMUINT32 reply_segment_len)
 {
     VMINT ret = -1;
@@ -217,6 +259,77 @@ static void https_send_request(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data
 	);
 }
 
+#define REQUEST "GET http://loboris.eu/ HTTP/1.1\r\nHOST:loboris.eu\r\n\r\n"
+
+//================================================================================================================
+
+static VMINT32 soc_sub_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
+{
+    SOCKADDR_IN addr_in = {0};
+    char buf[MAX_BUF_LEN] = {0};
+    int len = 0;
+    int ret;
+
+    g_soc_client = socket(PF_INET, SOCK_STREAM, 0);
+    printf("Create socket: %d\n", g_soc_client);
+    addr_in.sin_family = PF_INET;
+    addr_in.sin_addr.S_un.s_addr = inet_addr(CONNECT_ADDRESS);
+    addr_in.sin_port = htons(CONNECT_PORT);
+
+    ret = connect(g_soc_client, (SOCKADDR*)&addr_in, sizeof(SOCKADDR));
+    printf("Connect %d\n", ret);
+    strcpy(buf, REQUEST);
+    ret = send(g_soc_client, buf, strlen(REQUEST), 0);
+    printf("Send &d\n", ret);
+    ret = recv(g_soc_client, buf, MAX_BUF_LEN, 0);
+    if(0 == ret)
+    {
+        printf("Received FIN from server\n");
+    }
+    else
+    {
+        printf("Received %d bytes data\n", ret);
+    }
+    buf[200] = 0;
+    printf("First 200 bytes of the data:\n%s\n", buf);
+    closesocket(g_soc_client);
+    return 0;
+}
+
+static void bearer_callback(VM_BEARER_HANDLE handle, VM_BEARER_STATE event, VMUINT data_account_id, void *user_data)
+{
+    if (VM_BEARER_WOULDBLOCK == g_bearer_hdl)
+    {
+        g_bearer_hdl = handle;
+    }
+    if (handle == g_bearer_hdl)
+    {
+        switch (event)
+        {
+            case VM_BEARER_DEACTIVATED:
+                break;
+            case VM_BEARER_ACTIVATING:
+                break;
+            case VM_BEARER_ACTIVATED:
+                g_thread_handle = vm_thread_create(soc_sub_thread, NULL, 0);
+
+                break;
+            case VM_BEARER_DEACTIVATING:
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+
+void start_doing(VM_TIMER_ID_NON_PRECISE tid, void* user_data)
+{
+    vm_timer_delete_non_precise(tid);
+    g_bearer_hdl = vm_bearer_open(VM_BEARER_DATA_ACCOUNT_TYPE_GPRS_CUSTOMIZED_APN, NULL, bearer_callback, VM_BEARER_IPV4);
+}
+
+//================================================================================================================
 
 void handle_sysevt(VMINT message, VMINT param) 
 {
@@ -224,7 +337,8 @@ void handle_sysevt(VMINT message, VMINT param)
     {
     case VM_EVENT_CREATE:
         set_custom_apn();
-        vm_timer_create_non_precise(VMHTTPS_TEST_DELAY, https_send_request, NULL);
+        //vm_timer_create_non_precise(VMHTTPS_TEST_DELAY, https_send_request, NULL);
+        vm_timer_create_non_precise(20000, start_doing, NULL);
         break;
 
     case VM_EVENT_QUIT:
@@ -236,8 +350,7 @@ void vm_main(void)
 {
     retarget_setup();
     printf("\n=== https example ===\n");
-    
+
     /* register system events handler */
     vm_pmng_register_system_event_callback(handle_sysevt);
 }
-

@@ -804,7 +804,7 @@ typedef enum
  *
  * VM_SOC_LINGER:
  * val contains the value of enable/diable LINGER option and the value of LINGER time.
- * This option is used in linger on close.
+ * This option is used in linger on close.BSD socket
  * For example:
  * soc_linger_t val;
  * val.onoff = KAL_TRUE; val.
@@ -843,7 +843,7 @@ typedef enum
  * kal_bool val = KAL_TRUE;
  * vm_soc_setsockopt(sock,  VM_SOC_TCP_SACK, &val, sizeof(kal_bool))
  *
- * VM_SOC_TCP_TIME_STAMP:
+ * VM_SOC_TCP_TIME_STAMP:BSD socket
  * The VM_SOC_TCP_TIME_STAMP function is enable by default. That is to say,
  * if you don't set this option. The default VM_SOC_TCP_TIME_STAMP value is TRUE.
  * val contains KAL_TRUE indicates this option shall be enabled,
@@ -958,7 +958,7 @@ unsigned int vm_soc_htonl(unsigned int a);
  * DESCRIPTION
  *  Converts short integer (16 bits) from host byte order to network byte order
  * PARAMETERS
- *  a: [IN] A short integer to be converted.
+ *  a: [IN] A short integer to be converted.BSD socket
  * RETURNS
  *  Converted result in unsigned integer.
  * EXAMPLE

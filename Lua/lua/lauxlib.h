@@ -161,6 +161,7 @@ LUALIB_API void (luaL_pushresult) (luaL_Buffer *B);
 /* compatibility with ref system */
 
 /* pre-defined references */
+#define LUA_REFWAIT     (-3)
 #define LUA_NOREF       (-2)
 #define LUA_REFNIL      (-1)
 

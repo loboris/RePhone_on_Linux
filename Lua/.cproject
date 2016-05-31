@@ -23,6 +23,7 @@
 							<builder id="cdt.managedbuild.builder.gnu.cross.637745845" keepEnvironmentInBuildfile="false" managedBuildOn="false" name="Gnu Make Builder" superClass="cdt.managedbuild.builder.gnu.cross"/>
 							<tool id="cdt.managedbuild.tool.gnu.cross.c.compiler.1560123144" name="Cross GCC Compiler" superClass="cdt.managedbuild.tool.gnu.cross.c.compiler">
 								<option id="gnu.c.compiler.option.include.paths.470174954" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" useByScannerDiscovery="false" valueType="includePath">
+									<listOptionValue builtIn="false" value="/home/LoBo2_Razno/RePhone/eclipse-linux/rephone/Lua"/>
 									<listOptionValue builtIn="false" value="/home/LoBo2_Razno/RePhone/eclipse-linux/rephone/common"/>
 									<listOptionValue builtIn="false" value="/home/LoBo2_Razno/RePhone/eclipse-linux/rephone/include"/>
 								</option>
@@ -57,7 +58,11 @@
 		<project id="Lua.null.268787517" name="Lua"/>
 	</storageModule>
 	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
-	<storageModule moduleId="refreshScope"/>
+	<storageModule moduleId="refreshScope" versionNumber="2">
+		<configuration configurationName="Default">
+			<resource resourceType="PROJECT" workspacePath="/Lua"/>
+		</configuration>
+	</storageModule>
 	<storageModule moduleId="scannerConfiguration">
 		<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
 		<scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.cross.base.419400540;cdt.managedbuild.toolchain.gnu.cross.base.419400540.128265287;cdt.managedbuild.tool.gnu.cross.c.compiler.1560123144;cdt.managedbuild.tool.gnu.c.compiler.input.1709368094">

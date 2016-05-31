@@ -13,7 +13,8 @@
 
 
 #include "lua.h"
-
+#include "shell.h"
+#include "vmthread.h"
 
 typedef LUAI_UINT32 lu_int32;
 
@@ -107,8 +108,10 @@ typedef lu_int32 Instruction;
 
 
 #ifndef lua_lock
-#define lua_lock(L)     ((void) 0) 
+#define lua_lock(L)     ((void) 0)
 #define lua_unlock(L)   ((void) 0)
+//#define lua_lock(L)     vm_mutex_lock(&lua_func_mutex)
+//#define lua_unlock(L)   vm_mutex_unlock(&lua_func_mutex)
 #endif
 
 #ifndef luai_threadyield

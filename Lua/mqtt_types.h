@@ -1,0 +1,147 @@
+/* mqtt_types.h
+ *
+ * Copyright (C) 2006-2016 wolfSSL Inc.
+ *
+ * This file is part of wolfMQTT.
+ *
+ * wolfMQTT is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * wolfMQTT is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1335, USA
+ */
+
+/* Implementation by: David Garske
+ * Based on specification for MQTT v3.1.1
+ * See http://mqtt.org/documentation for additional MQTT documentation.
+ */
+
+#include "vmmemory.h"
+
+
+#ifndef WOLFMQTT_TYPES_H
+#define WOLFMQTT_TYPES_H
+
+#ifdef __cplusplus
+    extern "C" {
+#endif
+
+#include "visibility.h"
+
+/* Endianess check */
+#if defined(__BIG_ENDIAN__) || defined(BIG_ENDIAN_ORDER)
+    #error Big Endian is not yet supported. Please contact us if \
+        you are interested in this feature.
+#endif
+
+#ifdef _WIN32
+    #define USE_WINDOWS_API
+
+    /* Make sure a level of Win compatibility is defined */
+    #ifndef _WIN32_WINNT
+        #define _WIN32_WINNT 0x0501
+    #endif
+#endif
+
+#ifndef WOLFMQTT_NO_STDIO
+    #include <stdio.h>
+#endif
+
+/* Allow custom override of data types */
+#ifndef WOLFMQTT_CUSTOM_TYPES
+    /* Basic Types */
+    #ifndef byte
+        typedef unsigned char  byte;
+    #endif
+    #ifndef word16
+        typedef unsigned short word16;
+    #endif
+    #ifndef word32
+        typedef unsigned int   word32;
+    #endif
+#endif
+
+/* Response Codes */
+enum MqttPacketResponseCodes {
+    MQTT_CODE_SUCCESS = 0,
+    MQTT_CODE_ERROR_BAD_ARG = -1,
+    MQTT_CODE_ERROR_OUT_OF_BUFFER = -2,
+    MQTT_CODE_ERROR_MALFORMED_DATA = -3, /* Error (Malformed Remaining Len) */
+    MQTT_CODE_ERROR_PACKET_TYPE = -4,
+    MQTT_CODE_ERROR_PACKET_ID = -5,
+    MQTT_CODE_ERROR_TLS_CONNECT = -6,
+    MQTT_CODE_ERROR_TIMEOUT = -7,
+    MQTT_CODE_ERROR_NETWORK = -8,
+};
+
+
+/* Standard wrappers */
+#ifndef WOLFMQTT_CUSTOM_STRING
+    #include <string.h>
+    #ifndef XSTRLEN
+        #define XSTRLEN(s1)         strlen((s1))
+    #endif
+    #ifndef XSTRCHR
+        #define XSTRCHR(s,c)        strchr((s),(c))
+    #endif
+    #ifndef XSTRCMP
+        #define XSTRCMP(s1,s2)      strcmp((s1),(s2))
+    #endif
+    #ifndef XMEMCPY
+        #define XMEMCPY(d,s,l)      memcpy((d),(s),(l))
+    #endif
+    #ifndef XMEMSET
+        #define XMEMSET(b,c,l)      memset((b),(c),(l))
+    #endif
+    #ifndef XATOI
+        #define XATOI(s)            atoi((s))
+    #endif
+#endif
+
+#ifndef WOLFMQTT_CUSTOM_MALLOC
+    #ifndef WOLFMQTT_MALLOC
+        #define WOLFMQTT_MALLOC(s)  vm_malloc((s))
+    #endif
+    #ifndef WOLFMQTT_FREE
+        #define WOLFMQTT_FREE(p)    {void* xp = (p); if((xp)) vm_free((xp));}
+    #endif
+#endif
+
+#ifndef WOLFMQTT_PACK
+    #if defined(__GNUC__)
+        #define WOLFMQTT_PACK __attribute__ ((packed))
+    #else
+        #define WOLFMQTT_PACK
+    #endif
+#endif
+
+/* use inlining if compiler allows */
+#ifndef INLINE
+#ifndef NO_INLINE
+    #if defined(__GNUC__) || defined(__MINGW32__) || defined(__IAR_SYSTEMS_ICC__)
+           #define INLINE inline
+    #elif defined(_MSC_VER)
+        #define INLINE __inline
+    #elif defined(THREADX)
+        #define INLINE _Inline
+    #else
+        #define INLINE
+    #endif
+#else
+    #define INLINE
+#endif /* !NO_INLINE */
+#endif /* !INLINE */
+
+#ifdef __cplusplus
+    } /* extern "C" */
+#endif
+
+#endif /* WOLFMQTT_TYPES_H */

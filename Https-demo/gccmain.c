@@ -1,6 +1,7 @@
 
 #include <stdio.h>
 #include <fcntl.h>
+#include <sys/types.h>
 #if defined(__GNUC__) /* GCC CS3 */
 #include <sys/stat.h>
 #endif
@@ -16,9 +17,6 @@
 #include "vmdatetime.h"
 #include "vmthread.h"
 #include "vmboard.h"
-
-#include "shell.h"
-
 
 #define LOG(args...) //printf(args)
 
@@ -68,13 +66,13 @@ extern caddr_t _sbrk(int incr)
             vm_log_fatal("malloc failed");
         } else {
             heap = base;
-            //vm_log_info("Init memory success, base: %#08x, size: %d, heap: %d", (caddr_t)g_base_address, g_memory_size, g_memory_size_b);
+            vm_log_info("Init memory success");
         }
     }
 
     prev_heap = heap;
 
-    if (heap + incr > g_base_address + g_memory_size) {
+    if(heap + incr > g_base_address + g_memory_size) {
         vm_log_fatal("Not enough memory");
     }
     else {
@@ -87,28 +85,19 @@ extern caddr_t _sbrk(int incr)
 //---------------------------------------------
 extern int link(char* old_name, char* new_name)
 {
-    /*VMWCHAR ucs_oldname[32], ucs_newname[32];
+    VMWCHAR ucs_oldname[32], ucs_newname[32];
     vm_chset_ascii_to_ucs2(ucs_oldname, 32, old_name);
     vm_chset_ascii_to_ucs2(ucs_newname, 32, new_name);
     //return vm_fs_rename(old_name, new_name);
-    return vm_fs_rename(ucs_oldname, ucs_newname);*/
-
-    g_fcall_message.message_id = CCALL_MESSAGE_FRENAME;
-    g_CCparams.cpar1 = old_name;
-    g_CCparams.cpar2 = new_name;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
-    return g_shell_result;
+    return vm_fs_rename(ucs_oldname, ucs_newname);
 }
 
 //----------------------------------------------
 int _open(const char* file, int flags, int mode)
 {
-    //int result;
+    int result;
     VMUINT fs_mode;
-    //VMWCHAR wfile_name[64];
+    VMWCHAR wfile_name[64];
     char file_name[64];
     char* ptr;
 
@@ -118,6 +107,8 @@ int _open(const char* file, int flags, int mode)
     } else {
         ptr = (char *)file;
     }
+
+    vm_chset_ascii_to_ucs2(wfile_name, 64, ptr);
 
     if(flags & O_CREAT) {
         fs_mode = VM_FS_MODE_CREATE_ALWAYS_WRITE;
@@ -131,29 +122,17 @@ int _open(const char* file, int flags, int mode)
         fs_mode |= VM_FS_MODE_APPEND;
     }
 
-    //vm_chset_ascii_to_ucs2(wfile_name, 64, ptr);
-    //result = vm_fs_open(wfile_name, fs_mode, 0);
-    g_fcall_message.message_id = CCALL_MESSAGE_FOPEN;
-    g_CCparams.cpar1 = ptr;
-    g_CCparams.ipar1 = fs_mode;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
-    return g_shell_result;
+    result = vm_fs_open(wfile_name, fs_mode, 0);
+    LOG("_open(%s, 0x%X, 0x%X) - %d\n", file, flags, mode, result);
+    return result;
 }
 
 //-------------------------
 extern int _close(int file)
 {
-    //vm_fs_close(file);
-    g_fcall_message.message_id = CCALL_MESSAGE_FCLOSE;
-    g_CCparams.ipar1 = file;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
-    return g_shell_result;
+    LOG("_close(%d)\n", file);
+    vm_fs_close(file);
+    return 0;
 }
 
 //------------------------------------------
@@ -162,48 +141,40 @@ extern int _fstat(int file, struct stat* st)
     int size;
     st->st_mode = S_IFCHR;
 
-    if(file < 3) return 0;
+    if(file < 3) {
+        return 0;
+    }
 
-    /*if(vm_fs_get_size(file, &size) > 0) {
-        st->st_size = size;
-    }*/
-    g_fcall_message.message_id = CCALL_MESSAGE_FSIZE;
-    g_CCparams.ipar1 = file;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
-    if (g_shell_result > 0) {
+    if(vm_fs_get_size(file, &size) > 0) {
         st->st_size = size;
     }
+
+    LOG("_fstat(%d, 0x%X) - size: %d\n", file, (int)st, size);
     return 0;
 }
 
 //--------------------------
 extern int _isatty(int file)
 {
-    if (file < 3) return 1;
+    if(file < 3) {
+        return 1;
+    }
+
+    LOG("_isatty(%d)\n", file);
     return 0;
 }
 
 //-------------------------------------------------
 extern int _lseek(int file, int offset, int whence)
 {
-    /*int position;
+    int position;
     int result;
 
     vm_fs_seek(file, offset, whence + 1);
-    result = vm_fs_get_position(file, &position);*/
+    result = vm_fs_get_position(file, &position);
 
-    g_fcall_message.message_id = CCALL_MESSAGE_FSEEK;
-    g_CCparams.ipar1 = file;
-    g_CCparams.ipar2 = offset;
-    g_CCparams.ipar3 = whence + 1;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
-    return g_shell_result;
+    LOG("_lseek(%d, %d, %d) - %d\n", file, offset, whence, position);
+    return position;
 }
 
 //---------------------------------------
@@ -223,19 +194,11 @@ extern int _read(int file, char* ptr, int len)
         }
         return len;
     } else {
-        /*int read_bytes = len;
+        int read_bytes = len;
         int bytes;
         bytes = vm_fs_read(file, ptr, len, &read_bytes);
-        return bytes;*/
-        g_fcall_message.message_id = CCALL_MESSAGE_FREAD;
-        g_CCparams.ipar1 = file;
-        g_CCparams.ipar2 = len;
-        g_CCparams.cpar1 = ptr;
-        vm_thread_send_message(g_main_handle, &g_fcall_message);
-        // wait for call to finish...
-        vm_signal_wait(g_shell_signal);
-
-        return g_shell_result;
+        LOG("_read(%d, %s, %d, %d) - %d\n", file, ptr, len, read_bytes, bytes);
+        return bytes;
     }
 }
 
@@ -256,19 +219,11 @@ extern int _write(int file, char* ptr, int len)
         }
         return len;
     } else {
-        /*VMUINT written_bytes;
+        VMUINT written_bytes;
 
         vm_fs_write(file, ptr, len, &written_bytes);
-        return written_bytes;*/
-        g_fcall_message.message_id = CCALL_MESSAGE_FWRITE;
-        g_CCparams.ipar1 = file;
-        g_CCparams.ipar2 = len;
-        g_CCparams.cpar1 = ptr;
-        vm_thread_send_message(g_main_handle, &g_fcall_message);
-        // wait for call to finish...
-        vm_signal_wait(g_shell_signal);
-
-        return g_shell_result;
+        LOG("_write(%d, %s, %d, %d)\n", file, ptr, len, written_bytes);
+        return written_bytes;
     }
 }
 

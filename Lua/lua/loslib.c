@@ -20,6 +20,7 @@
 #include "lauxlib.h"
 #include "lualib.h"
 #include "lrotable.h"
+#include "lundump.h"
 
 #include "vmdatetime.h"
 #include "sntp.h"
@@ -42,29 +43,36 @@
 #include "ymodem.h"
 #endif
 
-#define REDLED               17
-#define GREENLED             15
-#define BLUELED              12
+#define REDLED           17
+#define GREENLED         15
+#define BLUELED          12
+#define REG_BASE_ADDRESS 0xa0000000
 
-extern int retarget_target;
-extern VM_DCL_HANDLE retarget_device_handle;
-extern VM_DCL_HANDLE retarget_uart1_handle;
 extern void retarget_putc(char ch);
 extern int retarget_waitc(unsigned char *c, int timeout);
 extern int retarget_waitchars(unsigned char *buf, int *count, int timeout);
+extern void _scheduled_startup(void);
+
+extern int retarget_target;
+extern VM_DCL_HANDLE retarget_usb_handle;
+extern VM_DCL_HANDLE retarget_uart1_handle;
 extern int no_activity_time;		// no activity counter
+extern int sys_wdt_tmo;				// HW WDT timeout in ticks: 13001 -> 59.999615 seconds
+extern int sys_wdt_rst;				// time at which hw wdt is reset in ticks: 10834 -> 50 seconds, must be < 'sys_wdt_tmo'
+extern int sys_wdt_rst_usec;
 extern int max_no_activity_time;	// time with no activity before shut down in seconds
 extern int wakeup_interval;			// regular wake up interval in seconds
 extern int led_blink;				// led blink during session
 extern int wdg_reboot_cb;			// Lua callback function called before reboot
 extern int shutdown_cb;				// Lua callback function called before shutdown
 extern VMINT g_btspp_connected;		// spp device connected flag
+extern int g_memory_size_b;
 
 
 //-----------------------------------------------------------------------------
-void lua_log_printf(int type, const char *file, int line, const char *msg, ...)
+void _log_printf(int type, const char *file, int line, const char *msg, ...)
 {
-  if ((retarget_target != retarget_device_handle) && (retarget_target != retarget_uart1_handle)) return;
+  if ((retarget_target != retarget_usb_handle) && (retarget_target != retarget_uart1_handle)) return;
 
   va_list ap;
   char *pos, message[256];
@@ -91,6 +99,17 @@ void lua_log_printf(int type, const char *file, int line, const char *msg, ...)
   printf("%s\n", message);
 }
 
+//---------------------------------
+static void _writertc(uint32_t val)
+{
+    volatile uint32_t *regprot = (uint32_t *)(REG_BASE_ADDRESS + 0x710068);
+    volatile uint32_t *regwrtgr = (uint32_t *)(REG_BASE_ADDRESS + 0x710074);
+    volatile uint32_t *regbbpu = (uint32_t *)(REG_BASE_ADDRESS + 0x710000);
+    *regprot = val;
+    *regwrtgr = (uint32_t)0x0001;
+    while (*regbbpu & 0x40) {}
+}
+
 
 /*
 //====================================================================
@@ -114,8 +133,8 @@ static int os_execute (lua_State *L) {
 }
 */
 
-//===================================
-static int os_remove (lua_State *L) {
+//====================================
+static int _os_remove (lua_State *L) {
   VMWCHAR ucs_name[VM_FS_MAX_PATH_LENGTH+1];
   const char *filename = luaL_checkstring(L, 1);
 
@@ -123,11 +142,20 @@ static int os_remove (lua_State *L) {
 
   lua_pushinteger(L, vm_fs_delete(ucs_name));
 
+  g_shell_result = 1;
+  vm_signal_post(g_shell_signal);
   return 1;
 }
 
 //===================================
-static int os_rename (lua_State *L) {
+static int os_remove (lua_State *L) {
+	const char *filename = luaL_checkstring(L, 1);
+	remote_CCall(&_os_remove);
+	return g_shell_result;
+}
+
+//====================================
+static int _os_rename (lua_State *L) {
   VMWCHAR ucs_oldname[VM_FS_MAX_PATH_LENGTH+1];
   VMWCHAR ucs_newname[VM_FS_MAX_PATH_LENGTH+1];
 
@@ -139,7 +167,17 @@ static int os_rename (lua_State *L) {
 
   lua_pushinteger(L, vm_fs_rename(ucs_oldname, ucs_newname));
 
+  g_shell_result = 1;
+  vm_signal_post(g_shell_signal);
   return 1;
+}
+
+//===================================
+static int os_rename (lua_State *L) {
+	const char *fromname = luaL_checkstring(L, 1);
+	const char *toname = luaL_checkstring(L, 2);
+	remote_CCall(&_os_rename);
+	return g_shell_result;
 }
 
 /*
@@ -159,12 +197,20 @@ static int os_getenv (lua_State *L) {
 }
 */
 
-//==================================
-static int os_clock (lua_State *L) {
+//===================================
+static int _os_clock (lua_State *L) {
   lua_pushnumber(L, ((float)vm_time_ust_get_count())/(float)CLOCKS_PER_SEC);
+  g_shell_result = 1;
+  vm_signal_post(g_shell_signal);
   return 1;
 }
 
+
+//==================================
+static int os_clock (lua_State *L) {
+	remote_CCall(&_os_clock);
+	return g_shell_result;
+}
 
 /*
 ** {======================================================
@@ -314,28 +360,54 @@ static int os_setlocale (lua_State *L) {
   return 1;
 }
 
-//===================================
-static int os_battery (lua_State *L) {
+//=====================================
+static int _os_battery (lua_State *L) {
 	lua_pushinteger(L, vm_pwr_get_battery_level());
+	g_shell_result = 1;
+	vm_signal_post(g_shell_signal);
 	return 1;
+}
+
+//====================================
+static int os_battery (lua_State *L) {
+	remote_CCall(&_os_battery);
+	return g_shell_result;
+}
+
+//====================================
+static int _os_reboot (lua_State *L) {
+    vm_log_info("REBOOT");
+	_scheduled_startup();
+	vm_pwr_reboot();
+	g_shell_result = 0;
+	vm_signal_post(g_shell_signal);
+	return 0;
 }
 
 //===================================
 static int os_reboot (lua_State *L) {
-    vm_log_info("REBOOT");
-	vm_pwr_reboot();
+	remote_CCall(&_os_reboot);
+	return g_shell_result;
+}
+
+//======================================
+static int _os_shutdown (lua_State *L) {
+	vm_log_info("SHUTDOWN");
+	vm_pwr_shutdown(777);
+	g_shell_result = 0;
+	_scheduled_startup();
+	vm_signal_post(g_shell_signal);
 	return 0;
 }
 
 //=====================================
 static int os_shutdown (lua_State *L) {
-	vm_log_info("SHUTDOWN");
-	vm_pwr_shutdown(777);
-	return 0;
+	remote_CCall(&_os_shutdown);
+	return g_shell_result;
 }
 
-//==============================================
-static int os_scheduled_startup (lua_State *L) {
+//===============================================
+static int _os_scheduled_startup (lua_State *L) {
   VMUINT rtct;
   vm_date_time_t start_time;
   struct tm *time_now;
@@ -366,19 +438,20 @@ static int os_scheduled_startup (lua_State *L) {
 	  }
   }
   else {
-	  return luaL_error(L, "Wrong argument!");
+	  vm_log_error("Wrong argument!");
+	  goto exit;
   }
 
   if (nsec <= 0) {
 	  // ** wake up at next interval
-	  no_activity_time = max_no_activity_time + 1;
+	  no_activity_time = max_no_activity_time - 5;
 	  vm_log_info("WAKE UP SCHEDULED at next interval (%d sec)", wakeup_interval);
-	  return 0;
+	  goto exit;
   }
 
   if (nsec < rtct) {
-	  vm_log_info("WAKE UP SCHEDULED in past!");
-	  return 0;
+	  vm_log_error("WAKE UP SCHEDULED in past!");
+	  goto exit;
   }
 
   start_time.day = time_now->tm_mday;
@@ -391,38 +464,66 @@ static int os_scheduled_startup (lua_State *L) {
   vm_pwr_scheduled_startup(&start_time, VM_PWR_STARTUP_ENABLE_CHECK_DHMS);
   vm_log_info("WAKE UP SCHEDULED at %s", asctime(time_now));
   //vm_pwr_shutdown(778);
+
+exit:
+  g_shell_result = 0;
+  vm_signal_post(g_shell_signal);
+  return 0;
+}
+
+//==============================================
+static int os_scheduled_startup (lua_State *L) {
+	remote_CCall(&_os_scheduled_startup);
+	return g_shell_result;
+}
+
+//=====================================
+static int _os_ntptime (lua_State *L) {
+
+  int tz = luaL_checkinteger( L, 1 );
+  if ((tz > 14) || (tz < -12)) { tz = 0; }
+
+  if (ntp_cb_ref != LUA_NOREF) {
+	  luaL_unref(L, LUA_REGISTRYINDEX, ntp_cb_ref);
+	  ntp_cb_ref = LUA_NOREF;
+  }
+  if (lua_gettop(L) >= 2) {
+	if ((lua_type(L, 2) == LUA_TFUNCTION) || (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
+	  lua_pushvalue(L, 2);
+	  ntp_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+  	}
+  }
+  sntp_gettime(tz);
+
+  g_shell_result = 0;
+  vm_signal_post(g_shell_signal);
   return 0;
 }
 
 //====================================
 static int os_ntptime (lua_State *L) {
-
-  int sntp_cb = LUA_NOREF;
-  int tz = luaL_checkinteger( L, 1 );
-  if ((tz > 14) || (tz < -12)) { tz = 0; }
-
-  if (lua_gettop(L) >= 2) {
-	if ((lua_type(L, 2) == LUA_TFUNCTION) || (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
-	  lua_pushvalue(L, 2);
-	  sntp_cb = luaL_ref(L, LUA_REGISTRYINDEX);
-  	}
-  }
-  sntp_gettime(tz, sntp_cb);
-
-  return 0;
+	int tz = luaL_checkinteger( L, 1 );
+	remote_CCall(&_os_ntptime);
+	return g_shell_result;
 }
 
 //===========================
-int os_getver(lua_State* L) {
+int _os_getver(lua_State* L) {
 	VMCHAR value[128] = {0};
 	VMUINT written = vm_firmware_get_info(value, sizeof(value)-1, VM_FIRMWARE_HOST_VERSION);
 	lua_pushstring(L, value);
 	written = vm_firmware_get_info(value, sizeof(value)-1, VM_FIRMWARE_BUILD_DATE_TIME);
 	lua_pushstring(L, value);
+	g_shell_result = 2;
+	vm_signal_post(g_shell_signal);
     return 2;
 }
 
-extern int g_memory_size_b;
+//===================================
+static int os_getver (lua_State *L) {
+	remote_CCall(&_os_getver);
+	return g_shell_result;
+}
 
 //============================
 int os_getmem(lua_State* L) {
@@ -437,30 +538,48 @@ int os_getmem(lua_State* L) {
     return 3;
 }
 
-//==================================
-static int os_mkdir (lua_State *L) {
+//===================================
+static int _os_mkdir (lua_State *L) {
   const char *dirname = luaL_checkstring(L, 1);
   VMWCHAR ucs_dirname[VM_FS_MAX_PATH_LENGTH+1];
 
   vm_chset_ascii_to_ucs2(ucs_dirname, VM_FS_MAX_PATH_LENGTH, dirname);
 
   lua_pushinteger(L, vm_fs_create_directory(ucs_dirname));
+  g_shell_result = 1;
+  vm_signal_post(g_shell_signal);
   return 1;
 }
 
 //==================================
-static int os_rmdir (lua_State *L) {
+static int os_mkdir (lua_State *L) {
+    const char *dirname = luaL_checkstring(L, 1);
+	remote_CCall(&_os_mkdir);
+	return g_shell_result;
+}
+
+//===================================
+static int _os_rmdir (lua_State *L) {
   const char *dirname = luaL_checkstring(L, 1);
   VMWCHAR ucs_dirname[VM_FS_MAX_PATH_LENGTH+1];
 
   vm_chset_ascii_to_ucs2(ucs_dirname, VM_FS_MAX_PATH_LENGTH, dirname);
 
   lua_pushinteger(L, vm_fs_remove_directory(ucs_dirname));
+  g_shell_result = 1;
+  vm_signal_post(g_shell_signal);
   return 1;
 }
 
-//===================================
-static int os_copy (lua_State *L) {
+//==================================
+static int os_rmdir (lua_State *L) {
+	const char *dirname = luaL_checkstring(L, 1);
+	remote_CCall(&_os_rmdir);
+	return g_shell_result;
+}
+
+//==================================
+static int _os_copy (lua_State *L) {
   VMWCHAR ucs_fromname[VM_FS_MAX_PATH_LENGTH+1];
   VMWCHAR ucs_toname[VM_FS_MAX_PATH_LENGTH+1];
 
@@ -472,11 +591,23 @@ static int os_copy (lua_State *L) {
 
   lua_pushinteger(L, vm_fs_copy(ucs_toname, ucs_fromname, NULL));
 
+  g_shell_result = 1;
+  vm_signal_post(g_shell_signal);
   return 1;
 }
 
-//===================================
-static int os_listfiles(lua_State* L)
+//==============================
+static int os_copy(lua_State* L)
+{
+	const char *fromname = luaL_checkstring(L, 1);
+	const char *toname = luaL_checkstring(L, 2);
+	remote_CCall(&_os_copy);
+	return g_shell_result;
+}
+
+
+//====================================
+static int _os_listfiles(lua_State* L)
 {
     VMCHAR filename[VM_FS_MAX_PATH_LENGTH] = {0};
     VMWCHAR wfilename[VM_FS_MAX_PATH_LENGTH] = {0};
@@ -547,22 +678,40 @@ static int os_listfiles(lua_State* L)
         printf("No files found.\n");
     }
 
-    return 0;
+    g_shell_result = 0;
+	vm_signal_post(g_shell_signal);
+	return 0;
+}
+
+
+//===================================
+static int os_listfiles(lua_State* L)
+{
+	remote_CCall(&_os_listfiles);
+	return g_shell_result;
+}
+
+//=================================
+static int _os_exit (lua_State *L) {
+  //exit(luaL_optint(L, 1, EXIT_SUCCESS));
+  printf("\n[SYSEVT] APP RESTART\n");
+  vm_pmng_restart_application();
+  g_shell_result = 0;
+  vm_signal_post(g_shell_signal);
+  return 0;
 }
 
 //=================================
 static int os_exit (lua_State *L) {
-  //exit(luaL_optint(L, 1, EXIT_SUCCESS));
-  printf("\n[SYSEVT] APP RESTART\n");
-  vm_pmng_restart_application();
-  return 0;
+	remote_CCall(&_os_exit);
+	return g_shell_result;
 }
 
 //=====================================
 static int os_retarget (lua_State *L) {
 	int targ = luaL_checkinteger(L,1);
 
-	if ((targ == 0) && (retarget_device_handle >= 0)) retarget_target = retarget_device_handle;
+	if ((targ == 0) && (retarget_usb_handle >= 0)) retarget_target = retarget_usb_handle;
 	else if ((targ == 1) && (retarget_uart1_handle >= 0)) retarget_target = retarget_uart1_handle;
 	else if ((targ == 2) && (g_btspp_connected)) retarget_target = -1000;
 	return 0;
@@ -638,10 +787,39 @@ static int os_noact_time (lua_State *L) {
 	return 1;
 }
 
+// set watchdog timeout
+//========================================
+static int os_wdg_timeout (lua_State *L) {
+	if (lua_gettop(L) >= 1) {
+		int wdgtmo = luaL_checkinteger(L,1);	// watchdog timeout in seconds
+
+		if (wdgtmo < 10) wdgtmo = 10;
+		if (wdgtmo > 3600) wdgtmo = 3600;
+		sys_wdt_tmo = (wdgtmo * 216685) / 1000;	// set watchdog timeout
+		sys_wdt_rst = sys_wdt_tmo - 1083;		// reset wdg 5 sec before expires
+        sys_wdt_rst_usec = (sys_wdt_tmo * 4615 / 1000) - 2000;
+		// save to RTC_SPAR0 register
+		volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + 0x0710060);
+	    *reg = wdgtmo | 0xA000;
+	    _writertc(0x586A);
+	    _writertc(0x9136);
+	}
+	lua_pushnumber(L, (float)sys_wdt_tmo / 216.685);
+	return 1;
+}
+
+//=================================
+static int _os_usb (lua_State *L) {
+	lua_pushinteger(L, vm_usb_get_cable_status());
+	g_shell_result = 1;
+	vm_signal_post(g_shell_signal);
+	return 1;
+}
+
 //================================
 static int os_usb (lua_State *L) {
-	lua_pushinteger(L, vm_usb_get_cable_status());
-	return 1;
+	remote_CCall(&_os_usb);
+	return g_shell_result;
 }
 
 //=====================================
@@ -675,11 +853,95 @@ static int os_onshdwn_cb (lua_State *L) {
 }
 
 
+//===================================
+static int os_readreg(lua_State* L)
+{
+    uint32_t adr = luaL_checkinteger(L, 1);
+
+    volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + adr);
+    uint32_t val = *reg;
+
+    lua_pushinteger (L, val);
+
+	return 1;
+}
+
+//===================================
+static int os_writereg(lua_State* L)
+{
+    uint32_t adr = luaL_checkinteger(L, 1);
+    uint32_t val = luaL_checkinteger(L, 2);
+
+    volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + adr);
+    *reg = val;
+
+	return 0;
+}
+
+//=======================================
+static int os_writertcreg(lua_State* L)
+{
+    unsigned int adr = luaL_checkinteger(L, 1);
+    uint32_t val = luaL_checkinteger(L, 2);
+
+    volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + adr);
+    *reg = val;
+
+    _writertc(0x586A);
+    _writertc(0x9136);
+
+	return 0;
+}
+
+
+//------------------------------------------------------------------
+static int writer(lua_State* L, const void* p, size_t size, void* u)
+{
+  UNUSED(L);
+  return (fwrite(p, size, 1, (FILE*)u) != 1) && (size != 0);
+}
+
+#define toproto(L,i) (clvalue(L->top+(i))->l.p)
+
+//===================================
+static int os_compile( lua_State* L )
+{
+  //printf("%s  %s\n",LUA_RELEASE,LUA_COPYRIGHT);
+
+  size_t len;
+  const char *filename = luaL_checklstring( L, 1, &len );
+
+  // check here that filename end with ".lua".
+  if ((len < 5) || (strcmp( filename + len - 4, ".lua") != 0)) return luaL_error(L, "not a .lua file");
+
+  if (luaL_loadfile(L,filename) != 0) return luaL_error(L, "error opening source file");
+  Proto* f = toproto(L, -1);
+
+  int stripping = 1;      // strip debug information?
+  char output[64];
+  strcpy(output, filename);
+  output[strlen(output) - 2] = 'c';
+  output[strlen(output) - 1] = '\0';
+
+  FILE* D = fopen(output,"wb");
+  if (D == NULL) return luaL_error(L, "error opening destination file");
+
+  lua_lock(L);
+  luaU_dump(L, f, writer, D, stripping);
+  lua_unlock(L);
+
+  if (ferror(D)) return luaL_error(L, "error writing to destination file");
+  if (fclose(D)) return luaL_error(L, "error closing destination file");
+
+  return 0;
+}
+
+
 
 #if defined USE_YMODEM
 
-//==================================
-static int file_recv( lua_State* L )
+//===================================
+static int _file_recv( lua_State* L )
 {
   int fsize = 0;
   unsigned char c, gnm;
@@ -712,12 +974,19 @@ static int file_recv( lua_State* L )
   else if (fsize == -5) printf("\r\nWrong file name or file exists!\r\n");
   else printf("\r\nReceive failed!\r\n");
 
+  g_shell_result = 0;
+  vm_signal_post(g_shell_signal);
   return 0;
 }
 
-
 //==================================
-static int file_send( lua_State* L )
+static int file_recv( lua_State* L )
+	remote_CCall(&_file_recv);
+	return g_shell_result;
+}
+
+//===================================
+static int _file_send( lua_State* L )
 {
   char res = 0;
   char newname = 0;
@@ -740,14 +1009,14 @@ static int file_send( lua_State* L )
   int ffd = file_open(fname, 0);
   if (ffd < 0) {
     l_message(NULL,"Error opening file.");
-    return 0;
+    goto exit;
   }
 
   // Get file size
   if (vm_fs_get_size(ffd, &fsize) < 0) {
     vm_fs_close(ffd);
     l_message(NULL,"Error opening file.");
-    return 0;
+    goto exit;
   }
 
   if (newname == 1) {
@@ -779,7 +1048,17 @@ static int file_send( lua_State* L )
   else {
     l_message(NULL,"\r\nError sending file.");
   }
+
+exit:
+  g_shell_result = 0;
+  vm_signal_post(g_shell_signal);
   return 0;
+}
+
+//==================================
+static int file_send( lua_State* L )
+	remote_CCall(&_file_send);
+	return g_shell_result;
 }
 
 #endif
@@ -819,13 +1098,18 @@ const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("ledblink"), 	LFUNCVAL(os_ledblink)},
   {LSTRKEY("wkupint"),  	LFUNCVAL(os_wakeup_int)},
   {LSTRKEY("noacttime"),	LFUNCVAL(os_noact_time)},
+  {LSTRKEY("wdg"),			LFUNCVAL(os_wdg_timeout)},
   {LSTRKEY("usb"),      	LFUNCVAL(os_usb)},
   {LSTRKEY("onreboot"), 	LFUNCVAL(os_onwdg_cb)},
   {LSTRKEY("onshutdown"),	LFUNCVAL(os_onshdwn_cb)},
+  {LSTRKEY("compile"),		LFUNCVAL(os_compile)},
 #if defined USE_YMODEM
   {LSTRKEY("yrecv"),    	LFUNCVAL(file_recv)},
   {LSTRKEY("ysend"),    	LFUNCVAL(file_send)},
 #endif
+  { LSTRKEY("readreg"), LFUNCVAL(os_readreg) },
+  { LSTRKEY("writereg"), LFUNCVAL(os_writereg) },
+  { LSTRKEY("writertcreg"), LFUNCVAL(os_writertcreg) },
   {LNILKEY, LNILVAL}
 };
 

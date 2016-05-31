@@ -1,19 +1,21 @@
 
+WORKSPACE_PATH = ../
+
 PROJECT = https
 
-OBJECTS += main.o retarget.o
+OBJECTS += main.o
+OBJECTS += retarget.o
 
 # ===============================================================================
 
 #PROJECT_PATH := $(patsubst %/Makefile,%,$(realpath $(lastword $(MAKEFILE_LIST))))
 #PROJECT_PATH := $(patsubst %/makefile,%,$(PROJECT_PATH))
 
-WORKSPACE_PATH ?= ../
 
 GCC_BIN ?= /usr/bin/
 
-OBJECTS += $(WORKSPACE_PATH)common/lcd_sitronix_st7789s.o $(WORKSPACE_PATH)common/tp_goodix_gt9xx.o $(WORKSPACE_PATH)common/tp_i2c.o
-SYS_OBJECTS += $(WORKSPACE_PATH)common/gccmain.o
+#OBJECTS += $(WORKSPACE_PATH)common/lcd_sitronix_st7789s.o $(WORKSPACE_PATH)common/tp_goodix_gt9xx.o $(WORKSPACE_PATH)common/tp_i2c.o
+SYS_OBJECTS += gccmain.o
 INCLUDE_PATHS += -I. -I$(WORKSPACE_PATH)include -I$(WORKSPACE_PATH)common
 INCDIRS += -I. -I$(WORKSPACE_PATH)include -I$(WORKSPACE_PATH)common
 LIBRARY_PATHS += -L$(WORKSPACE_PATH)lib
@@ -40,18 +42,19 @@ ifeq ($(UNAME_S),Darwin)
 endif
 
 CPU = -mcpu=arm7tdmi-s -mthumb -mlittle-endian
-CC_FLAGS = $(CPU) -c -fvisibility=hidden -fpic -O2
+#CC_FLAGS = $(CPU) -c -fvisibility=hidden -fpic -O2 -Wa,-adhlns=$(PROJECT).lst -save-temps
+CC_FLAGS = $(CPU) -c -fvisibility=hidden -fpic -Os
 #CC_SYMBOLS += -D__HDK_LINKIT_ASSIST_2502__ -D__COMPILER_GCC__
 CC_SYMBOLS += -D__HDK_LINKIT_REPHONE__ -D__COMPILER_GCC__
 
-LD_FLAGS = $(CPU) -O2 -Wl,--gc-sections --specs=nosys.specs -fpic -pie -Wl,-Map=$(PROJECT).map  -Wl,--entry=gcc_entry -Wl,--unresolved-symbols=report-all -Wl,--warn-common -Wl,--warn-unresolved-symbols
+LD_FLAGS = $(CPU) -Os -Wl,--gc-sections --specs=nosys.specs -fpic -pie -Wl,-Map=$(PROJECT).map  -Wl,--entry=gcc_entry -Wl,--unresolved-symbols=report-all -Wl,--warn-common -Wl,--warn-unresolved-symbols
 LD_SYS_LIBS =
 
 
 all: $(PROJECT).vxp size
 
 clean:
-	rm -f $(PROJECT).vxp $(PROJECT).bin $(PROJECT).elf $(PROJECT).hex $(PROJECT).map $(PROJECT).lst $(OBJECTS)
+	rm -f $(PROJECT).vxp $(PROJECT).bin $(PROJECT).elf $(PROJECT).hex $(PROJECT).map $(PROJECT).lst *.o *.i *.s $(OBJECTS) $(SYS_OBJECTS)
 
 .s.o:
 	$(AS) $(CPU) -o $@ $<

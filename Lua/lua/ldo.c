@@ -8,6 +8,7 @@
 #include <setjmp.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #define ldo_c
 #define LUA_CORE
@@ -30,8 +31,8 @@
 #include "lvm.h"
 #include "lzio.h"
 
-
-
+#include "shell.h"
+#include "vmthread.h"
 
 /*
 ** {======================================================
@@ -327,13 +328,17 @@ int luaD_precall (lua_State *L, StkId func, int nresults) {
     ci->top = L->top + LUA_MINSTACK;
     lua_assert(ci->top <= L->stack_last);
     ci->nresults = nresults;
-    if (L->hookmask & LUA_MASKCALL)
+    if (L->hookmask & LUA_MASKCALL) {
       luaD_callhook(L, LUA_HOOKCALL, -1);
+    }
     lua_unlock(L);
-    if (ttisfunction(ci->func))
+    if (ttisfunction(ci->func)) {
       n = (*curr_func(L)->c.f)(L);  /* do the actual call */
-    else
+    }
+    else {
       n = ((lua_CFunction)fvalue(ci->func))(L);  /* do the actual call */
+    }
+
     lua_lock(L);
     if (n < 0)  /* yielding? */
       return PCRYIELD;

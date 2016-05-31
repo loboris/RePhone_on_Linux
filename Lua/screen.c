@@ -12,8 +12,8 @@
 
 #include "lua.h"
 #include "lauxlib.h"
+#include "shell.h"
 
-extern lua_State *L;
 
 vm_graphic_frame_t g_frame;
 const vm_graphic_frame_t* g_frame_blt_group[1];
@@ -57,11 +57,11 @@ void handle_touch_event(VM_TOUCH_EVENT event, VMINT x, VMINT y)
     }
     
     if (g_touch_cb_ref != LUA_NOREF) {
-        lua_rawgeti(L, LUA_REGISTRYINDEX, g_touch_cb_ref);
-        lua_pushinteger(L, event);
-        lua_pushinteger(L, x);
-        lua_pushinteger(L, y);
-        lua_call(L, 3, 0);
+        lua_rawgeti(shellL, LUA_REGISTRYINDEX, g_touch_cb_ref);
+        lua_pushinteger(shellL, event);
+        lua_pushinteger(shellL, x);
+        lua_pushinteger(shellL, y);
+        lua_call(shellL, 3, 0);
     }
 }
 

@@ -17,6 +17,9 @@
 #include "lstate.h"
 #include "lundump.h"
 
+#include "shell.h"
+#include "vmthread.h"
+
 typedef struct {
  lua_State* L;
  lua_Writer writer;

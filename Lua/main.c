@@ -19,18 +19,22 @@
 #include "vmdcl_gpio.h"
 #include "vmdatetime.h"
 #include "vmusb.h"
+#include "vmfs.h"
+#include "vmchset.h"
 
 #include "shell.h"
-
 #include "lua.h"
 #include "lualib.h"
 #include "lauxlib.h"
+
+//#include "ts_wdt_sw.h"
+
 
 //#define USE_SCREEN_MODULE
 
 // used external functions
 extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
-extern void retarget_setup();
+//extern void retarget_setup();
 extern int luaopen_audio(lua_State *L);
 extern int luaopen_gsm(lua_State *L);
 extern int luaopen_bt(lua_State *L);
@@ -46,32 +50,32 @@ extern int luaopen_cjson(lua_State *l);
 extern int luaopen_hash_md5(lua_State *L);
 extern int luaopen_hash_sha1(lua_State *L);
 extern int luaopen_hash_sha2(lua_State *L);
+extern int luaopen_mqtt(lua_State *L);
 #if defined USE_SCREEN_MODULE
 extern int luaopen_screen(lua_State *L);
 #endif
 
-
 #define REDLED               17
 #define GREENLED             15
 #define BLUELED              12
-#define SYS_TIMER_INTERVAL   22		// ticks, 0.10153 seconds
-#define MAX_WDT_RESET_COUNT 145		// max run time with 50 sec reset = 7250 seconds, ~2 hours
+#define SYS_TIMER_INTERVAL   22		// HISR timer interval in ticks, 22 -> 0.10153 seconds
+#define MAX_WDT_RESET_COUNT 145		// max run time (with 50 sec reset = 7250 seconds, ~2 hours)
 
 // Global variables
-lua_State *L = NULL;
-int sys_wdt_rst_time = 0;
-int no_activity_time = 0;			// no activity counter
+int sys_wdt_tmo = 13001;			// HW WDT timeout in ticks: 13001 -> 59.999615 seconds
+int sys_wdt_rst = 10834;			// time at which hw wdt is reset in ticks: 10834 -> 50 seconds, must be < 'sys_wdt_tmo'
+int sys_wdt_rst_usec = 48000;
+int sys_wdt_rst_time = 0;			// must be set to 0 periodicaly to prevent watchdog timeout
+int no_activity_time = 0;			// no activity counter, set to 0 when some activity is taken
 int max_no_activity_time = 300;	    // time with no activity before shut down in seconds
 int wakeup_interval = 20*60;		// regular wake up interval in seconds
 int led_blink = BLUELED;			// led blinking during session, set to 0 for no led blink
-int sys_wdt_time = 0;
+int sys_wdt_time = 0;				// used to prevent wdg reset in critical situations (Lua PANIC)
 int wdg_reboot_cb = LUA_NOREF;		// Lua callback function called before reboot
 int shutdown_cb = LUA_NOREF;		// Lua callback function called before shutdown
-
+int g_usb_status = 0;				// status of the USB cable connection
 
 // Local variables
-static int sys_wdt_tmo = 13001;		// in ticks, 13001 = 59.999615 seconds
-static int sys_wdt_rst = 10834;		// time at which wdt is reset in ticks, 10834 = 49.99891 seconds
 static int sys_wdt_rst_count = 0;	// watchdog resets counter
 static int sys_timer_tick = 0;		// used for timing inside HISR timer callback function
 static int do_wdt_reset = 0;		// used for communication between HISR timer and wdg system timer
@@ -79,6 +83,7 @@ static int do_wdt_reset = 0;		// used for communication between HISR timer and w
 static VM_WDT_HANDLE wdg_handle = -1;
 static VM_TIMER_ID_NON_PRECISE wdg_timer_id = NULL;
 
+static cb_func_param_int_t reboot_cb_params;
 
 //--------------------------
 static void key_init(void) {
@@ -93,25 +98,33 @@ static void key_init(void) {
     vm_dcl_close(kbd_handle);
 }
 
+#define REG_BASE_ADDRESS 0xa0000000
+#define DRV_WriteReg(addr,data)     ((*(volatile uint16_t *)(addr)) = (uint16_t)(data))
+#define WDT_RESTART 	            (REG_BASE_ADDRESS+0x0008)
+#define WDT_RESTART_KEY		        0x1971
+
 // **hisr timer**, runs every 101,530 msek
 // handles wdg reset, blink led
 //---------------------------------------------
 static void sys_timer_callback(void* user_data)
 {
-	sys_wdt_rst_time += SYS_TIMER_INTERVAL;
+    VM_DCL_HANDLE ghandle;
+
+    sys_wdt_rst_time += SYS_TIMER_INTERVAL;
 	sys_wdt_time += SYS_TIMER_INTERVAL;
 
-    if (do_wdt_reset > 0) return;
+    if (do_wdt_reset > 0) return;  // wdg reset pending
 
-	if ((sys_wdt_rst_time < sys_wdt_rst) && (sys_wdt_time > sys_wdt_rst)) {
-		// reset wdt
+    if ((sys_wdt_rst_time < sys_wdt_rst) && (sys_wdt_time > sys_wdt_rst)) {
+		// ** reset hw wdt later (in '_reset_wdg')
 		sys_wdt_rst_count++;
 		do_wdt_reset = 1;
+		gpio_get_handle(led_blink, &ghandle);
+		vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
 		return;
 	}
 
 	if ((led_blink == BLUELED) || (led_blink == REDLED) || (led_blink == GREENLED)) {
-	    VM_DCL_HANDLE ghandle;
 		sys_timer_tick += SYS_TIMER_INTERVAL;
 		if (sys_timer_tick > (SYS_TIMER_INTERVAL*10)) sys_timer_tick = 0;
 		gpio_get_handle(led_blink, &ghandle);
@@ -133,13 +146,9 @@ void _reset_wdg(void)
 			vm_log_debug("[SYSTMR] WDT MAX RESETS, REBOOT");
 			if (wdg_reboot_cb != LUA_NOREF) {
 				// execute callback function
-			    lua_rawgeti(L, LUA_REGISTRYINDEX, wdg_reboot_cb);
-				if ((lua_type(L, -1) == LUA_TFUNCTION) || (lua_type(L, -1) == LUA_TLIGHTFUNCTION)) {
-					lua_call(L, 0, 0);
-				}
-				else {
-					lua_remove(L, -1);
-				}
+				reboot_cb_params.cb_ref = wdg_reboot_cb;
+				remote_lua_call(CB_FUNC_REBOOT, &reboot_cb_params);
+		        vm_signal_wait(g_reboot_signal);
 			}
 			vm_pwr_reboot();
 		}
@@ -150,7 +159,7 @@ void _reset_wdg(void)
 }
 
 //------------------------------
-void _scheduled_startup (void) {
+void _scheduled_startup(void) {
   if (wakeup_interval <= 0) return;
 
   vm_date_time_t start_time;
@@ -184,25 +193,42 @@ void _scheduled_startup (void) {
 static void wdg_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 {
 	_reset_wdg();
+	// Check USB cable status change
+	VM_USB_CABLE_STATUS usbstat = vm_usb_get_cable_status();
+	if (g_usb_status != usbstat) {
+		g_usb_status = usbstat;
+		if ((usbstat) && (retarget_target != retarget_usb_handle)) retarget_target = retarget_usb_handle;
+		else {
+			if (retarget_target == retarget_usb_handle) {
+				#if defined (USE_UART1_TARGET)
+				retarget_target = retarget_uart1_handle;
+				#else
+				retarget_target = -1;
+				#endif
+			}
+		}
+	}
+
 	if (no_activity_time > max_no_activity_time) {
 		if ((wakeup_interval > 0) && (shutdown_cb != LUA_NOREF)) {
 			// execute callback function
-		    lua_rawgeti(L, LUA_REGISTRYINDEX, shutdown_cb);
-			if ((lua_type(L, -1) == LUA_TFUNCTION) || (lua_type(L, -1) == LUA_TLIGHTFUNCTION)) {
-				lua_call(L, 0, 0);
-			}
-			else {
-				lua_remove(L, -1);
-			}
-			// Check again
+			reboot_cb_params.cb_ref = shutdown_cb;
+			remote_lua_call(CB_FUNC_REBOOT, &reboot_cb_params);
+	        vm_signal_wait(g_reboot_signal);
+			// Check again, can be changed in cb function
 			if (no_activity_time <= max_no_activity_time) return;
 		}
 		no_activity_time = 0;
 		if (wakeup_interval > 0) {
-			VM_USB_CABLE_STATUS usb_stat = vm_usb_get_cable_status();
 			_scheduled_startup();
-			if (usb_stat == 0) vm_pwr_shutdown(778);
+			if (usbstat == 0) vm_pwr_shutdown(778);
 		}
+	}
+	else {
+	    VM_DCL_HANDLE ghandle;
+		gpio_get_handle(REDLED, &ghandle);
+		if (sys_timer_tick == (SYS_TIMER_INTERVAL*5)) vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+		else if (sys_timer_tick == (SYS_TIMER_INTERVAL*6)) vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 	}
 }
 
@@ -224,7 +250,7 @@ static VMINT handle_keypad_event(VM_KEYPAD_EVENT event, VMINT code) {
 //===============================
 static int msleep_c(lua_State *L)
 {
-    long ms = lua_tointeger(L, -1);
+    VMUINT32 ms = lua_tointeger(L, -1);
     vm_thread_sleep(ms);
     return 0;
 }
@@ -253,56 +279,62 @@ static void _led_init(void)
 //---------------------
 static void lua_setup()
 {
-    VM_THREAD_HANDLE handle;
+	VM_THREAD_HANDLE handle;
 
-    L = lua_open();
-    lua_gc(L, LUA_GCSTOP, 0);  /* stop collector during initialization */
-    luaL_openlibs(L);  /* open libraries */
+	shellL = lua_open();
+    ttyL = luaL_newstate();
 
-    // ** If not needed, comment any of the fallowing "luaopen..."
-    luaopen_audio(L);
-    luaopen_gsm(L);
-    luaopen_bt(L);
-    luaopen_timer(L);
-    luaopen_gpio(L);
+    lua_gc(shellL, LUA_GCSTOP, 0);  // stop garbage collector during initialization
+    luaL_openlibs(shellL);          // open libraries
+
+    // ** If not needed, comment any of the following "luaopen_module"
+    luaopen_audio(shellL);
+    luaopen_gsm(shellL);
+    luaopen_bt(shellL);
+    luaopen_timer(shellL);
+    luaopen_gpio(shellL);
 	#if defined USE_SCREEN_MODULE
-    luaopen_screen(L);
+    luaopen_screen(shellL);
 	#endif
-    luaopen_i2c(L);
-    luaopen_tcp(L);
-    luaopen_https(L);
-    luaopen_gprs(L);
-    luaopen_sensor(L);
-    luaopen_struct(L);
-    luaopen_cjson(L);
-    luaopen_hash_md5(L);
-    luaopen_hash_sha1(L);
-    luaopen_hash_sha2(L);
+    luaopen_i2c(shellL);
+    luaopen_tcp(shellL);
+    luaopen_https(shellL);
+    luaopen_gprs(shellL);
+    luaopen_sensor(shellL);
+    luaopen_struct(shellL);
+    luaopen_cjson(shellL);
+    luaopen_hash_md5(shellL);
+    luaopen_hash_sha1(shellL);
+    luaopen_hash_sha2(shellL);
+    luaopen_mqtt(shellL);
 
-    lua_register(L, "msleep", msleep_c);
+    lua_register(shellL, "msleep", msleep_c);
 
-    lua_gc(L, LUA_GCRESTART, 0);
-
-    // execute "init.lua"
-    luaL_dofile(L, "init.lua");
+    lua_gc(shellL, LUA_GCRESTART, 0);  // restart garbage collector
 
     /*
     const char *script = "audio.play('nokia.mp3')";
 	int error;
-	error = luaL_loadbuffer(L, script, strlen(script), "line") ||
-			lua_pcall(L, 0, 0, 0);
+	error = luaL_loadbuffer(shellL, script, strlen(script), "line") ||
+			lua_pcall(shellL, 0, 0, 0);
 	if (error) {
-		fprintf(stderr, "%s", lua_tostring(L, -1));
-		lua_pop(L, 1);  // pop error message from the stack
+		fprintf(stderr, "%s", lua_tostring(shellL, -1));
+		lua_pop(shellL, 1);  // pop error message from the stack
 	}
 	*/
 
-    handle = vm_thread_create(shell_thread, L, 245);
+    vm_mutex_init(&lua_func_mutex);
+    handle = vm_thread_create(shell_thread, shellL, 150);
+    handle = vm_thread_create(tty_thread, ttyL, 160);
 }
+
+//extern void do_CCall(lua_State *shellL);
 
 //---------------------------------------------------
 static void handle_sysevt(VMINT message, VMINT param)
 {
+	cfunc_params_t *params = (cfunc_params_t *)param;
+	int res;
     switch (message) {
         case VM_EVENT_CREATE:
             lua_setup();
@@ -310,9 +342,74 @@ static void handle_sysevt(VMINT message, VMINT param)
 
 		case SHELL_MESSAGE_ID:
 			// MANY vm_xxx FUNCTIONS CAN BE EXECUTED ONLY FROM THE MAIN THREAD!!
-			// execute lua "docall(L, 0, 0)", WAITS for execution!!
-			shell_docall(L);
+			// All Lua C functions containing such calls are executed from here
+			// execute lua "docall(shellL, 0, 0)", WAITS for execution!!
+			//shell_docall(shellL);
+			res = g_CCfunc(shellL);
 			break;
+
+		case CCALL_MESSAGE_FOPEN: {
+			    VMWCHAR ucs_name[64];
+				vm_chset_ascii_to_ucs2(ucs_name, 64, params->cpar1);
+				g_shell_result = vm_fs_open(ucs_name, params->ipar1, VM_TRUE);
+				vm_signal_post(g_shell_signal);
+		    }
+            break;
+
+		case CCALL_MESSAGE_FCLOSE:
+			g_shell_result = vm_fs_close(params->ipar1);
+			vm_signal_post(g_shell_signal);
+            break;
+
+		case CCALL_MESSAGE_FCHECK: {
+			    VMWCHAR ucs_name[64];
+				vm_chset_ascii_to_ucs2(ucs_name, 64, params->cpar1);
+				g_shell_result = vm_fs_open(ucs_name, VM_FS_MODE_READ, VM_TRUE);
+				if (g_shell_result >= 0) vm_fs_close(g_shell_result);
+				vm_signal_post(g_shell_signal);
+		    }
+            break;
+
+		case CCALL_MESSAGE_FSEEK: {
+				VMUINT position = 0;
+				res = vm_fs_seek(params->ipar1, params->ipar2, params->ipar3);
+				res = vm_fs_get_position(params->ipar1, &position);
+				g_shell_result = position;
+				vm_signal_post(g_shell_signal);
+			}
+            break;
+
+		case CCALL_MESSAGE_FSIZE: {
+			    VMUINT size = 0;
+				g_shell_result = vm_fs_get_size(params->ipar1, &size);
+				if (g_shell_result == 0) g_shell_result = size;
+				vm_signal_post(g_shell_signal);
+		    }
+            break;
+
+		case CCALL_MESSAGE_FREAD: {
+			    VMUINT read_bytes = 0;
+				g_shell_result = vm_fs_read(params->ipar1, params->cpar1, params->ipar2, &read_bytes);
+				vm_signal_post(g_shell_signal);
+		    }
+            break;
+
+		case CCALL_MESSAGE_FWRITE: {
+			    VMUINT written_bytes = 0;
+		        res = vm_fs_write(params->ipar1, params->cpar1, params->ipar2, &written_bytes);
+		        g_shell_result = written_bytes;
+				vm_signal_post(g_shell_signal);
+		    }
+            break;
+
+		case CCALL_MESSAGE_FRENAME: {
+				VMWCHAR ucs_oldname[32], ucs_newname[32];
+				vm_chset_ascii_to_ucs2(ucs_oldname, 32, params->cpar1);
+				vm_chset_ascii_to_ucs2(ucs_newname, 32, params->cpar2);
+				g_shell_result =  vm_fs_rename(ucs_oldname, ucs_newname);
+				vm_signal_post(g_shell_signal);
+		    }
+            break;
 
         case SHELL_MESSAGE_QUIT:
         	vm_log_debug("[SYSEVT] APP REBOOT");
@@ -342,6 +439,7 @@ static void handle_sysevt(VMINT message, VMINT param)
     }
 }
 
+
 /****************/
 /*  Entry point */
 /****************/
@@ -349,14 +447,37 @@ void vm_main(void)
 {
 	_led_init();
 
+	// get watchdog timeout from RTC_SPAR0 register
+	volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + 0x0710060);
+    uint32_t wdgtmo = *reg;
+    int rtc_wdgok = 0;
+    if ((wdgtmo & 0xF000) == 0xA000) {
+    	wdgtmo &= 0x0FFF;
+    	if ((wdgtmo >= 10) && (wdgtmo <= 3600)) {
+			sys_wdt_tmo = (wdgtmo * 216685) / 1000;	// set watchdog timeout
+			sys_wdt_rst = sys_wdt_tmo - 1083;		// reset wdg 5 sec before expires
+	        sys_wdt_rst_usec = (sys_wdt_tmo * 4615 / 1000) - 2000;
+			rtc_wdgok = 1;
+    	}
+    }
+
 	VM_TIMER_ID_HISR sys_timer_id = vm_timer_create_hisr("WDGTMR");
     vm_timer_set_hisr(sys_timer_id, sys_timer_callback, NULL, SYS_TIMER_INTERVAL, SYS_TIMER_INTERVAL);
     wdg_timer_id = vm_timer_create_non_precise(100, wdg_timer_callback, NULL);
-	wdg_handle = vm_wdt_start(sys_wdt_tmo);
+	// init watchdog;
+    wdg_handle = vm_wdt_start(sys_wdt_tmo);
 
-    retarget_setup();
+    //retarget_setup();
 
+    /*
+    if (rtc_wdgok) {
+    	vm_log_info("WDG timeout set from RTC reg, %d %d", sys_wdt_tmo, sys_wdt_rst);
+    }
+    else {
+    	vm_log_info("WDG timeout in RTC reg wrong, using default, %d %d", sys_wdt_tmo, sys_wdt_rst);
+    }
     vm_log_info("LUA for RePhone started");
+	*/
 
     key_init();
     vm_keypad_register_event_callback(handle_keypad_event);

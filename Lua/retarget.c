@@ -10,18 +10,10 @@
 #include "shell.h"
 #include "vmwdt.h"
 #include "vmbt_spp.h"
+#include "vmusb.h"
 
-#define USE_UART1_TARGET
 
 #define SERIAL_BUFFER_SIZE  256
-
-
-VM_DCL_OWNER_ID g_owner_id = 0;  // Module owner of APP
-VM_DCL_HANDLE retarget_device_handle = -1;
-VM_DCL_HANDLE retarget_uart1_handle = -1;
-int retarget_target = -1;
-
-vm_mutex_t retarget_rx_mutex;
 
 char retarget_rx_buffer[SERIAL_BUFFER_SIZE];
 unsigned retarget_rx_buffer_head = 0;
@@ -33,6 +25,7 @@ extern int no_activity_time;
 extern void _reset_wdg(void);
 extern VMINT g_btspp_connected;		// spp device connected flag
 extern VMINT g_btspp_id;			// connected spp device id
+extern int g_usb_status;			// status of the USB cable connection
 
 //-------------------------
 void retarget_putc(char ch)
@@ -60,7 +53,7 @@ void retarget_write(const char *str, unsigned int len)
     else if ((g_btspp_connected) && (retarget_target == -1000)) vm_bt_spp_write(g_btspp_id, (char *)str, len);
 }
 
-// !!this runs from lua thread!!
+// !!this runs from lua tty thread!!
 //---------------------
 int retarget_getc(void)
 {
@@ -69,8 +62,8 @@ int retarget_getc(void)
 		vm_mutex_unlock(&retarget_rx_mutex);
 		// wait 1 second for character
 		vm_signal_timed_wait(retarget_rx_signal_id, 1000);
-
 		vm_mutex_lock(&retarget_rx_mutex);
+
 		if (retarget_rx_buffer_head == retarget_rx_buffer_tail) {
 			sys_wdt_rst_time = 0;	// wdg reset
 			no_activity_time++;		// increase no activity counter
@@ -129,7 +122,7 @@ int retarget_waitc(unsigned char *c, int timeout)
 //--------------------------------------------------------------------------------------------------
 static void __retarget_irq_handler(void* parameter, VM_DCL_EVENT event, VM_DCL_HANDLE device_handle)
 {
-    if(event == VM_DCL_SIO_UART_READY_TO_READ)
+    if (event == VM_DCL_SIO_UART_READY_TO_READ)
     {
         char data[SERIAL_BUFFER_SIZE];
         int i;
@@ -171,7 +164,9 @@ void retarget_setup(void)
     
     g_owner_id = vm_dcl_get_owner_id();
 
-    if (retarget_device_handle != -1) return;  // already setup
+    g_usb_status = vm_usb_get_cable_status();
+
+    if (retarget_usb_handle != -1) return;  // already setup
 
     settings.owner_id = g_owner_id;
     settings.config.dsr_check = 0;
@@ -193,7 +188,7 @@ void retarget_setup(void)
     vm_dcl_register_callback(uart_handle, VM_DCL_SIO_UART_READY_TO_READ,
                              (vm_dcl_callback)__retarget_irq_handler, (void*)NULL);
 
-    retarget_device_handle = uart_handle;
+    retarget_usb_handle = uart_handle;
 
 #if defined (USE_UART1_TARGET)
     // configure UART1
@@ -209,6 +204,13 @@ void retarget_setup(void)
     }
 #endif
 
-    retarget_target = retarget_device_handle;
+    if (g_usb_status) retarget_target = retarget_usb_handle;
+    else {
+		#if defined (USE_UART1_TARGET)
+    	retarget_target = retarget_uart1_handle;
+		#else
+    	retarget_target = -1;
+		#endif
+    }
 }
 

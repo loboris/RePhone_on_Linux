@@ -17,6 +17,8 @@
 #include "lstate.h"
 #include "lzio.h"
 
+#include "shell.h"
+#include "vmthread.h"
 
 int luaZ_fill (ZIO *z) {
   size_t size;

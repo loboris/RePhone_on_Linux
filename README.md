@@ -27,9 +27,10 @@ The main project in this repository is Lua implementation on RePhone.
 * Many new/RePhone specific modules (written in c)
   * <b>gpio</b>, with added fonctions for gpio toggle and EINT on any eint capable pin
   * <b>pwm</b> module
-  * <b>adc</b> module
+  * <b>adc</b> module (part of gpio module)
   * <b>https</b>, with added post mode (capable of sending file or params from table)
   * <b>gsm</b> module, with complete SMS functionality
+  * <b>mqtt</b> module, complete mqtt client
   * <b>audio</b> module
   * <b>timer</b> module
   * <b>i2c</b> module
