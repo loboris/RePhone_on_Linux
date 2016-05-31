@@ -53,6 +53,7 @@ static int mqttclient_message_cb(MqttClient *client, MqttMessage *msg, byte msg_
 				isSubscribed = 1;
 				snprintf(p->mRecTopic, MAX_MQTT_TOPIC_LEN, "%s", msg->topic_name);
 				p->mRecTopic[MAX_MQTT_TOPIC_LEN-1] = '\0';
+				if (msg->topic_name_len < MAX_MQTT_TOPIC_LEN) p->mRecTopic[msg->topic_name_len] = '\0';
 				break;
 			}
 		}
@@ -452,7 +453,7 @@ static int mqtt_addtopic(lua_State *L)
 
 	int ntopics = 0;
 	for (int i=0; i<MAX_MQTT_TOPICS;i++) {
-		if ((p->topic_filters[i][0] != '\0') && (p->topics[i].topic_filter != NULL)) {
+		if ((p->topic_filters[i][0] == '\0') || (p->topics[i].topic_filter == NULL)) {
 			snprintf(p->topic_filters[i], len+1, "%s", topic_name);
 			p->topics[i].topic_filter = p->topic_filters[i];
 			p->topics[i].qos = qos;
