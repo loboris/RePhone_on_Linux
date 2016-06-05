@@ -7,10 +7,13 @@
 #include "vmgsm_sms.h"
 #include "vmtimer.h"
 #include "vmdcl.h"
+#include "vmbt_cm.h"
 #include "lua.h"
 #include "mqtt_client.h"
 
 #define USE_UART1_TARGET
+
+#define UART_BUFFER_LEN 1024
 
 #define DEFAULT_CCWAIT 1000
 
@@ -36,13 +39,23 @@ typedef struct {
     VMUINT8				paused;
 } timer_info_t;
 
+typedef struct {
+    int		uart_id;
+    int		cb_ref;
+    VMUINT8	busy;
+    int		bufptr;
+    VMUINT8	buffer[UART_BUFFER_LEN];
+} uart_info_t;
+
 
 typedef enum
 {
-    CB_FUNC_INT = 401,
+    CB_FUNC_INT = CB_MESSAGE_ID+1,
 	CB_FUNC_TIMER,
 	CB_FUNC_ADC,
-	CB_FUNC_BT,
+	CB_FUNC_BT_RECV,
+	CB_FUNC_BT_CONNECT,
+	CB_FUNC_BT_DISCONNECT,
 	CB_FUNC_SMS_LIST,
 	CB_FUNC_SMS_READ,
 	CB_FUNC_SMS_NEW,
@@ -52,7 +65,8 @@ typedef enum
 	CB_FUNC_REBOOT,
 	CB_FUNC_MQTT_TIMER,
 	CB_FUNC_MQTT_MESSAGE,
-	CB_FUNC_MQTT_DISCONNECT
+	CB_FUNC_MQTT_DISCONNECT,
+	CB_FUNC_UART_RECV
 } CB_FUNC_TYPE;
 
 
@@ -79,8 +93,16 @@ typedef struct {
 
 typedef struct {
 	int		cb_ref;
-	int		par;
-	char    *cbuf;
+	int		recv_ref;
+	int		connect_ref;
+	int		disconnect_ref;
+	int		connected;
+	int		id;
+	int		status;
+	char	addr[18];
+	char    *recvbuf;
+	int		buflen;
+	int		bufptr;
 	int		busy;
 } cb_func_param_bt_t;
 

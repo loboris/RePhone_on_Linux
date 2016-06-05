@@ -19,7 +19,7 @@ function sntp_cb(stat)
     local st=os.date()
     msg = msg..st
     
-    print("Get temperature")
+    -- Get temperature
     local ts = 0
     if sensor.ds_init(18) == 1 then
         ts = sensor.ds_search()
@@ -34,7 +34,7 @@ function sntp_cb(stat)
         msg = msg.."\nT = "..string.format("%1.2f C", temp)
     end
     
-    print("Get battery voltage")
+    -- Get battery voltage
     local res = gpio.adc_config(0)
     if res == 0 then
         local vbat = gpio.adc_start(0)
@@ -43,6 +43,7 @@ function sntp_cb(stat)
     else
         msg = msg.."\nVbat=error"
     end
+    
     -- Send SMS at full hour + 10 min
     if starttime["min"] == 10 then
         print("Send SMS")
@@ -62,17 +63,17 @@ end
 -- bt.start("RePhone")
 -- bt.spp_start()
 
+--[[
 function led_tmr(n)
     gpio.toggle(13)
 end
 
---[[
 function test_tmr(n)
     print(n,gpio.adc_start(0))
 end
 ]]--
 
-led_t=timer.create(500,led_tmr)
+--led_t=timer.create(500,led_tmr)
 --test_t=timer.create(1500,test_tmr)
 
 -- get time from ntp server

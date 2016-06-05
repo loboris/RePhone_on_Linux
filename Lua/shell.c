@@ -24,24 +24,24 @@
 lua_State *shellL = NULL;			// Lua state
 lua_State *ttyL = NULL;				// Lua state
 
-VM_THREAD_HANDLE g_main_handle;
-VM_THREAD_HANDLE g_ttythread_handle;
-VM_THREAD_HANDLE g_shellthread_handle;
+//VM_THREAD_HANDLE g_main_handle;
+//VM_THREAD_HANDLE g_ttythread_handle;
+//VM_THREAD_HANDLE g_shellthread_handle;
 
-vm_mutex_t lua_func_mutex;
+//vm_mutex_t lua_func_mutex;
 
-cfunc_params_t g_CCparams;
-cbfunc_params_t g_CBparams;
+//cfunc_params_t g_CCparams;
+//cbfunc_params_t g_CBparams;
 
 vm_thread_message_t g_shell_message  = {SHELL_MESSAGE_ID, 0};
 vm_thread_message_t g_fcall_message  = {CCALL_MESSAGE_FOPEN, &g_CCparams};
 vm_thread_message_t g_cbcall_message = {CB_MESSAGE_ID, &g_CBparams};
 
-VM_SIGNAL_ID g_shell_signal;
-VM_SIGNAL_ID g_tty_signal;
-VM_SIGNAL_ID g_reboot_signal;
+//VM_SIGNAL_ID g_shell_signal;
+//VM_SIGNAL_ID g_tty_signal;
+//VM_SIGNAL_ID g_reboot_signal;
 
-int g_shell_result;
+//int g_shell_result;
 lua_CFunction g_CCfunc = NULL;
 int CCwait = 1000;
 
@@ -50,7 +50,7 @@ VM_DCL_HANDLE retarget_usb_handle = -1;
 VM_DCL_HANDLE retarget_uart1_handle = -1;
 int retarget_target = -1;
 
-vm_mutex_t retarget_rx_mutex;
+//vm_mutex_t retarget_rx_mutex;
 
 static lua_State *globalL = NULL;
 static const char *progname = LUA_PROGNAME;
@@ -58,6 +58,10 @@ static const char *progname = LUA_PROGNAME;
 extern int sys_wdt_rst_time;
 extern int no_activity_time;
 extern int _mqtt_check(mqtt_info_t *p);
+extern void retarget_setup();
+extern VMUINT8 uart_has_userdata[2];
+extern uart_info_t *uart_data[2];
+
 
 //extern int sys_wdt_rst_usec;
 
@@ -311,7 +315,7 @@ static int file_exists(const char *filename)
 
     return g_shell_result;
 }
-
+extern int luaopen_bit(lua_State *L);
 //===================================================================
 VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
 {
@@ -327,13 +331,20 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     g_shell_signal = vm_signal_create();
     g_reboot_signal = vm_signal_create();
 
+    retarget_setup();
+
+    luaopen_bit(shellL);
+
+    printf("\nLua memory: %d bytes, C heap: %d bytes\n", g_memory_size, g_memory_size_b);
+    printf("LUA SHELL STARTED\n");
+
     lua_settop(L, 0);  // clear stack
     // Check startup files
     if (file_exists("init.lc") >= 0) {
-        //luaL_dofile(L, "init.lc");
+        luaL_dofile(L, "init.lc");
     }
     else if (file_exists("init.lua") >= 0) {
-        //luaL_dofile(L, "init.lua");
+        luaL_dofile(L, "init.lua");
     }
     if (file_exists("autorun.lc") >= 0) {
         luaL_dofile(L, "autorun.lc");
@@ -343,6 +354,7 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     }
 
     lua_settop(L, 0);  // clear stack
+    // ==== Main loop ====
     while (1) {
     	vm_thread_get_message(&message);
         switch (message.message_id) {
@@ -545,17 +557,71 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
                 }
                 break;
 
-            case CB_FUNC_BT: {
+            case CB_FUNC_UART_RECV: {
+            		uart_info_t *params = (uart_info_t*)message.user_data;
+	                lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);
+					lua_pushinteger(L, params->uart_id);
+					lua_pushinteger(L, params->bufptr);
+					if ((retarget_target == -1) && (strstr((const char *)params->buffer, "<Return2ShEll>") == (const char *)params->buffer)) {
+					    if (params->uart_id == 0) retarget_target = retarget_usb_handle;
+					    else  retarget_target = retarget_uart1_handle;
+						params->uart_id = -1;
+						params->buffer[0] = 0;
+						luaL_unref(L, LUA_REGISTRYINDEX, params->cb_ref);
+						params->cb_ref = LUA_NOREF;
+					    uart_has_userdata[params->uart_id] = 0;
+					    uart_data[params->uart_id] = NULL;
+
+						lua_pushstring(L, "Returned to shell");
+					}
+					else lua_pushlstring(L, params->buffer, params->bufptr);
+	                params->bufptr = 0;
+	                lua_pcall(L, 3, 0, 0);
+	                params->busy = 0;
+                }
+                break;
+
+            case CB_FUNC_BT_RECV: {
             		cb_func_param_bt_t *params = (cb_func_param_bt_t*)message.user_data;
 	                lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);
-					lua_pushinteger(L, params->par);
-					lua_pushstring(L, params->cbuf);
+					lua_pushstring(L, params->addr);
+					lua_pushinteger(L, params->bufptr);
+					if ((retarget_target != -1000) && (strstr(params->recvbuf, "<Return2ShEll>") == params->recvbuf)) {
+						retarget_target = -1000;
+						lua_pushstring(L, "Returned to BT shell");
+					}
+					else lua_pushstring(L, params->recvbuf);
+	                params->bufptr = 0;
+	                lua_pcall(L, 3, 0, 0);
+	                params->busy = 0;
+                }
+                break;
+
+            case CB_FUNC_BT_CONNECT: {
+            		cb_func_param_bt_t *params = (cb_func_param_bt_t*)message.user_data;
+	                lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);
+					lua_pushstring(L, params->addr);
+					lua_pushinteger(L, params->status);
 	                lua_pcall(L, 2, 0, 0);
+	                params->busy = 0;
+                }
+                break;
+
+            case CB_FUNC_BT_DISCONNECT: {
+            		cb_func_param_bt_t *params = (cb_func_param_bt_t*)message.user_data;
+	                lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);
+					lua_pushstring(L, params->addr);
+	                lua_pcall(L, 1, 0, 0);
+	                /*if (params->disconnect_ref != LUA_NOREF) {
+	                	luaL_unref(L, LUA_REGISTRYINDEX, params->disconnect_ref);
+	                	params->disconnect_ref = LUA_NOREF;
+	                }*/
 	                params->busy = 0;
                 }
                 break;
         }
     }
+    // ^^^^ Main loop ^^^^
 
     printf("\nLUA COMMAND THREAD EXITED, RESTART!\n");
     g_shell_message.message_id = SHELL_MESSAGE_QUIT;
@@ -563,8 +629,6 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     return 0;
 }
 //===================================================================
-
-extern void retarget_setup();
 
 //================================================================
 VMINT32 tty_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
@@ -576,11 +640,6 @@ VMINT32 tty_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     legc_set_mode(L, EGC_ON_MEM_LIMIT | EGC_ON_ALLOC_FAILURE, g_memory_size);
 
     g_tty_signal = vm_signal_create();
-
-    retarget_setup();
-
-    printf("\nLua memory: %d bytes, C heap: %d bytes\n", g_memory_size, g_memory_size_b);
-    printf("LUA SHELL STARTED\n");
 
     lua_settop(L, 0);  // clear stack
     //===============================================================

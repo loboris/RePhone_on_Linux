@@ -23,17 +23,13 @@
 
 VMINT g_btcm_hdl = -1;				// handle of BT service
 VMINT g_btspp_hdl = -1;				// handle of SPP service
-VMINT g_btspp_connected = 0;		// spp device connected flag
-VMINT g_btspp_id = 0;				// connected spp device id
 
-static VMINT g_btspp_min_buf_size;	// size of BT buffer
-static void *g_btspp_buf = NULL;	// buffer that store SPP received data
-//static VMINT g_b_server_find;		// if BT_NAME device is founded or not during search process
-static VMUINT8 g_b_name[64] = {0};
+int btspp_tmo = -1;
+
+cb_func_param_bt_t bt_cb_params;
+
+static VMUINT8 g_b_name[VM_BT_CM_DEVICE_NAME_LENGTH] = {0};
 static VMUINT8 g_b_flags = 0;
-static cb_func_param_bt_t bt_cb_params;
-
-static int btspp_recv_ref = LUA_NOREF;
 
 extern int retarget_target;
 extern vm_mutex_t retarget_rx_mutex;
@@ -44,7 +40,39 @@ extern unsigned retarget_rx_buffer_head;
 extern unsigned retarget_rx_buffer_tail;
 
 
-#define SPP_DATA "Hi from RePhone BT-SPP\n"
+//#define SPP_DATA "Hi from RePhone BT-SPP\n"
+
+//---------------------------------------------------------------------
+static void _btaddr2str(char *buf, vm_bt_cm_bt_address_t *g_btspp_addr)
+{
+	sprintf(buf, "0x%02x:%02x:%02x:%02x:%02x:%02x",
+			((g_btspp_addr->nap & 0xff00) >> 8),
+			(g_btspp_addr->nap & 0x00ff),
+			(g_btspp_addr->uap),
+			((g_btspp_addr->lap & 0xff0000) >> 16),
+			((g_btspp_addr->lap & 0x00ff00) >> 8),
+			(g_btspp_addr->lap & 0x0000ff));
+}
+
+//-----------------------
+void _btspp_recv_cb(void)
+{
+	btspp_tmo = -1;
+	if ((bt_cb_params.connect_ref) && (bt_cb_params.recvbuf != NULL) && (bt_cb_params.bufptr > 0)) {
+		if (bt_cb_params.recv_ref != LUA_NOREF) {
+			if (bt_cb_params.busy == 0) {
+				bt_cb_params.busy = 1;
+				bt_cb_params.cb_ref = bt_cb_params.recv_ref;
+				remote_lua_call(CB_FUNC_BT_RECV, &bt_cb_params);
+			}
+		}
+		else {
+			vm_log_debug("[BTSPP] Data received from [%s], len=%d", bt_cb_params.addr, bt_cb_params.bufptr);
+			bt_cb_params.bufptr = 0;
+		}
+	}
+}
+
 // SPP service callback handler
 //------------------------------------------------------------------------------------
 void app_btspp_cb(VM_BT_SPP_EVENT evt, vm_bt_spp_event_cntx_t* param, void* user_data)
@@ -59,22 +87,33 @@ void app_btspp_cb(VM_BT_SPP_EVENT evt, vm_bt_spp_event_cntx_t* param, void* user
     switch (evt) {
     	case VM_BT_SPP_EVENT_START:
     			vm_log_debug("[BTSPP] Start");
+                if (g_shell_result == -9) {
+    				g_shell_result = 1;
+    				vm_signal_post(g_shell_signal);
+                }
     		break;
 
         case VM_BT_SPP_EVENT_AUTHORIZE:
-			ret = vm_bt_spp_accept(cntx->connection_id, g_btspp_buf, g_btspp_min_buf_size, g_btspp_min_buf_size);
-			if (ret == 0) {
-				g_btspp_connected = 1;
-				g_btspp_id = cntx->connection_id;
-			}
-
-			vm_log_debug("[BTSPP] Authorize: [res=%d][0x%02x:%02x:%02x:%02x:%02x:%02x]", ret,
-				((g_btspp_addr.nap & 0xff00) >> 8),
-				(g_btspp_addr.nap & 0x00ff),
-				(g_btspp_addr.uap),
-				((g_btspp_addr.lap & 0xff0000) >> 16),
-				((g_btspp_addr.lap & 0x00ff00) >> 8),
-				(g_btspp_addr.lap & 0x0000ff));
+        	if (bt_cb_params.connected == 0) {
+				bt_cb_params.status = vm_bt_spp_accept(cntx->connection_id, bt_cb_params.recvbuf, bt_cb_params.buflen, bt_cb_params.buflen);
+				bt_cb_params.connected = 1;
+				bt_cb_params.id = cntx->connection_id;
+				_btaddr2str(bt_cb_params.addr, &g_btspp_addr);
+				if (bt_cb_params.connect_ref != LUA_NOREF) {
+					bt_cb_params.cb_ref = bt_cb_params.connect_ref;
+					remote_lua_call(CB_FUNC_BT_CONNECT, &bt_cb_params);
+				}
+				else {
+					vm_log_debug("[BTSPP] Authorized: [res=%d] [%s]", bt_cb_params.status, bt_cb_params.addr);
+				}
+        	}
+        	else {
+        		// Only one connection possible
+				char adr[18];
+				_btaddr2str(adr, &g_btspp_addr);
+        		ret = vm_bt_spp_reject(cntx->connection_id);
+				vm_log_debug("[BTSPP] Rejected: [res=%d] [%s]", ret, adr);
+        	}
             break;
 
         case VM_BT_SPP_EVENT_READY_TO_WRITE:
@@ -83,17 +122,17 @@ void app_btspp_cb(VM_BT_SPP_EVENT evt, vm_bt_spp_event_cntx_t* param, void* user
         	break;
 
         case VM_BT_SPP_EVENT_READY_TO_READ:
-			// read data from remote side and print it out to log
-			ret = vm_bt_spp_read(cntx->connection_id, g_btspp_buf, g_btspp_min_buf_size);
-			if (ret > 0) {
-				if (retarget_target == -1000) {
-					// Lua shell redirected to BT
+			// *** read data from remote side
+			if (retarget_target == -1000) {
+				// === Lua shell redirected to BT ====
+				ret = vm_bt_spp_read(cntx->connection_id, bt_cb_params.recvbuf, bt_cb_params.buflen);
+				if (ret > 0) {
 					vm_mutex_lock(&retarget_rx_mutex);
 					if (retarget_rx_buffer_head == retarget_rx_buffer_tail) {
 						vm_signal_post(retarget_rx_signal_id);
 					}
 					for (i = 0; i < ret; i++) {
-						retarget_rx_buffer[retarget_rx_buffer_head % SERIAL_BUFFER_SIZE] = ((VMCHAR*)g_btspp_buf)[i];
+						retarget_rx_buffer[retarget_rx_buffer_head % SERIAL_BUFFER_SIZE] = ((VMCHAR*)bt_cb_params.recvbuf)[i];
 						retarget_rx_buffer_head++;
 						if ((unsigned)(retarget_rx_buffer_head - retarget_rx_buffer_tail) > SERIAL_BUFFER_SIZE) {
 							retarget_rx_buffer_tail = retarget_rx_buffer_head - SERIAL_BUFFER_SIZE;
@@ -102,48 +141,66 @@ void app_btspp_cb(VM_BT_SPP_EVENT evt, vm_bt_spp_event_cntx_t* param, void* user
 					vm_mutex_unlock(&retarget_rx_mutex);
 				}
 				else {
-					// log the received data
-					((VMCHAR*)g_btspp_buf)[ret] = 0;
-
-		            if (btspp_recv_ref != LUA_NOREF) {
-		            	bt_cb_params.par = ret;
-		            	bt_cb_params.cb_ref = btspp_recv_ref;
-		            	bt_cb_params.cbuf = g_btspp_buf;
-		                remote_lua_call(CB_FUNC_BT, &bt_cb_params);
-		            }
-		            else {
-		            	if (((VMCHAR*)g_btspp_buf)[0] == 'B') {
-		            		vm_bt_spp_write(g_btspp_id, "Welcome to RePhone Lua shell\n", 29);
-		            		retarget_target = -1000;
-		            	}
-		            	/*
-						vm_log_debug("[BTSPP] Data received from [0x%02x:%02x:%02x:%02x:%02x:%02x]\n[%s]",
-							((g_btspp_addr.nap & 0xff00) >> 8),
-							(g_btspp_addr.nap & 0x00ff),
-							(g_btspp_addr.uap),
-							((g_btspp_addr.lap & 0xff0000) >> 16),
-							((g_btspp_addr.lap & 0x00ff00) >> 8),
-							(g_btspp_addr.lap & 0x0000ff),
-							g_btspp_buf);
-						*/
-		            }
+					vm_log_debug("[BTSPP] Data received error %d", ret);
 				}
 			}
 			else {
-				vm_log_debug("[BTSPP] Data received error %d", ret);
+				// === Callback function or info ===
+				int maxlen = bt_cb_params.buflen - bt_cb_params.bufptr -  1;
+				ret = vm_bt_spp_read(cntx->connection_id, bt_cb_params.recvbuf+bt_cb_params.bufptr, maxlen);
+				if (ret > 0) {
+					bt_cb_params.bufptr += ret;
+					bt_cb_params.recvbuf[bt_cb_params.bufptr] = '\0';
+					btspp_tmo = 0;
+
+					if ((strchr(bt_cb_params.recvbuf, '\n') != NULL) || (bt_cb_params.bufptr >= (bt_cb_params.buflen-1))) {
+						btspp_tmo = -1;
+						_btaddr2str(bt_cb_params.addr, &g_btspp_addr);
+						if (bt_cb_params.recv_ref != LUA_NOREF) {
+							bt_cb_params.cb_ref = bt_cb_params.recv_ref;
+							if (bt_cb_params.busy == 0) {
+								bt_cb_params.busy = 1;
+								remote_lua_call(CB_FUNC_BT_RECV, &bt_cb_params);
+							}
+							else {
+								vm_log_debug("[BTSPP] CB busy, data received from [%s], len=%d", bt_cb_params.addr, bt_cb_params.bufptr);
+								bt_cb_params.bufptr = 0;
+							}
+						}
+						else {
+							vm_log_debug("[BTSPP] Data received from [%s], len=%d", bt_cb_params.addr, bt_cb_params.bufptr);
+							bt_cb_params.bufptr = 0;
+						}
+					}
+				}
 			}
 			break;
 
         case VM_BT_SPP_EVENT_DISCONNECT:
-        	g_btspp_connected = 0;
-        	if (retarget_target == -1000) retarget_target = 0;
-            vm_log_debug("[BTSPP] Disconnect [0x%02x:%02x:%02x:%02x:%02x:%02x]",
-                ((g_btspp_addr.nap & 0xff00) >> 8),
-                (g_btspp_addr.nap & 0x00ff),
-                (g_btspp_addr.uap),
-                ((g_btspp_addr.lap & 0xff0000) >> 16),
-                ((g_btspp_addr.lap & 0x00ff00) >> 8),
-                (g_btspp_addr.lap & 0x0000ff));
+        	bt_cb_params.connected = 0;
+        	bt_cb_params.id = -1;
+        	bt_cb_params.status = 0;
+
+        	if (retarget_target == -1000) {
+        		if (retarget_usb_handle >= 0) retarget_target = retarget_usb_handle;
+        		else if (retarget_uart1_handle >= 0) retarget_target = retarget_uart1_handle;
+        	}
+
+            if (g_shell_result == -9) {
+				g_shell_result = 0;
+				vm_signal_post(g_shell_signal);
+            }
+            else {
+				_btaddr2str(bt_cb_params.addr, &g_btspp_addr);
+
+				if (bt_cb_params.disconnect_ref != LUA_NOREF) {
+					bt_cb_params.cb_ref = bt_cb_params.disconnect_ref;
+					remote_lua_call(CB_FUNC_BT_DISCONNECT, &bt_cb_params);
+				}
+				else {
+					vm_log_debug("[BTSPP] Disconnect: [%s]", bt_cb_params.addr);
+				}
+            }
 			break;
     }
 }
@@ -157,7 +214,7 @@ static void _bt_hostdev_info(const char *hdr)
 	// display host info
 	ret = vm_bt_cm_get_host_device_info(&dev_info);
 	if (ret == 0) {
-		vm_log_debug("%s, Host info: [%s][0x%02x:%02x:%02x:%02x:%02x:%02x]", hdr, dev_info.name,
+		vm_log_debug("%s, Host info: [%s][%02x:%02x:%02x:%02x:%02x:%02x]", hdr, dev_info.name,
 			((dev_info.device_address.nap & 0xff00) >> 8),
 			(dev_info.device_address.nap & 0x00ff),
 			(dev_info.device_address.uap),
@@ -166,7 +223,7 @@ static void _bt_hostdev_info(const char *hdr)
 			(dev_info.device_address.lap & 0x0000ff));
 	}
 	else {
-		vm_log_debug("%s, Get host dev info error %d", hdr, ret);
+		vm_log_debug("Get host dev info error: [%s] %d", hdr, ret);
 	}
 }
 
@@ -174,12 +231,19 @@ static void _bt_hostdev_info(const char *hdr)
 static void _set_vis_name(void)
 {
     VMINT ret;
-    if (g_b_flags & 0x01) {
+	vm_bt_cm_device_info_t dev_info = {0};
+	ret = vm_bt_cm_get_host_device_info(&dev_info);
+	if (ret == 0) {
+	    if (strcmp(g_b_name, dev_info.name) != 0) g_b_flags |= 0x01;
+	    else g_b_flags &= 0xFE;
+	}
+
+	if (g_b_flags & 0x01) {
         // set BT device host name
-        VMINT ret = vm_bt_cm_set_host_name(g_b_name);
-    	g_b_flags &= 0xFE;
+        ret = vm_bt_cm_set_host_name(g_b_name);
     }
 
+    ret = 99;
     if (g_b_flags & 0x02) {
         // set bt device as visible
 		if (vm_bt_cm_get_visibility() != VM_BT_CM_VISIBILITY_ON) {
@@ -191,6 +255,12 @@ static void _set_vis_name(void)
 		if (vm_bt_cm_get_visibility() == VM_BT_CM_VISIBILITY_ON) {
 			ret = vm_bt_cm_set_visibility(VM_BT_CM_VISIBILITY_OFF);
 		}
+    }
+
+    if ((ret == 99) && (g_shell_result == -9)) {
+		lua_pushinteger(shellL, 0);
+		g_shell_result = 1;
+		vm_signal_post(g_shell_signal);
     }
 }
 
@@ -204,18 +274,17 @@ static void app_btcm_cb(VMUINT evt, void * param, void * user_data)
            	//vm_bt_cm_activate_t *active = (vm_bt_cm_activate_t *)param;
            	_bt_hostdev_info("[BTCM] BT switch ON");
             _set_vis_name();
-
-            lua_pushinteger(shellL, 1);
-            g_shell_result = 1;
-        	vm_signal_post(g_shell_signal);
             break;
 
         case VM_BT_CM_EVENT_DEACTIVATE:
             ret = vm_bt_cm_exit(g_btcm_hdl);
             g_btcm_hdl = -1;
             vm_log_debug("[BTCM] BT switch OFF");
-            g_shell_result = 0;
-        	vm_signal_post(g_shell_signal);
+            if (g_shell_result == -9) {
+				lua_pushinteger(shellL, 0);
+				g_shell_result = 1;
+				vm_signal_post(g_shell_signal);
+            }
             break;
 
         case VM_BT_CM_EVENT_SET_VISIBILITY:
@@ -223,11 +292,20 @@ static void app_btcm_cb(VMUINT evt, void * param, void * user_data)
         		vm_bt_cm_device_info_t dev_info = {0};
         		vm_bt_cm_set_visibility_t *visi = (vm_bt_cm_set_visibility_t *)param;
                 vm_log_debug("[BTCM] Set visibility [%d]", visi->result);
+				if (g_shell_result == -9) {
+					lua_pushinteger(shellL, 0);
+					g_shell_result = 1;
+					vm_signal_post(g_shell_signal);
+				}
         	}
             break;
 
         case VM_BT_CM_EVENT_SET_NAME:
             vm_log_debug("[BTCM] Set name [%s]", g_b_name);
+        	break;
+
+        case VM_BT_CM_EVENT_PAIR_RESULT:
+            vm_log_debug("[BTCM] Pair");
         	break;
 
         case VM_BT_CM_EVENT_CONNECT_REQ:
@@ -248,12 +326,11 @@ static void app_btcm_cb(VMUINT evt, void * param, void * user_data)
 static int _bt_start(lua_State *L)
 {
     VMINT ret;
-    VMUINT8 vis = 0x02;
+    VMUINT8 vis = 1;
 
     const char *bthost = luaL_checkstring(L, 1);
-    if (strcmp(g_b_name, bthost) != 0) g_b_flags |= 0x01;
-    else g_b_flags &= 0xFE;
-    if (g_b_flags & 0x01) strcpy(g_b_name, bthost);
+
+    if (strcmp(g_b_name, bthost) != 0) strcpy(g_b_name, bthost);
 
     if (lua_gettop(L) >= 2) {
     	vis = luaL_checkinteger(L, 2) & 0x01;
@@ -270,12 +347,13 @@ static int _bt_start(lua_State *L)
 			VM_BT_CM_EVENT_SET_VISIBILITY	|
 			VM_BT_CM_EVENT_SET_NAME			|
 			VM_BT_CM_EVENT_CONNECT_REQ		|
+			VM_BT_CM_EVENT_PAIR_RESULT		|
 			VM_BT_CM_EVENT_RELEASE_ALL_CONN,
 			NULL);
     }
     if (g_btcm_hdl < 0) {
     	vm_log_debug("[BSTART] Init BT error: %d", g_btcm_hdl);
-        lua_pushinteger(L, 0);
+        lua_pushinteger(L, -1);
         g_shell_result = 1;
     	vm_signal_post(g_shell_signal);
         return 0;
@@ -292,10 +370,6 @@ static int _bt_start(lua_State *L)
     	_bt_hostdev_info("[BTSTART] BT is on");
 
         _set_vis_name();
-
-        lua_pushinteger(L, 1);
-        g_shell_result = 1;
-    	vm_signal_post(g_shell_signal);
     }
 
     return 1;
@@ -305,32 +379,24 @@ static int _bt_start(lua_State *L)
 static int bt_start(lua_State *L)
 {
     const char *bthost = luaL_checkstring(L, 1);
+	g_shell_result = -9;
+	CCwait = 4000;
 	remote_CCall(&_bt_start);
+	if (g_shell_result < 0) { // no response
+		g_shell_result = 1;
+        lua_pushinteger(L, -2);
+	    vm_log_debug("[BTSTART] Error switching on");
+	}
 	return g_shell_result;
 }
 
 //====================================
 static int _bt_spp_start(lua_State *L)
 {
-    if (btspp_recv_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, btspp_recv_ref);
-    if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
-		lua_pushvalue(L, 1);
-		btspp_recv_ref = luaL_ref(L, LUA_REGISTRYINDEX);
-    }
-
     // init SPP services
-    if (g_btcm_hdl < 0) {
-    	// BT not started
-        vm_log_debug("[BTSPP] BT not started!");
-    	goto exit;
-    }
-    if (g_btspp_hdl >= 0) {
-    	// SPP already started
-        vm_log_debug("[BTSPP] SPP already started!");
-    	goto exit;
-    }
 
-	VMINT result;
+    bt_cb_params.connected = 0;
+
     VMUINT evt_mask = VM_BT_SPP_EVENT_START	|
         VM_BT_SPP_EVENT_BIND_FAIL			|
         VM_BT_SPP_EVENT_AUTHORIZE			|
@@ -341,42 +407,36 @@ static int _bt_spp_start(lua_State *L)
         VM_BT_SPP_EVENT_DISCONNECT			|
         VM_BT_SPP_EVENT_SCO_DISCONNECT;
 
-	g_btspp_connected = 0;
-
 	g_btspp_hdl = vm_bt_spp_open(evt_mask, app_btspp_cb, NULL);
     if (g_btspp_hdl < 0) {
         vm_log_debug("[BTSPP] SPP Init error: %d", g_btspp_hdl);
+        g_shell_result = -1;
     	goto exit;
     }
 
-    result = vm_bt_spp_set_security_level(g_btspp_hdl, VM_BT_SPP_SECURITY_NONE);
+    g_shell_result = vm_bt_spp_set_security_level(g_btspp_hdl, VM_BT_SPP_SECURITY_NONE);
 
-    g_btspp_min_buf_size = vm_bt_spp_get_min_buffer_size();
-    vm_log_debug("[BTSPP] Min buffer size = %d", g_btspp_min_buf_size);
+    int min_buf_size = vm_bt_spp_get_min_buffer_size();
 
-	if (g_btspp_buf == NULL) {
-		g_btspp_buf = vm_calloc(g_btspp_min_buf_size);
-		if (g_btspp_buf == NULL) {
-			vm_bt_spp_close(g_btspp_hdl);
-			g_btspp_hdl = -1;
-			vm_log_debug("[BTSPP] Buffer allocation error");
-			goto exit;
-		}
-	}
-    g_btspp_min_buf_size = g_btspp_min_buf_size / 2;
-
-    result = vm_bt_spp_bind(g_btspp_hdl, UUID);
-    if (result < 0) {
-        vm_bt_spp_close(g_btspp_hdl);
-        g_btspp_hdl = -1;
-        vm_log_debug("[BTSPP] Bind error %d", result);
-    	goto exit;
+    if (bt_cb_params.buflen < min_buf_size) {
+        vm_log_debug("[BTSPP] Minimum buffer size = %d", min_buf_size);
+    	bt_cb_params.buflen = min_buf_size;
     }
+
+    bt_cb_params.recvbuf = vm_calloc(bt_cb_params.buflen);
+    if (bt_cb_params.recvbuf == NULL) {
+		vm_bt_spp_close(g_btspp_hdl);
+        g_shell_result = -1;
+    	vm_log_error("Error allocating spp buffers");
+		goto exit;
+    }
+    bt_cb_params.buflen /= 2;
+    vm_log_debug("[BTSPP] Tx&Rx buffer size = %d", bt_cb_params.buflen);
+
+    g_shell_result = vm_bt_spp_bind(g_btspp_hdl, UUID);
+    return 0;
 
 exit:
-    lua_pushinteger(L, g_btspp_hdl);
-
-    g_shell_result = 1;
 	vm_signal_post(g_shell_signal);
     return 1;
 }
@@ -384,7 +444,47 @@ exit:
 //===================================
 static int bt_spp_start(lua_State *L)
 {
+    if (g_btcm_hdl < 0) {
+    	// BT not started
+        vm_log_debug("[BTSPP] BT not started!");
+        lua_pushinteger(L, -1);
+    	return 1;
+    }
+    if (g_btspp_hdl >= 0) {
+    	// SPP already started
+        vm_log_debug("[BTSPP] SPP already started!");
+        lua_pushinteger(L, 0);
+    	return 1;
+    }
+
+    int bufsize = luaL_checkinteger(L, 1);
+    if (bufsize < 512) bufsize = 512;
+
+    bt_cb_params.buflen = bufsize;
+    bt_cb_params.bufptr = 0;
+
+    if (bt_cb_params.recv_ref != LUA_NOREF) {
+    	luaL_unref(L, LUA_REGISTRYINDEX, bt_cb_params.recv_ref);
+    	bt_cb_params.recv_ref = LUA_NOREF;
+    }
+    if ((lua_type(L, 2) == LUA_TFUNCTION) || (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
+		lua_pushvalue(L, 2);
+		bt_cb_params.recv_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    }
+
+    g_shell_result = -9;
+	CCwait = 2000;
 	remote_CCall(&_bt_spp_start);
+	if (g_shell_result < 0) { // no response or error
+		g_shell_result = 1;
+		vm_free(bt_cb_params.recvbuf);
+		bt_cb_params.recvbuf = NULL;
+        lua_pushinteger(L, -1);
+	}
+	else {
+		g_shell_result = 1;
+		lua_pushinteger(L, 0);
+	}
 	return g_shell_result;
 }
 
@@ -412,6 +512,21 @@ static int _bt_stop(lua_State *L)
 	return 0;
 }
 
+//=========================================
+static int _bt_spp_disconnect(lua_State *L)
+{
+	if ((g_btspp_hdl >= 0) && (bt_cb_params.connected) && (bt_cb_params.id >= 0)) {
+		vm_bt_spp_disconnect(bt_cb_params.id);
+	}
+	else {
+		bt_cb_params.connected = 0;
+		bt_cb_params.id = -1;
+		g_shell_result = 0;
+		vm_signal_post(g_shell_signal);
+	}
+	return 0;
+}
+
 //===================================
 static int _bt_spp_stop(lua_State *L)
 {
@@ -420,11 +535,23 @@ static int _bt_spp_stop(lua_State *L)
 		g_btspp_hdl = -1;
 	}
 
-	if (g_btspp_buf) {
-		vm_free(g_btspp_buf);
-		g_btspp_buf = NULL;
+	if (bt_cb_params.recvbuf) {
+		vm_free(bt_cb_params.recvbuf);
+		bt_cb_params.recvbuf = NULL;
 	}
-	g_btspp_connected = 0;
+    if (bt_cb_params.recv_ref != LUA_NOREF) {
+    	luaL_unref(L, LUA_REGISTRYINDEX, bt_cb_params.recv_ref);
+    	bt_cb_params.recv_ref = LUA_NOREF;
+    }
+    if (bt_cb_params.connect_ref != LUA_NOREF) {
+    	luaL_unref(L, LUA_REGISTRYINDEX, bt_cb_params.connect_ref);
+    	bt_cb_params.connect_ref = LUA_NOREF;
+    }
+    if (bt_cb_params.disconnect_ref != LUA_NOREF) {
+    	luaL_unref(L, LUA_REGISTRYINDEX, bt_cb_params.disconnect_ref);
+    	bt_cb_params.disconnect_ref = LUA_NOREF;
+    }
+
 	if (retarget_target == -1000) retarget_target = 0;
 
 	g_shell_result = 0;
@@ -435,6 +562,10 @@ static int _bt_spp_stop(lua_State *L)
 //===============================
 static int bt_stop(lua_State *L)
 {
+    g_shell_result = -9;
+	CCwait = 3000;
+	remote_CCall(&_bt_spp_disconnect);
+
 	remote_CCall(&_bt_spp_stop);
 	remote_CCall(&_bt_off);
 	remote_CCall(&_bt_stop);
@@ -444,9 +575,77 @@ static int bt_stop(lua_State *L)
 //==================================
 static int bt_spp_stop(lua_State *L)
 {
+    g_shell_result = -9;
+	CCwait = 3000;
+	remote_CCall(&_bt_spp_disconnect);
+
 	remote_CCall(&_bt_spp_stop);
 	return g_shell_result;
 }
+
+//========================================
+static int bt_spp_disconnect(lua_State *L)
+{
+    g_shell_result = -9;
+	CCwait = 3000;
+	remote_CCall(&_bt_spp_disconnect);
+	return g_shell_result;
+}
+
+//=======================================
+static int bt_spp_onconnect(lua_State *L)
+{
+    if (bt_cb_params.connect_ref != LUA_NOREF) {
+    	luaL_unref(L, LUA_REGISTRYINDEX, bt_cb_params.connect_ref);
+    	bt_cb_params.connect_ref = LUA_NOREF;
+    }
+    if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
+		lua_pushvalue(L, 1);
+		bt_cb_params.connect_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    }
+    return 0;
+}
+
+//=======================================
+static int bt_spp_ondisconnect(lua_State *L)
+{
+    if (bt_cb_params.disconnect_ref != LUA_NOREF) {
+    	luaL_unref(L, LUA_REGISTRYINDEX, bt_cb_params.disconnect_ref);
+    	bt_cb_params.disconnect_ref = LUA_NOREF;
+    }
+    if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
+		lua_pushvalue(L, 1);
+		bt_cb_params.disconnect_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    }
+    return 0;
+}
+
+//====================================
+static int _bt_spp_write(lua_State *L)
+{
+    size_t len;
+    const char *str = luaL_checklstring(L, 1, &len);
+
+    if ((bt_cb_params.connected) && (bt_cb_params.id >= 0) && (retarget_target != -1000)) {
+    	len = vm_bt_spp_write(bt_cb_params.id, (char *)str, len);
+    	lua_pushinteger(L, len);
+    }
+    else lua_pushinteger(L, -1);
+	g_shell_result = 1;
+	vm_signal_post(g_shell_signal);
+	return 1;
+}
+
+//===================================
+static int bt_spp_write(lua_State *L)
+{
+    size_t len;
+    const char *str = luaL_checklstring(L, 1, &len);
+
+	remote_CCall(&_bt_spp_write);
+	return g_shell_result;
+}
+
 
 
 #undef MIN_OPT_LEVEL
@@ -455,13 +654,25 @@ static int bt_spp_stop(lua_State *L)
 
 const LUA_REG_TYPE bt_map[] = {
 		{LSTRKEY("start"), LFUNCVAL(bt_start)},
-		{LSTRKEY("spp_start"), LFUNCVAL(bt_spp_start)},
 		{LSTRKEY("stop"), LFUNCVAL(bt_stop)},
+		{LSTRKEY("spp_start"), LFUNCVAL(bt_spp_start)},
 		{LSTRKEY("spp_stop"), LFUNCVAL(bt_spp_stop)},
+		{LSTRKEY("spp_disconnect"), LFUNCVAL(bt_spp_disconnect)},
+		{LSTRKEY("spp_onconnect"), LFUNCVAL(bt_spp_onconnect)},
+		{LSTRKEY("spp_ondisconnect"), LFUNCVAL(bt_spp_ondisconnect)},
+		{LSTRKEY("spp_write"), LFUNCVAL(bt_spp_write)},
         {LNILKEY, LNILVAL}
 };
 
 LUALIB_API int luaopen_bt(lua_State *L) {
+  bt_cb_params.buflen = 0;
+  bt_cb_params.recvbuf = NULL;
+  bt_cb_params.connected = 0;
+  bt_cb_params.id = -1;
+  bt_cb_params.recv_ref = LUA_NOREF;
+  bt_cb_params.connect_ref = LUA_NOREF;
+  bt_cb_params.disconnect_ref = LUA_NOREF;
+
   luaL_register(L, "bt", bt_map);
   return 1;
 }

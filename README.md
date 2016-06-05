@@ -37,7 +37,9 @@ The main project in this repository is Lua implementation on RePhone.
   * <b>spi</b> module (<i>in development</i>)
   * <b>tcp & udp</b> modules
   * <b>bt</b> Bluetooth module with possible Lua shell redirect 
+  * <b>uart</b> Hardware UART (two ports) module with possible Lua shell redirect 
   * <b>sensor</b> module (DS18B20, DHT-11, DHT-22 for now)
   * hash modules: <b>md5</b>, <b>SHA1</b>, <b>SHA2</b>
   * complete <b>json</b> module (cjson)
   * <b>struct</b> module (python struct library Lua implementation)
+  * <b>bit</b> module, adds bitwise operations on numbers

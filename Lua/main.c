@@ -38,6 +38,7 @@ extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
 extern int luaopen_audio(lua_State *L);
 extern int luaopen_gsm(lua_State *L);
 extern int luaopen_bt(lua_State *L);
+extern int luaopen_uart(lua_State *L);
 extern int luaopen_timer(lua_State *L);
 extern int luaopen_gpio(lua_State *L);
 extern int luaopen_i2c(lua_State *L);
@@ -50,10 +51,16 @@ extern int luaopen_cjson(lua_State *l);
 extern int luaopen_hash_md5(lua_State *L);
 extern int luaopen_hash_sha1(lua_State *L);
 extern int luaopen_hash_sha2(lua_State *L);
+extern int luaopen_bit(lua_State *L);
 extern int luaopen_mqtt(lua_State *L);
 #if defined USE_SCREEN_MODULE
 extern int luaopen_screen(lua_State *L);
 #endif
+
+extern int uart_tmo[2];
+extern void _uart_cb(int id);
+extern int btspp_tmo;
+extern void _btspp_recv_cb(void);
 
 #define REDLED               17
 #define GREENLED             15
@@ -188,7 +195,7 @@ void _scheduled_startup(void) {
 }
 
 // system timer callback
-// handles wdg reset and scheduled shutdown/wake up
+// handles wdg reset, scheduled shutdown/wake up and uart timeout
 //-------------------------------------------------------------------------------
 static void wdg_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data)
 {
@@ -225,10 +232,23 @@ static void wdg_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data
 		}
 	}
 	else {
-	    VM_DCL_HANDLE ghandle;
+		// Test uart's timeout
+		if (uart_tmo[0] >= 0) {
+			uart_tmo[0]++;
+			if (uart_tmo[0] > 2) _uart_cb(0);
+		}
+		if (uart_tmo[0] >= 0) {
+			uart_tmo[1]++;
+			if (uart_tmo[1] > 2) _uart_cb(1);
+		}
+		if (btspp_tmo >= 0) {
+			btspp_tmo++;
+			if (btspp_tmo > 4) _btspp_recv_cb();
+		}
+		/*VM_DCL_HANDLE ghandle;
 		gpio_get_handle(REDLED, &ghandle);
 		if (sys_timer_tick == (SYS_TIMER_INTERVAL*5)) vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
-		else if (sys_timer_tick == (SYS_TIMER_INTERVAL*6)) vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+		else if (sys_timer_tick == (SYS_TIMER_INTERVAL*6)) vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);*/
 	}
 }
 
@@ -288,9 +308,11 @@ static void lua_setup()
     luaL_openlibs(shellL);          // open libraries
 
     // ** If not needed, comment any of the following "luaopen_module"
+    //luaopen_bit(shellL);
     luaopen_audio(shellL);
     luaopen_gsm(shellL);
     luaopen_bt(shellL);
+    luaopen_uart(shellL);
     luaopen_timer(shellL);
     luaopen_gpio(shellL);
 	#if defined USE_SCREEN_MODULE

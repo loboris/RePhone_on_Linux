@@ -48,6 +48,12 @@
 #define BLUELED          12
 #define REG_BASE_ADDRESS 0xa0000000
 
+#define SHOW_LOG_FATAL		0x01
+#define SHOW_LOG_ERROR		0x02
+#define SHOW_LOG_WARNING	0x03
+#define SHOW_LOG_INFO		0x04
+#define SHOW_LOG_DEBUG		0x10
+
 extern void retarget_putc(char ch);
 extern int retarget_waitc(unsigned char *c, int timeout);
 extern int retarget_waitchars(unsigned char *buf, int *count, int timeout);
@@ -65,9 +71,10 @@ extern int wakeup_interval;			// regular wake up interval in seconds
 extern int led_blink;				// led blink during session
 extern int wdg_reboot_cb;			// Lua callback function called before reboot
 extern int shutdown_cb;				// Lua callback function called before shutdown
-extern VMINT g_btspp_connected;		// spp device connected flag
+extern cb_func_param_bt_t bt_cb_params;
 extern int g_memory_size_b;
 
+static int show_log = 0x1F;
 
 //-----------------------------------------------------------------------------
 void _log_printf(int type, const char *file, int line, const char *msg, ...)
@@ -89,14 +96,12 @@ void _log_printf(int type, const char *file, int line, const char *msg, ...)
 
   if( nMessageLen<=0 ) return;
 
-  if (type == 1) printf("\n[FATAL]");
-  else if (type == 2) printf("\n[ERROR]");
-  else if (type == 3) printf("\n[WARNING]");
-  else if (type == 4) printf("\n[INFO]");
-  else if (type == 5) printf("\n[DEBUG]");
-  if (type > 0) printf(" %s:%d ", file, line);
-
-  printf("%s\n", message);
+  if ((type == 1) && (show_log & SHOW_LOG_FATAL)) printf("\n[FATAL] %s:%d %s\n", file, line, message);
+  else if ((type == 2) && (show_log & SHOW_LOG_ERROR)) printf("\n[ERROR] %s:%d %s\n", file, line, message);
+  else if ((type == 3) && (show_log & SHOW_LOG_WARNING)) printf("\n[WARNING] %s:%d %s\n", file, line, message);
+  else if ((type == 4) && (show_log & SHOW_LOG_INFO)) printf("\n[INFO] %s:%d %s\n", file, line, message);
+  else if ((type == 5) && (show_log & SHOW_LOG_DEBUG)) printf("\n[DEBUG] %s:%d %s\n", file, line, message);
+  else if (type == 0) printf("%s\n", message);
 }
 
 //---------------------------------
@@ -713,7 +718,7 @@ static int os_retarget (lua_State *L) {
 
 	if ((targ == 0) && (retarget_usb_handle >= 0)) retarget_target = retarget_usb_handle;
 	else if ((targ == 1) && (retarget_uart1_handle >= 0)) retarget_target = retarget_uart1_handle;
-	else if ((targ == 2) && (g_btspp_connected)) retarget_target = -1000;
+	else if ((targ == 2) && (bt_cb_params.connected)) retarget_target = -1000;
 	return 0;
 }
 
@@ -893,6 +898,14 @@ static int os_writertcreg(lua_State* L)
 	return 0;
 }
 
+//=================================
+static int os_showlog(lua_State* L)
+{
+    show_log = luaL_checkinteger(L, 1) & 0x1F;
+
+	return 0;
+}
+
 
 //------------------------------------------------------------------
 static int writer(lua_State* L, const void* p, size_t size, void* u)
@@ -1068,6 +1081,7 @@ extern int luaB_dofile (lua_State *L);
 
 #define MIN_OPT_LEVEL 1
 #include "lrodefs.h"
+
 const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("ntptime"),  	LFUNCVAL(os_ntptime)},
   {LSTRKEY("shutdown"), 	LFUNCVAL(os_shutdown)},
@@ -1103,6 +1117,7 @@ const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("onreboot"), 	LFUNCVAL(os_onwdg_cb)},
   {LSTRKEY("onshutdown"),	LFUNCVAL(os_onshdwn_cb)},
   {LSTRKEY("compile"),		LFUNCVAL(os_compile)},
+  {LSTRKEY("showlog"),		LFUNCVAL(os_showlog)},
 #if defined USE_YMODEM
   {LSTRKEY("yrecv"),    	LFUNCVAL(file_recv)},
   {LSTRKEY("ysend"),    	LFUNCVAL(file_send)},
@@ -1116,7 +1131,18 @@ const LUA_REG_TYPE syslib[] = {
 /* }====================================================== */
 
 
+#define GLOBAL_NUMBER(l, name, value) \
+    lua_pushnumber(L, value);         \
+    lua_setglobal(L, name)
 
 LUALIB_API int luaopen_os (lua_State *L) {
-  LREGISTER(L, LUA_OSLIBNAME, syslib);
+    GLOBAL_NUMBER(L, "LOG_FATAL", SHOW_LOG_FATAL);
+    GLOBAL_NUMBER(L, "LOG_ERROR", SHOW_LOG_ERROR);
+	GLOBAL_NUMBER(L, "LOG_WARNING", SHOW_LOG_WARNING);
+	GLOBAL_NUMBER(L, "LOG_INFO", SHOW_LOG_INFO);
+	GLOBAL_NUMBER(L, "LOG_DEBUG", SHOW_LOG_DEBUG);
+	GLOBAL_NUMBER(L, "LOG_ALL", 0x1F);
+	GLOBAL_NUMBER(L, "LOG_NONE", 0x00);
+
+    LREGISTER(L, LUA_OSLIBNAME, syslib);
 }
