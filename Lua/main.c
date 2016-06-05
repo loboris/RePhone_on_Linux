@@ -48,6 +48,7 @@ extern int luaopen_gprs(lua_State* L);
 extern int luaopen_struct(lua_State* L);
 extern int luaopen_sensor(lua_State* L);
 extern int luaopen_cjson(lua_State *l);
+extern int luaopen_cjson_safe(lua_State *l);
 extern int luaopen_hash_md5(lua_State *L);
 extern int luaopen_hash_sha1(lua_State *L);
 extern int luaopen_hash_sha2(lua_State *L);
@@ -308,7 +309,7 @@ static void lua_setup()
     luaL_openlibs(shellL);          // open libraries
 
     // ** If not needed, comment any of the following "luaopen_module"
-    //luaopen_bit(shellL);
+    luaopen_bit(shellL);
     luaopen_audio(shellL);
     luaopen_gsm(shellL);
     luaopen_bt(shellL);
@@ -325,6 +326,7 @@ static void lua_setup()
     luaopen_sensor(shellL);
     luaopen_struct(shellL);
     luaopen_cjson(shellL);
+    luaopen_cjson_safe(shellL);
     luaopen_hash_md5(shellL);
     luaopen_hash_sha1(shellL);
     luaopen_hash_sha2(shellL);

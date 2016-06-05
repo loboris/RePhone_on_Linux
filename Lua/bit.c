@@ -121,21 +121,6 @@ static int bit_tohex(lua_State *L)
 #define MIN_OPT_LEVEL 0
 #include "lrodefs.h"
 
-/*static const struct luaL_Reg bit_funcs[] = {
-  { "tobit",	bit_tobit },
-  { "bnot",		bit_bnot },
-  { "band",		bit_band },
-  { "bor",		bit_bor },
-  { "bxor",		bit_bxor },
-  { "lshift",	bit_lshift },
-  { "rshift",	bit_rshift },
-  { "arshift",	bit_arshift },
-  { "rol",		bit_rol },
-  { "ror",		bit_ror },
-  { "bswap",	bit_bswap },
-  { "tohex",	bit_tohex },
-  { NULL, NULL }
-};*/
 
 const LUA_REG_TYPE bit_map[] = {
 		{LSTRKEY("tobit"),	LFUNCVAL(bit_tobit)},
@@ -157,14 +142,15 @@ const LUA_REG_TYPE bit_map[] = {
 ** But the de facto standard are arithmetic right-shifts on two's
 ** complement CPUs. This behaviour is required here, so test for it.
 */
-#define BAD_SAR		(bsar(-8, 2) != (SBits)-2)
+//#define BAD_SAR		(bsar(-8, 2) != (SBits)-2)
 
 LUALIB_API int luaopen_bit(lua_State *L)
 {
+/*
   UBits b;
   lua_pushnumber(L, (lua_Number)1437217655L);
   b = barg(L, -1);
-  if (b != (UBits)1437217655L || BAD_SAR) {  /* Perform a simple self-test. */
+  if (b != (UBits)1437217655L || BAD_SAR) {  // Perform a simple self-test.
     const char *msg = "compiled with incompatible luaconf.h";
 #ifdef LUA_NUMBER_DOUBLE
     if (b == (UBits)1127743488L)
@@ -174,9 +160,9 @@ LUALIB_API int luaopen_bit(lua_State *L)
       msg = "arithmetic right-shift broken";
     luaL_error(L, "bit library self-test failed (%s)", msg);
   }
+*/
 
   luaL_register(L, "bit", bit_map);
-  //luaL_register(L, "bit", bit_funcs);
   return 1;
 }
 

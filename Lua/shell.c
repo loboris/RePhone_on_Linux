@@ -315,7 +315,7 @@ static int file_exists(const char *filename)
 
     return g_shell_result;
 }
-extern int luaopen_bit(lua_State *L);
+
 //===================================================================
 VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
 {
@@ -332,8 +332,6 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     g_reboot_signal = vm_signal_create();
 
     retarget_setup();
-
-    luaopen_bit(shellL);
 
     printf("\nLua memory: %d bytes, C heap: %d bytes\n", g_memory_size, g_memory_size_b);
     printf("LUA SHELL STARTED\n");
