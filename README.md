@@ -3,10 +3,10 @@
 This repository contains RePhone application projects configured for Eclipse.
 The main purpose of this repository is <b>Lua</b> implementation on RePhone (Xadow GSM+BLE).
 
-###Guide for installation/configuration on Linux
+### Guide for installation/configuration on Linux
 [RePhone on Linux guide](https://github.com/loboris/RePhone_on_Linux/raw/master/Documents/RePhone%20on%20Linux.pdf)<br/>
 
-###Links:
+### Links:
 * [RePhone wiki](http://www.seeedstudio.com/wiki/Rephone)
 * [RePhone Forum](http://www.seeedstudio.com/forum/viewforum.php?f=71)
 * [LinkitAssist 2502 Forum](http://labs.mediatek.com/forums/forums/show/58.page)
@@ -14,11 +14,19 @@ The main purpose of this repository is <b>Lua</b> implementation on RePhone (Xad
 * [Linkit Assist SDK](http://download.labs.mediatek.com/MediaTek_LinkIt_Assist_2502_SDK_2_0_46.zip)
 * [Eclipse](https://www.eclipse.org/downloads/)
 
-# <p style='color:blue'>Lua on RePhone</p>
+# &#x1F539; Lua on RePhone &#x1F539;
 
-The main project in this repository is Lua implementation on RePhone.
+Lua programming language implementation on RePhone (Xadow GSM+BLE).
 
-####Main features:
+<i>"Lua is a powerful, efficient, lightweight, embeddable scripting language. It supports procedural programming, object-oriented programming, functional programming, data-driven programming, and data description.
+
+Lua combines simple procedural syntax with powerful data description constructs based on associative arrays and extensible semantics.
+Lua is dynamically typed, runs by interpreting bytecode with a register-based virtual machine, and has automatic memory management with incremental garbage collection, making it ideal for configuration, scripting, and rapid prototyping"</i>
+
+This implementation is specially oriented to IoT applications building.
+
+
+#### Main features:
 
 * Complete <b>Lua 5.1</b> implementation
 * Memory available to Lua programs 650~700 KB + heap for c functions ~64 KB
