@@ -671,7 +671,7 @@ static int gpio_adc_config(lua_State* L)
     adc_chan[chan].chan = chan;
 	adc_chan[chan].vresult = -999999.9;
 	adc_chan[chan].result = -999999;
-	adc_chan[chan].time = (period * count) * 5;
+	adc_chan[chan].time = (period * count) * 10;
 
     // Check if we already have adc handle
 	if (adc_chan[chan].adc_handle >= 0) {

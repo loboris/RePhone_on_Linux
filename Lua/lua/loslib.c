@@ -185,22 +185,24 @@ static int os_rename (lua_State *L) {
 	return g_shell_result;
 }
 
-/*
+//====================================
 static int os_tmpname (lua_State *L) {
   char buff[64]; //LUA_TMPNAMBUFSIZE];
   int err;
-  lua_tmpnam(buff, err);
-  if (err)
-    return luaL_error(L, "unable to generate a unique filename");
+  int r = rand();
+
+  sprintf(buff,"_tmp_%d.tmp", r);
   lua_pushstring(L, buff);
+
   return 1;
 }
 
+//===================================
 static int os_getenv (lua_State *L) {
-  lua_pushstring(L, getenv(luaL_checkstring(L, 1)));  // if NULL push nil
+  lua_pushnil(L);
   return 1;
 }
-*/
+
 
 //===================================
 static int _os_clock (lua_State *L) {
@@ -1083,52 +1085,58 @@ extern int luaB_dofile (lua_State *L);
 #include "lrodefs.h"
 
 const LUA_REG_TYPE syslib[] = {
-  {LSTRKEY("ntptime"),  	LFUNCVAL(os_ntptime)},
-  {LSTRKEY("shutdown"), 	LFUNCVAL(os_shutdown)},
-  {LSTRKEY("reboot"),   	LFUNCVAL(os_reboot)},
-  {LSTRKEY("battery"),  	LFUNCVAL(os_battery)},
-  {LSTRKEY("ver"),  		LFUNCVAL(os_getver)},
-  {LSTRKEY("mem"),  		LFUNCVAL(os_getmem)},
-  {LSTRKEY("schedule"), 	LFUNCVAL(os_scheduled_startup)},
   {LSTRKEY("clock"),    	LFUNCVAL(os_clock)},
   {LSTRKEY("date"),     	LFUNCVAL(os_date)},
   {LSTRKEY("difftime"), 	LFUNCVAL(os_difftime)},
   {LSTRKEY("execute"),  	LFUNCVAL(luaB_dofile)},
   {LSTRKEY("exit"),     	LFUNCVAL(os_exit)},
-  //{LSTRKEY("getenv"), 	LFUNCVAL(os_getenv)},
+  {LSTRKEY("getenv"), 		LFUNCVAL(os_getenv)},
   {LSTRKEY("remove"),   	LFUNCVAL(os_remove)},
   {LSTRKEY("rename"),   	LFUNCVAL(os_rename)},
+  {LSTRKEY("setlocale"),	LFUNCVAL(os_setlocale)},
+  {LSTRKEY("time"),     	LFUNCVAL(os_time)},
+  {LSTRKEY("tmpname"),	  	LFUNCVAL(os_tmpname)},
+  // additional
   {LSTRKEY("copy"),     	LFUNCVAL(os_copy)},
   {LSTRKEY("mkdir"),    	LFUNCVAL(os_mkdir)},
   {LSTRKEY("rmdir"),    	LFUNCVAL(os_rmdir)},
-  {LSTRKEY("setlocale"),	LFUNCVAL(os_setlocale)},
-  {LSTRKEY("time"),     	LFUNCVAL(os_time)},
   {LSTRKEY("list"),     	LFUNCVAL(os_listfiles)},
-  //{LSTRKEY("tmpname"),	  LFUNCVAL(os_tmpname)},
-  {LSTRKEY("retarget"), 	LFUNCVAL(os_retarget)},
-  {LSTRKEY("getchar"),  	LFUNCVAL(os_getchar)},
-  {LSTRKEY("getstring"),	LFUNCVAL(os_getstring)},
-  {LSTRKEY("putchar"),  	LFUNCVAL(os_putchar)},
-  {LSTRKEY("ledblink"), 	LFUNCVAL(os_ledblink)},
-  {LSTRKEY("wkupint"),  	LFUNCVAL(os_wakeup_int)},
-  {LSTRKEY("noacttime"),	LFUNCVAL(os_noact_time)},
-  {LSTRKEY("wdg"),			LFUNCVAL(os_wdg_timeout)},
-  {LSTRKEY("usb"),      	LFUNCVAL(os_usb)},
-  {LSTRKEY("onreboot"), 	LFUNCVAL(os_onwdg_cb)},
-  {LSTRKEY("onshutdown"),	LFUNCVAL(os_onshdwn_cb)},
   {LSTRKEY("compile"),		LFUNCVAL(os_compile)},
-  {LSTRKEY("showlog"),		LFUNCVAL(os_showlog)},
 #if defined USE_YMODEM
   {LSTRKEY("yrecv"),    	LFUNCVAL(file_recv)},
   {LSTRKEY("ysend"),    	LFUNCVAL(file_send)},
 #endif
-  { LSTRKEY("readreg"), LFUNCVAL(os_readreg) },
-  { LSTRKEY("writereg"), LFUNCVAL(os_writereg) },
-  { LSTRKEY("writertcreg"), LFUNCVAL(os_writertcreg) },
   {LNILKEY, LNILVAL}
 };
 
 /* }====================================================== */
+
+const LUA_REG_TYPE sys_map[] = {
+		  {LSTRKEY("ntptime"),  	LFUNCVAL(os_ntptime)},
+		  {LSTRKEY("ver"),  		LFUNCVAL(os_getver)},
+		  {LSTRKEY("mem"),  		LFUNCVAL(os_getmem)},
+		  {LSTRKEY("shutdown"), 	LFUNCVAL(os_shutdown)},
+		  {LSTRKEY("reboot"),   	LFUNCVAL(os_reboot)},
+		  {LSTRKEY("schedule"), 	LFUNCVAL(os_scheduled_startup)},
+		  {LSTRKEY("battery"),  	LFUNCVAL(os_battery)},
+		  {LSTRKEY("retarget"), 	LFUNCVAL(os_retarget)},
+		  {LSTRKEY("getchar"),  	LFUNCVAL(os_getchar)},
+		  {LSTRKEY("getstring"),	LFUNCVAL(os_getstring)},
+		  {LSTRKEY("putchar"),  	LFUNCVAL(os_putchar)},
+		  {LSTRKEY("ledblink"), 	LFUNCVAL(os_ledblink)},
+		  {LSTRKEY("wkupint"),  	LFUNCVAL(os_wakeup_int)},
+		  {LSTRKEY("noacttime"),	LFUNCVAL(os_noact_time)},
+		  {LSTRKEY("wdg"),			LFUNCVAL(os_wdg_timeout)},
+		  {LSTRKEY("usb"),      	LFUNCVAL(os_usb)},
+		  {LSTRKEY("onreboot"), 	LFUNCVAL(os_onwdg_cb)},
+		  {LSTRKEY("onshutdown"),	LFUNCVAL(os_onshdwn_cb)},
+		  {LSTRKEY("showlog"),		LFUNCVAL(os_showlog)},
+		  {LSTRKEY("readreg"), 		LFUNCVAL(os_readreg) },
+		  {LSTRKEY("writereg"), 	LFUNCVAL(os_writereg) },
+		  {LSTRKEY("writertcreg"),	LFUNCVAL(os_writertcreg) },
+		  {LNILKEY, LNILVAL }
+};
+
 
 
 #define GLOBAL_NUMBER(l, name, value) \
@@ -1146,3 +1154,15 @@ LUALIB_API int luaopen_os (lua_State *L) {
 
     LREGISTER(L, LUA_OSLIBNAME, syslib);
 }
+
+LUALIB_API int luaopen_sys(lua_State* L)
+{
+#if LUA_OPTIMIZE_MEMORY > 0
+    return 0;
+#else  // #if LUA_OPTIMIZE_MEMORY > 0
+    luaL_register(L, "sys", sys_map);
+
+    return 1;
+#endif // #if LUA_OPTIMIZE_MEMORY > 0
+}
+

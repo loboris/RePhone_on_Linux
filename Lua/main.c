@@ -34,7 +34,8 @@
 
 // used external functions
 extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
-//extern void retarget_setup();
+
+extern int luaopen_sys(lua_State *L);
 extern int luaopen_audio(lua_State *L);
 extern int luaopen_gsm(lua_State *L);
 extern int luaopen_bt(lua_State *L);
@@ -42,6 +43,7 @@ extern int luaopen_uart(lua_State *L);
 extern int luaopen_timer(lua_State *L);
 extern int luaopen_gpio(lua_State *L);
 extern int luaopen_i2c(lua_State *L);
+extern int luaopen_spi(lua_State *L);
 extern int luaopen_tcp(lua_State* L);
 extern int luaopen_https(lua_State* L);
 extern int luaopen_gprs(lua_State* L);
@@ -307,6 +309,7 @@ static void lua_setup()
 
     lua_gc(shellL, LUA_GCSTOP, 0);  // stop garbage collector during initialization
     luaL_openlibs(shellL);          // open libraries
+    luaopen_sys(shellL);
 
     // ** If not needed, comment any of the following "luaopen_module"
     luaopen_bit(shellL);
@@ -320,6 +323,7 @@ static void lua_setup()
     luaopen_screen(shellL);
 	#endif
     luaopen_i2c(shellL);
+    luaopen_spi(shellL);
     luaopen_tcp(shellL);
     luaopen_https(shellL);
     luaopen_gprs(shellL);
@@ -348,6 +352,10 @@ static void lua_setup()
 	*/
 
     vm_mutex_init(&lua_func_mutex);
+    g_tty_signal = vm_signal_create();
+    g_shell_signal = vm_signal_create();
+    g_reboot_signal = vm_signal_create();
+
     handle = vm_thread_create(shell_thread, shellL, 150);
     handle = vm_thread_create(tty_thread, ttyL, 160);
 }

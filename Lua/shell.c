@@ -24,22 +24,9 @@
 lua_State *shellL = NULL;			// Lua state
 lua_State *ttyL = NULL;				// Lua state
 
-//VM_THREAD_HANDLE g_main_handle;
-//VM_THREAD_HANDLE g_ttythread_handle;
-//VM_THREAD_HANDLE g_shellthread_handle;
-
-//vm_mutex_t lua_func_mutex;
-
-//cfunc_params_t g_CCparams;
-//cbfunc_params_t g_CBparams;
-
 vm_thread_message_t g_shell_message  = {SHELL_MESSAGE_ID, 0};
 vm_thread_message_t g_fcall_message  = {CCALL_MESSAGE_FOPEN, &g_CCparams};
 vm_thread_message_t g_cbcall_message = {CB_MESSAGE_ID, &g_CBparams};
-
-//VM_SIGNAL_ID g_shell_signal;
-//VM_SIGNAL_ID g_tty_signal;
-//VM_SIGNAL_ID g_reboot_signal;
 
 //int g_shell_result;
 lua_CFunction g_CCfunc = NULL;
@@ -328,8 +315,6 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     legc_set_mode(L, EGC_ON_MEM_LIMIT | EGC_ON_ALLOC_FAILURE, g_memory_size);
 
     g_shell_message.message_id = SHELL_MESSAGE_ID;
-    g_shell_signal = vm_signal_create();
-    g_reboot_signal = vm_signal_create();
 
     retarget_setup();
 
@@ -352,7 +337,9 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     }
 
     lua_settop(L, 0);  // clear stack
-    // ==== Main loop ====
+	vm_signal_post(g_tty_signal); // start tty
+
+	// ==== Main loop ====
     while (1) {
     	vm_thread_get_message(&message);
         switch (message.message_id) {
@@ -635,9 +622,7 @@ VMINT32 tty_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
 
     g_ttythread_handle = vm_thread_get_current_handle();
 
-    legc_set_mode(L, EGC_ON_MEM_LIMIT | EGC_ON_ALLOC_FAILURE, g_memory_size);
-
-    g_tty_signal = vm_signal_create();
+    vm_signal_wait(g_tty_signal);
 
     lua_settop(L, 0);  // clear stack
     //===============================================================

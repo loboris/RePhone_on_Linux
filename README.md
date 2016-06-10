@@ -1,6 +1,7 @@
 # RePhone development on Linux
 
-This repository contains RePhone application projects configured for Eclipse
+This repository contains RePhone application projects configured for Eclipse.
+The main purpose of this repository is <b>Lua</b> implementation on RePhone (Xadow GSM+BLE).
 
 ###Guide for installation/configuration on Linux
 [RePhone on Linux guide](https://github.com/loboris/RePhone_on_Linux/raw/master/Documents/RePhone%20on%20Linux.pdf)<br/>
@@ -20,21 +21,22 @@ The main project in this repository is Lua implementation on RePhone.
 ####Main features:
 
 * Complete <b>Lua 5.1</b> implementation
-* Memory available to Lua programs ~700 KB + heap for c functions ~64 KB
+* Memory available to Lua programs 650~700 KB + heap for c functions ~64 KB
+* <b>os</b> module expanded with many new functions ( copy, mkdir, rmdir, list, compile )
+* <b>sys</b> module added with many RePhone related functions ( including <b>ntptime</b> function for adjusting RTC time from NTP server )
 * System functions for <b>watchdog</b>, <b>rtc</b>, scheduled <b>shut down</b> / <b>wake up</b> implemented
-* <b>os</b> module expanded with many new functions ( <b>ntptime</b> function added for adjusting RTC time from NTP server )
 * Lua <B>shell</b> is available on USB port (/dev/ttyACM0), on RePhone hardware UART and over Bluetooth
 * Many new/RePhone specific modules (written in c)
   * <b>gpio</b>, with added fonctions for gpio toggle and EINT on any eint capable pin
   * <b>pwm</b> module
   * <b>adc</b> module (part of gpio module)
   * <b>https</b>, with added post mode (capable of sending file or params from table)
-  * <b>gsm</b> module, with complete SMS functionality
+  * <b>gsm</b> module, with complete SMS functionality (read,write,list,delete,callbacks,...)
   * <b>mqtt</b> module, complete mqtt client
   * <b>audio</b> module
   * <b>timer</b> module
   * <b>i2c</b> module
-  * <b>spi</b> module (<i>in development</i>)
+  * <b>spi</b> module
   * <b>tcp & udp</b> modules
   * <b>bt</b> Bluetooth module with possible Lua shell redirect 
   * <b>uart</b> Hardware UART (two ports) module with possible Lua shell redirect 
