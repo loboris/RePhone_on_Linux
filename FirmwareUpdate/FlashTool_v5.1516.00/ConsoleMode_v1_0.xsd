@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+    <!-- 
+        Document definition
+    -->
+    <xs:element name="flashtool-config">
+        <xs:complexType>
+            <xs:choice>
+                <xs:element name="download" type="download-type"/>
+                <xs:element name="download-format" type="download-format-type"/>
+                <xs:element name="download-RtFD" type="download-RtFD-type"/>
+                <xs:element name="backup-download-restore" type="backup-download-restore-type"/>
+                <xs:element name="backup-download-format-restore" type="backup-download-format-restore-type"/>
+                <xs:element name="backup-download-RtFD-restore" type="backup-download-RtFD-restore-type"/>
+                <xs:element name="format" type="format-type"/>
+                <xs:element name="backup-format-restore" type="backup-format-restore-type"/>
+                <xs:element name="RtFD" type="RtFD-type"/>
+                <xs:element name="backup-RtFD-restore" type="backup-RtFD-restore-type"/>
+            </xs:choice>
+            <xs:attribute name="version" type="version-type" use="required"/>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:complexType name="download-type">
+        <xs:sequence>
+            <xs:element name="general-setting" type="general-setting-type"/>
+            <xs:element name="download-setting" type="download-setting-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="download-format-type">
+        <xs:sequence>
+            <xs:element name="general-setting" type="general-setting-type"/>
+            <xs:element name="download-setting" type="download-format-setting-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="download-RtFD-type">
+        <xs:sequence>
+            <xs:element name="general-setting" type="general-setting-type"/>
+            <xs:element name="download-setting" type="download-setting-with-watchdog-timer-enabled-type"/>
+            <xs:element name="reset-to-factory-default-setting" type="RtFD-setting-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="backup-download-restore-type">
+        <xs:sequence>
+            <xs:element name="general-setting" type="general-setting-type"/>
+            <xs:element name="backup-setting" type="backup-setting-with-watchdog-timer-enabled-type"/>
+            <xs:element name="download-setting" type="download-setting-with-watchdog-timer-enabled-type"/>
+            <xs:element name="restore-setting" type="restore-setting-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="backup-download-format-restore-type">
+        <xs:sequence>
+            <xs:element name="general-setting" type="general-setting-type"/>
+            <xs:element name="backup-setting" type="backup-setting-with-watchdog-timer-enabled-type"/>
+            <xs:element name="download-setting" type="download-format-setting-with-watchdog-timer-enabled-type"/>
+            <xs:element name="restore-setting" type="restore-setting-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="backup-download-RtFD-restore-type">
+        <xs:sequence>
+            <xs:element name="general-setting" type="general-setting-type"/>
+            <xs:element name="backup-setting" type="backup-setting-with-watchdog-timer-enabled-type"/>
+            <xs:element name="download-setting" type="download-setting-with-watchdog-timer-enabled-type"/>
+            <xs:element name="reset-to-factory-default-setting" type="RtFD-setting-with-watchdog-timer-enabled-type"/>
+            <xs:element name="restore-setting" type="restore-setting-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="format-type">
+        <xs:sequence>
+            <xs:element name="general-setting" type="general-setting-type"/>
+            <xs:element name="format-setting" type="format-setting-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="backup-format-restore-type">
+        <xs:sequence>
+            <xs:element name="general-setting" type="general-setting-type"/>
+            <xs:element name="backup-setting" type="backup-setting-with-watchdog-timer-enabled-type"/>
+            <xs:element name="format-setting" type="format-setting-with-watchdog-timer-enabled-type"/>
+            <xs:element name="restore-setting" type="restore-setting-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="RtFD-type">
+        <xs:sequence>
+            <xs:element name="general-setting" type="general-setting-type"/>
+            <xs:element name="reset-to-factory-default-setting" type="RtFD-setting-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="backup-RtFD-restore-type">
+        <xs:sequence>
+            <xs:element name="general-setting" type="general-setting-type"/>
+            <xs:element name="backup-setting" type="backup-setting-with-watchdog-timer-enabled-type"/>
+            <xs:element name="reset-to-factory-default-setting" type="RtFD-setting-with-watchdog-timer-enabled-type"/>
+            <xs:element name="restore-setting" type="restore-setting-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <!--
+        Group definitions
+    -->
+    <xs:group name="format-setting-group-type">
+        <xs:choice>
+            <xs:element name="auto-format-FAT-setting" type="empty-type"/>
+            <xs:element name="manual-format-setting" type="manual-format-setting-type"/>
+        </xs:choice>
+    </xs:group>
+
+    <!-- 
+        Type definitions
+    -->
+    <xs:complexType name="general-setting-type">
+        <xs:all>
+            <xs:element name="com-port" type="com-port-type"/>
+            <xs:element name="check-bbchip-hardware-version" type="xs:boolean"/>
+            <xs:element name="download-agent-file-path" type="file-path-type"/>
+            <xs:element name="authentication-file-path" type="file-path-type"/>
+        </xs:all>
+    </xs:complexType>
+
+    <xs:complexType name="download-setting-type">
+        <xs:sequence>
+            <xs:element name="scatter-file-path" type="file-path-type"/>
+            <xs:element name="download-list" type="download-list-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="download-format-setting-type">
+        <xs:complexContent>
+            <xs:extension base="download-setting-type">
+                <xs:group ref="format-setting-group-type"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="format-setting-type">
+        <xs:sequence>
+            <xs:group ref="format-setting-group-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="RtFD-setting-type">
+        <xs:sequence/>
+    </xs:complexType>
+
+    <xs:complexType name="backup-setting-type">
+        <xs:sequence>
+            <xs:element name="ini-file-path" type="file-path-type"/>
+            <xs:element name="backup-directory-path" type="directory-path-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="restore-setting-type">
+        <xs:sequence>
+            <xs:element name="ini-file-path" type="file-path-type"/>
+            <xs:element name="restore-directory-path" type="directory-path-type"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="download-setting-with-watchdog-timer-enabled-type">
+        <xs:complexContent>
+            <xs:extension base="download-setting-type">
+                <xs:sequence>
+                    <xs:element name="enable-watchdog-timer" type="empty-type"/>
+                </xs:sequence>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="download-format-setting-with-watchdog-timer-enabled-type">
+        <xs:complexContent>
+            <xs:extension base="download-format-setting-type">
+                <xs:sequence>
+                    <xs:element name="enable-watchdog-timer" type="empty-type"/>
+                </xs:sequence>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="format-setting-with-watchdog-timer-enabled-type">
+        <xs:complexContent>
+            <xs:extension base="format-setting-type">
+                <xs:sequence>
+                    <xs:element name="enable-watchdog-timer" type="empty-type"/>
+                </xs:sequence>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="RtFD-setting-with-watchdog-timer-enabled-type">
+        <xs:complexContent>
+            <xs:extension base="RtFD-setting-type">
+                <xs:sequence>
+                    <xs:element name="enable-watchdog-timer" type="empty-type"/>
+                </xs:sequence>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="backup-setting-with-watchdog-timer-enabled-type">
+        <xs:complexContent>
+            <xs:extension base="backup-setting-type">
+                <xs:sequence>
+                    <xs:element name="enable-watchdog-timer" type="empty-type"/>
+                </xs:sequence>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="manual-format-setting-type">
+        <xs:all>
+            <xs:element name="storage" type="storage-type"/>
+            <xs:element name="begin-address" type="hex-32bit-type"/>
+            <xs:element name="length" type="hex-32bit-type"/>
+        </xs:all>
+    </xs:complexType>
+
+    <xs:complexType name="download-list-type">
+        <xs:sequence>
+            <xs:element name="download-item" maxOccurs="unbounded">
+                <xs:simpleType>
+                    <xs:restriction base="xs:token">
+                        <xs:enumeration value="BOOTLOADER"/>
+                        <xs:enumeration value="FOTA"/>
+                        <xs:enumeration value="ROM"/>
+                        <xs:enumeration value="SECONDARY_ROM"/>
+                        <xs:enumeration value="LANG_PACK_ROM"/>
+                        <xs:enumeration value="CUSTPACK_ROM"/>
+                        <xs:enumeration value="THIRD_ROM"/>
+                        <xs:enumeration value="DEMAND_PAGING_ROM0"/>
+                        <xs:enumeration value="SECURE_RO"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+
+    <!--
+        Basic type definitions
+    -->
+    <xs:simpleType name="version-type">
+        <xs:restriction base="xs:token">
+            <xs:pattern value="[1-9]\.[0-9]"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="com-port-type">
+        <xs:restriction base="xs:token">
+            <xs:pattern value="[1-9]|([1-9][0-9])|(1[0-9][0-9])|(2[0-5][0-5])|USB"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="file-path-type">
+        <xs:restriction base="xs:token">
+            <xs:minLength value="0"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="directory-path-type">
+        <xs:restriction base="xs:token">
+            <xs:minLength value="0"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="storage-type">
+        <xs:restriction base="xs:token">
+            <xs:pattern value="NOR|NAND"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="hex-32bit-type">
+        <xs:restriction base="xs:token">
+            <xs:pattern value="0x([0-9]|[a-f]){8}"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:complexType name="empty-type"/>
+</xs:schema>

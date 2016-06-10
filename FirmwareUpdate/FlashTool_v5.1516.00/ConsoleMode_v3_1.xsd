@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+    <!-- 
+        Document definition
+    -->
+    <xs:element name="flashtool-config">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="general-setting" type="general-setting-type"/>
+                <xs:choice maxOccurs="unbounded">
+                    <xs:element name="general-setting" type="general-setting-type"/>
+                    <xs:element name="download-setting" type="download-setting-type"/>
+                    <xs:element name="format-setting" type="format-setting-type"/>
+                    <xs:element name="reset-to-factory-default-setting" type="RtFD-setting-type"/>
+                    <xs:element name="backup-setting" type="backup-setting-type"/>
+                    <xs:element name="restore-setting" type="restore-setting-type"/>
+                </xs:choice>
+            </xs:sequence>
+            <xs:attribute name="version" type="version-type" use="required"/>
+        </xs:complexType>
+    </xs:element>
+
+    <!-- 
+        Type definitions
+    -->
+    <xs:complexType name="general-setting-type">
+        <xs:all>
+            <xs:element name="com-port" type="com-port-type"/>
+            <xs:element name="check-bbchip-hardware-version" type="xs:boolean"/>
+            <xs:element name="download-agent-file-path" type="file-path-type"/>
+            <xs:element name="authentication-file-path" type="file-path-type" minOccurs="0"/>
+        </xs:all>
+    </xs:complexType>
+    <xs:complexType name="download-setting-type">
+        <xs:sequence>
+            <xs:element name="scatter-file-path" type="file-path-type"/>
+            <xs:element name="download-list" type="download-list-type"/>
+            <xs:group ref="format-setting-group-type" minOccurs="0"/>
+            <xs:element name="enable-watchdog-timer" type="empty-type" minOccurs="0"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="format-setting-type">
+        <xs:sequence>
+            <xs:element name="scatter-file-path" type="file-path-type" minOccurs="0"/>
+            <xs:group ref="format-setting-group-type"/>
+            <xs:element name="enable-watchdog-timer" type="empty-type" minOccurs="0"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="RtFD-setting-type">
+        <xs:sequence>
+            <xs:element name="enable-watchdog-timer" type="empty-type" minOccurs="0"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="backup-setting-type">
+        <xs:sequence>
+            <xs:element name="ini-file-path" type="file-path-type"/>
+            <xs:element name="backup-directory-path" type="directory-path-type"/>
+            <xs:element name="enable-watchdog-timer" type="empty-type" minOccurs="0"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="restore-setting-type">
+        <xs:sequence>
+            <xs:element name="ini-file-path" type="file-path-type"/>
+            <xs:element name="restore-directory-path" type="directory-path-type"/>
+            <xs:element name="enable-watchdog-timer" type="empty-type" minOccurs="0"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="download-list-type">
+        <xs:sequence>
+            <xs:element name="download-item" maxOccurs="unbounded">
+                <xs:simpleType>
+                    <xs:restriction base="xs:token">
+                        <xs:enumeration value="BOOTLOADER"/>
+                        <xs:enumeration value="ARM_BL"/>
+                        <xs:enumeration value="ARM_EXT_BL"/>
+                        <xs:enumeration value="DUALMAC_DSP_BL"/>
+                        <xs:enumeration value="ROOT_CERT"/>
+                        <xs:enumeration value="ROM"/>
+                        <xs:enumeration value="PRIMARY_MAUI"/>
+                        <xs:enumeration value="SECONDARY_ROM"/>
+                        <xs:enumeration value="SECONDARY_MAUI"/>
+                        <xs:enumeration value="DEMAND_PAGING_ROM0"/>
+                        <xs:enumeration value="ON_DEMAND_PAGING"/>
+                        <xs:enumeration value="THIRD_ROM"/>
+                        <xs:enumeration value="DSP_ROM"/>
+                        <xs:enumeration value="LANG_PACK_ROM"/>
+                        <xs:enumeration value="LANGUAGE_PACK"/>
+                        <xs:enumeration value="CUSTPACK_ROM"/>
+                        <xs:enumeration value="CUSTOM_PACK"/>
+                        <xs:enumeration value="JUMP_TABLE"/>
+                        <xs:enumeration value="FOTA"/>
+                        <xs:enumeration value="FOTA_UE"/>
+                        <xs:enumeration value="SECURE_RO"/>
+                        <xs:enumeration value="SECURE_RO_S"/>
+                        <xs:enumeration value="SECURE_RO_ME"/>
+                        <xs:enumeration value="CACHED_DSP_ROM"/>
+                        <xs:enumeration value="ZIMAGE"/>
+                        <xs:enumeration value="DYNAMIC_COMP_BESLOUDNESS"/>
+                        <xs:enumeration value="DYNAMIC_COMP_CODE"/>
+                        <xs:enumeration value="DYNAMIC_COMP_H264DEC"/>
+                        <xs:enumeration value="DYNAMIC_COMP_MP4DEC"/>
+                        <xs:enumeration value="DYNAMIC_COMP_RESAMPLE"/>
+                        <xs:enumeration value="DYNAMIC_COMP_SBC"/>
+                        <xs:enumeration value="DYNAMIC_COMP_MP4ENC"/>                             
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+
+    <!--
+        Group definitions
+    -->
+    <xs:group name="format-setting-group-type">
+        <xs:choice>
+            <xs:element name="auto-format-FAT-setting" type="empty-type"/>
+            <xs:element name="manual-format-setting">
+                <xs:complexType>
+                    <xs:all>
+                        <xs:element name="storage" type="storage-type"/>
+                        <xs:element name="begin-address" type="hex-32bit-type"/>
+                        <xs:element name="length" type="hex-32bit-type"/>
+                    </xs:all>
+                </xs:complexType>
+            </xs:element>
+        </xs:choice>
+    </xs:group>
+
+    <!--
+        Basic type definitions
+    -->
+    <xs:simpleType name="version-type">
+        <xs:restriction base="xs:token">
+            <xs:pattern value="[1-9]\.[0-9]"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:simpleType name="com-port-type">
+        <xs:restriction base="xs:token">
+            <xs:pattern value="[1-9]|([1-9][0-9])|(1[0-9][0-9])|(2[0-5][0-5])|USB"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:simpleType name="file-path-type">
+        <xs:restriction base="xs:token">
+            <xs:minLength value="1"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:simpleType name="directory-path-type">
+        <xs:restriction base="xs:token">
+            <xs:minLength value="1"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:simpleType name="storage-type">
+        <xs:restriction base="xs:token">
+            <xs:pattern value="NOR|NAND"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:simpleType name="hex-32bit-type">
+        <xs:restriction base="xs:token">
+            <xs:pattern value="0x([0-9]|[a-f]){1,8}"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:complexType name="empty-type"/>
+</xs:schema>

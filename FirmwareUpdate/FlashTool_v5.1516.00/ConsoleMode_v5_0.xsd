@@ -1,0 +1,376 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+    <!-- 
+        Document definition
+    -->
+    <xs:element name="flashtool-config">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="general-setting" type="general-setting-type"/>
+                <xs:choice maxOccurs="unbounded">
+                    <xs:element name="general-setting" type="general-setting-type"/>
+                    <xs:element name="download-setting" type="download-setting-type"/>
+                    <xs:element name="format-setting" type="format-setting-type"/>
+					<xs:element name="readback-setting" type="readback-setting-type"/>
+                    <xs:element name="reset-to-factory-default-setting" type="RtFD-setting-type"/>
+                    <xs:element name="backup-setting" type="backup-setting-type"/>
+                    <xs:element name="restore-setting" type="restore-setting-type"/>
+                </xs:choice>
+            </xs:sequence>
+            <xs:attribute name="version" type="version-type" use="required"/>
+        </xs:complexType>
+    </xs:element>
+
+    <!-- 
+        Type definitions
+    -->
+    <xs:complexType name="general-setting-type">
+        <xs:all>
+            <xs:element name="com-port" type="com-port-type" />            
+            <xs:element name="download-agent-file-path" type="file-path-type"/>
+            <xs:element name="authentication-file-path" type="file-path-type" minOccurs="0"/>
+            <xs:element name="certification-file-path" type="file-path-type" minOccurs="0"/>
+            <xs:element name="rootcert-file-path" type="file-path-type" minOccurs="0" />
+            <xs:element name="send-root-cert-forcibly" type="xs:boolean" minOccurs="0" />            
+            <xs:element name="baudrate" type="baudrate-type" minOccurs="0"/>            
+            <xs:element name="baseband-chip" minOccurs="0"/>                        
+            <xs:element name="external-clock" minOccurs="0"/>            
+            <xs:element name="usb-download-without-battery" type="xs:boolean" minOccurs="0" />            
+            <xs:element name="enable-usb-datacard-download" type="xs:boolean" minOccurs="0" />  
+            <!--Operation Methods -->
+            <xs:element name="operation-method" type="operation-method-type" minOccurs="0"  /> 
+                <!--Com Port Options-->
+            <xs:element name="com-port-read-timeout" type="xs:integer" minOccurs="0" /> 
+                    <!--{No Timeout, Default, Custom N}-->
+            <xs:element name="com-port-write-timeout" type="xs:integer" minOccurs="0" /> 
+                    <!--{No Timeout, Default, Custom N}-->
+            <xs:element name="baudrate-full-sync" type="xs:integer" minOccurs="0" /> 
+            <xs:element name="com-port-filter" type="xs:token" minOccurs="0" /> 
+            <xs:element name="speedup-bootrom-baudrate" type="xs:boolean" minOccurs="0" /> 
+            <xs:element name="usb-high-speed-download" type="xs:boolean" minOccurs="0" /> 
+            <xs:element name="enable-usb-da-log" type="xs:boolean" minOccurs="0" />     
+            <!--DA Options-->
+            <xs:element name="da-non-standard-start-address" type="hex-32bit-type" minOccurs="0" /> 
+            <xs:element name="da-sequential-download" type="xs:boolean" minOccurs="0" /> 
+            <!--Baseband Chip Options-->
+            <xs:element ref="emi-setting" minOccurs="0"/>
+            <xs:element name="bootrom-start-command-retry" type="xs:integer" minOccurs="0" /> 
+            <xs:element name="check-bbchip-hardware-version" type="xs:boolean" minOccurs="0"/>
+            <xs:element name="pull-down-GPIO17" type="xs:boolean" minOccurs="0" /> 
+            <xs:element name="enable-NFI-cs1" type="xs:boolean" minOccurs="0" /> 
+            <!--Format Options-->
+            <!--Backup and Restore Options-->
+            <!--Upload Options-->
+            <!--Multi-Bin Download Options-->
+            <xs:element name="check-target-resource-layout" type="xs:boolean" minOccurs="0" /> 
+            <xs:element name="auto-load-resource-by-scat" type="xs:boolean" minOccurs="0" /> 
+            <xs:element name="compare-resource-project-id" type="xs:boolean" minOccurs="0" /> 
+            <!--Multi Load Options-->
+            <!--Other Options-->
+            <xs:element name="disable-flash-id-comparison" type="xs:boolean" minOccurs="0" />                           
+            <xs:element name="skip-bootrom" type="xs:boolean" minOccurs="0" /> 
+        </xs:all>
+    </xs:complexType>
+    <xs:complexType name="download-setting-type">
+        <xs:all>            
+            <xs:element name="check-fat-range-before-download" type="xs:boolean" minOccurs="0" /> 
+            <xs:element name="backup-linux-nvram-partition" type="backup-linux-nvram-partition-type" minOccurs="0" />            
+            <xs:element name="enable-nor-sf-safe-mode" type="xs:boolean" minOccurs="0" />  
+            <xs:element name="keep-cbr-region-intact" type="xs:boolean" minOccurs="0" /> 
+            <xs:element name="download-list" type="download-list-type"/>
+            <xs:element name="enable-watchdog-timer" type="xs:boolean" minOccurs="0"/>            
+            <xs:element ref="format-setting-choice" minOccurs="0"/>            
+            <xs:element name="scatter-file-path" type="file-path-type"/>
+            <!--Transmission Options-->
+            <xs:element name="packet-length" type="xs:integer" minOccurs="0" />             
+        </xs:all>
+    </xs:complexType>
+    <xs:complexType name="format-setting-type">
+        <xs:all>
+            <xs:element name="scatter-file-path" type="file-path-type" minOccurs="0"/>
+            <xs:element ref="format-setting-choice"/>
+            <xs:element name="enable-watchdog-timer" type="xs:boolean" minOccurs="0"/>
+        </xs:all>
+    </xs:complexType>
+	<xs:complexType name="readback-setting-type">
+        <xs:all>
+            <xs:element name="readback-setting-list" type="readback-setting-list-type"/>
+            <xs:element name="storage" type="storage-type" minOccurs="0" />
+            <xs:element name="scatter-file-path" type="file-path-type"/>
+        </xs:all>
+    </xs:complexType>
+    <xs:complexType name="RtFD-setting-type">
+        <xs:all>
+            <xs:element name="enable-watchdog-timer" type="xs:boolean" minOccurs="0"/>
+        </xs:all>
+    </xs:complexType>
+    <xs:complexType name="backup-setting-type">
+        <xs:all>
+            <xs:element name="ini-file-path" type="file-path-type"/>
+            <xs:element name="backup-directory-path" type="directory-path-type"/>
+            <xs:element name="enable-watchdog-timer" type="xs:boolean" minOccurs="0"/>
+        </xs:all>
+    </xs:complexType>
+    <xs:complexType name="restore-setting-type">
+        <xs:all>
+            <xs:element name="ini-file-path" type="file-path-type"/>
+            <xs:element name="restore-directory-path" type="directory-path-type"/>
+            <xs:element name="enable-watchdog-timer" type="xs:boolean" minOccurs="0"/>
+        </xs:all>
+    </xs:complexType>
+    <xs:complexType name="download-list-type">
+        <xs:sequence>
+            <xs:element name="download-item" maxOccurs="unbounded">
+                <xs:simpleType>
+                    <xs:restriction base="xs:token">
+                        <xs:enumeration value="BOOTLOADER"/>
+                        <xs:enumeration value="ARM_BL"/>
+                        <xs:enumeration value="ARM_EXT_BL"/>
+                        <xs:enumeration value="DUALMAC_DSP_BL"/>
+                        <xs:enumeration value="ROOT_CERT"/>
+                        <xs:enumeration value="ROM"/>
+                        <xs:enumeration value="PRIMARY_MAUI"/>
+                        <xs:enumeration value="SECONDARY_ROM"/>
+                        <xs:enumeration value="SECONDARY_MAUI"/>
+                        <xs:enumeration value="DEMAND_PAGING_ROM0"/>
+                        <xs:enumeration value="ON_DEMAND_PAGING"/>
+                        <xs:enumeration value="THIRD_ROM"/>
+                        <xs:enumeration value="DSP_ROM"/>
+                        <xs:enumeration value="LANG_PACK_ROM"/>
+                        <xs:enumeration value="LANGUAGE_PACK"/>
+                        <xs:enumeration value="CUSTPACK_ROM"/>
+                        <xs:enumeration value="CUSTOM_PACK"/>
+                        <xs:enumeration value="JUMP_TABLE"/>
+                        <xs:enumeration value="FOTA"/>
+                        <xs:enumeration value="FOTA_UE"/>
+                        <xs:enumeration value="SECURE_RO"/>
+                        <xs:enumeration value="SECURE_RO_S"/>
+                        <xs:enumeration value="SECURE_RO_ME"/>
+                        <xs:enumeration value="CACHED_DSP_ROM"/>
+                        <xs:enumeration value="EXT_BOOTLOADER"/>
+                        <xs:enumeration value="VIVA"/>												
+                        <xs:enumeration value="MD_BL"/>
+                        <xs:enumeration value="MDAP_BL"/>
+                        <xs:enumeration value="BBM"/>
+                        <xs:enumeration value="NVRAM"/>
+                        <xs:enumeration value="UBOOT"/>
+                        <xs:enumeration value="UBOOT2"/>
+                        <xs:enumeration value="Linux"/>
+                        <xs:enumeration value="FUL"/>
+                        <xs:enumeration value="FactoryConfig"/>
+                        <xs:enumeration value="ConfigPack1"/>
+                        <xs:enumeration value="ConfigPack2"/>
+                        <xs:enumeration value="SYSTEM"/>
+                        <xs:enumeration value="USERDATA"/>
+                        <xs:enumeration value="CDROM"/>
+                        <xs:enumeration value="FWU"/>
+                        <xs:enumeration value="MODEM"/>
+                        <xs:enumeration value="MODEM2"/>
+                        <xs:enumeration value="LOGO"/>
+                        <xs:enumeration value="_BMTPOOL"/>
+                        <xs:enumeration value="CMD_SCRIPT"/>
+                        <xs:enumeration value="LTE_DSP_ROM"/>
+                        <xs:enumeration value="PMT"/>
+                        <xs:enumeration value="AP_BL"/>
+                        <xs:enumeration value="MD_IMG"/>
+                        <xs:enumeration value="TINY_SYS_ROM1"/>
+                        <xs:enumeration value="TINY_SYS_ROM2"/>
+                        <xs:enumeration value="TINY_SYS_ROM3"/>
+                        <xs:enumeration value="DSP"/>
+                        <xs:enumeration value="HIBERNATE_SWAP"/>               
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+	
+	<xs:complexType name="readback-setting-list-type">
+        <xs:sequence>
+            <xs:element name="readback-item" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+	
+    <xs:element  name="format-setting-choice">
+        <xs:complexType>
+            <xs:all>
+                <xs:element name="format-action" type="format-action-type" minOccurs="1" />
+                <xs:element name="storage" type="storage-type" minOccurs="1" />
+                <xs:element name="begin-address" type="hex-32bit-type" minOccurs="0"/>
+                <xs:element name="length" type="hex-32bit-type" minOccurs="0"/>                
+                <xs:element name="emmc-begin-address-BP1" type="hex-32bit-type" minOccurs="0"/>
+                <xs:element name="emmc-length-BP1" type="hex-32bit-type" minOccurs="0"/>          
+                <xs:element name="emmc-begin-address-GP1" type="hex-32bit-type" minOccurs="0"/>
+                <xs:element name="emmc-length-GP1" type="hex-32bit-type" minOccurs="0"/>                
+                <xs:element name="emmc-begin-address-UA" type="hex-32bit-type" minOccurs="0"/>
+                <xs:element name="emmc-length-UA" type="hex-32bit-type" minOccurs="0"/>                                
+            </xs:all>
+        </xs:complexType>
+    </xs:element >    
+    <xs:element  name="emi-setting">
+        <xs:complexType>
+            <xs:all>
+                <xs:element name="bank0-auto" type="xs:boolean" minOccurs="1" />
+                <xs:element name="bank0-config" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="bank1-auto" type="xs:boolean" minOccurs="1" />
+                <xs:element name="bank1-config" type="hex-32bit-type" minOccurs="1" />                
+                <xs:element name="nand-acccon-auto" type="xs:boolean" minOccurs="1" />
+                <xs:element name="nand-acccon-config" type="hex-32bit-type" minOccurs="1" />                                
+                <xs:element name="enable-dram-emi-config" type="xs:boolean" minOccurs="1"/>                
+                <xs:element name="emi-gen-a" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-gen-b" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-gen-c" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-gen-d" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-con-i" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-con-i-ext" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-con-j" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-con-k" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-con-l" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-con-m" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-con-n" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-del-a" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-del-b" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-del-c" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-del-d" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-del-e" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-del-f" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-del-g" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-del-h" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-del-i" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-del-j" type="hex-32bit-type" minOccurs="1" />                
+                <xs:element name="emi-arb-a" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-arb-b" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-arb-c" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-arb-d" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-arb-e" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-arb-f" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-arb-g" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-arb-h" type="hex-32bit-type" minOccurs="1" />
+                <xs:element name="emi-arb-i" type="hex-32bit-type" minOccurs="1" />
+            </xs:all>
+        </xs:complexType>
+    </xs:element >        
+    <!--
+        Group definitions
+    --> 
+    
+    <!--
+        Basic type definitions
+    -->
+    <xs:simpleType name="version-type">
+        <xs:restriction base="xs:token">
+            <xs:pattern value="[1-9]\.[0-9]"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:simpleType name="com-port-type">
+        <xs:restriction base="xs:token">
+            <xs:pattern value="[1-9]|([1-9][0-9])|(1[0-9][0-9])|(2[0-5][0-5])|USB|DATACARD"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:simpleType name="file-path-type">
+        <xs:restriction base="xs:token">
+            <xs:minLength value="1"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:simpleType name="directory-path-type">
+        <xs:restriction base="xs:token">
+            <xs:minLength value="1"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:simpleType name="hex-32bit-type">
+        <xs:restriction base="xs:token">
+            <xs:pattern value="(0x([0-9]|[a-f]|[A-F]){1,8})|([0-9]{1,10})"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:simpleType name="baudrate-type">
+        <xs:restriction base="xs:token">
+            <xs:enumeration value="UART_BAUD_921600"/>
+            <xs:enumeration value="UART_BAUD_460800"/>
+            <xs:enumeration value="UART_BAUD_230400"/>
+            <xs:enumeration value="UART_BAUD_115200"/>
+            <xs:enumeration value="UART_BAUD_57600"/>
+            <xs:enumeration value="UART_BAUD_38400"/>
+            <xs:enumeration value="UART_BAUD_19200"/>
+            <xs:enumeration value="UART_BAUD_9600"/>
+            <xs:enumeration value="UART_BAUD_4800"/>
+            <xs:enumeration value="UART_BAUD_2400"/>
+            <xs:enumeration value="UART_BAUD_1200"/>
+            <xs:enumeration value="UART_BAUD_300"/>
+            <xs:enumeration value="UART_BAUD_110"/>            
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:simpleType name="bbchip-type">
+        <xs:restriction base="xs:token">
+            <xs:enumeration value="Auto-Detect"/>
+            <xs:enumeration value="MT6205B"/>
+            <xs:enumeration value="MT6218B"/>
+            <xs:enumeration value="MT6219"/>
+            <xs:enumeration value="MT6223"/>
+            <xs:enumeration value="MT6223P"/>
+            <xs:enumeration value="MT6225"/>
+            <xs:enumeration value="MT6226"/>
+            <xs:enumeration value="MT6226D"/>
+            <xs:enumeration value="MT6226M"/>
+            <xs:enumeration value="MT6227"/>
+            <xs:enumeration value="MT6227D"/>
+            <xs:enumeration value="MT6228"/>
+            <xs:enumeration value="MT6229"/>
+            <xs:enumeration value="MT6230"/>
+            <xs:enumeration value="MT6235"/>
+            <xs:enumeration value="MT6238"/>
+            <xs:enumeration value="MT6239"/>
+            <xs:enumeration value="MT6251T"/>
+            <xs:enumeration value="MT6253T"/>
+            <xs:enumeration value="MT6268A"/>
+            <xs:enumeration value="MT6268B"/>
+        </xs:restriction>
+    </xs:simpleType>    
+    <xs:simpleType name="ext-clock-type">
+        <xs:restriction base="xs:token">
+            <xs:enumeration value="Auto-Detect"/>
+            <xs:enumeration value="13MHz"/>
+            <xs:enumeration value="26MHz"/>
+            <xs:enumeration value="52MHz"/>
+        </xs:restriction>
+    </xs:simpleType>     
+    <xs:complexType name="empty-type"/>
+    
+    <xs:simpleType name="format-action-type">
+        <xs:restriction base="xs:token">
+            <xs:enumeration value="NOT_FORMAT"/>
+            <xs:enumeration value="FAT_FORMAT"/>
+            <xs:enumeration value="NORMAL_MANUAL_FORMAT"/>
+            <xs:enumeration value="EMMC_MANUAL_FORMAT"/>
+            <xs:enumeration value="REGION_FROMAT"/>
+            <xs:enumeration value="TOTAL_FORMAT"/>
+        </xs:restriction>
+    </xs:simpleType>    
+    
+    <xs:simpleType name="storage-type">
+        <xs:restriction base="xs:token">
+            <xs:enumeration value="HW_STORAGE_NOR"/> 
+            <xs:enumeration value="HW_STORAGE_NAND"/> 
+            <xs:enumeration value="HW_STORAGE_EMMC"/> 
+        </xs:restriction>
+    </xs:simpleType>  
+    
+    <xs:simpleType name="operation-method-type">
+        <xs:restriction base="xs:integer">
+            <xs:enumeration value="0"/> <!--NOR-->
+            <xs:enumeration value="1"/> <!--NAND-->
+            <xs:enumeration value="2"/> <!--eMMC-->
+        </xs:restriction>
+    </xs:simpleType> 
+    <xs:simpleType name="emi-auto-type">
+        <xs:restriction base="xs:integer">
+            <xs:enumeration value="0"/> <!--Manual-->
+            <xs:enumeration value="1"/> <!--AUTO-->
+        </xs:restriction>
+    </xs:simpleType>    
+    <xs:simpleType name="backup-linux-nvram-partition-type">
+        <xs:restriction base="xs:token">
+            <xs:enumeration value="LNP_NONE"/>
+            <xs:enumeration value="LNP_BACKUP_RESTORE"/>
+            <xs:enumeration value="LNP_RESTORE_ONLY"/>          
+        </xs:restriction>
+    </xs:simpleType>    
+</xs:schema>
