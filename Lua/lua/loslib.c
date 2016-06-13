@@ -43,11 +43,6 @@
 #include "ymodem.h"
 #endif
 
-#define REDLED           17
-#define GREENLED         15
-#define BLUELED          12
-#define REG_BASE_ADDRESS 0xa0000000
-
 #define SHOW_LOG_FATAL		0x01
 #define SHOW_LOG_ERROR		0x02
 #define SHOW_LOG_WARNING	0x03
@@ -71,6 +66,7 @@ extern int wakeup_interval;			// regular wake up interval in seconds
 extern int led_blink;				// led blink during session
 extern int wdg_reboot_cb;			// Lua callback function called before reboot
 extern int shutdown_cb;				// Lua callback function called before shutdown
+extern int alarm_cb;				// Lua callback function called on alarm
 extern cb_func_param_bt_t bt_cb_params;
 extern int g_memory_size_b;
 
@@ -115,28 +111,6 @@ static void _writertc(uint32_t val)
     while (*regbbpu & 0x40) {}
 }
 
-
-/*
-//====================================================================
-static int os_pushresult (lua_State *L, int i, const char *filename) {
-  int en = errno;  // calls to Lua API may change this value
-  if (i) {
-    lua_pushboolean(L, 1);
-    return 1;
-  }
-  else {
-    lua_pushnil(L);
-    lua_pushfstring(L, "%s: %s", filename, strerror(en));
-    lua_pushinteger(L, en);
-    return 3;
-  }
-}
-
-static int os_execute (lua_State *L) {
-  lua_pushinteger(L, system(luaL_optstring(L, 1, NULL)));
-  return 1;
-}
-*/
 
 //====================================
 static int _os_remove (lua_State *L) {
@@ -400,9 +374,9 @@ static int os_reboot (lua_State *L) {
 //======================================
 static int _os_shutdown (lua_State *L) {
 	vm_log_info("SHUTDOWN");
+	_scheduled_startup();
 	vm_pwr_shutdown(777);
 	g_shell_result = 0;
-	_scheduled_startup();
 	vm_signal_post(g_shell_signal);
 	return 0;
 }
@@ -859,6 +833,21 @@ static int os_onshdwn_cb (lua_State *L) {
     return 1;
 }
 
+//=======================================
+static int os_onalarm_cb (lua_State *L) {
+	if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
+	    if (alarm_cb != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, alarm_cb);
+	    lua_pushvalue(L, 1);
+	    alarm_cb = luaL_ref(L, LUA_REGISTRYINDEX);
+
+	    lua_pushinteger(L, 0);
+	}
+	else {
+		lua_pushinteger(L, -1);
+	}
+    return 1;
+}
+
 
 //===================================
 static int os_readreg(lua_State* L)
@@ -908,6 +897,14 @@ static int os_showlog(lua_State* L)
 	return 0;
 }
 
+//================================
+static int os_exists(lua_State* L)
+{
+	  const char *filename = luaL_checkstring(L, 1);
+
+	  lua_pushinteger(L, file_exists(filename));
+	  return 1;
+}
 
 //------------------------------------------------------------------
 static int writer(lua_State* L, const void* p, size_t size, void* u)
@@ -1098,6 +1095,7 @@ const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("tmpname"),	  	LFUNCVAL(os_tmpname)},
   // additional
   {LSTRKEY("copy"),     	LFUNCVAL(os_copy)},
+  {LSTRKEY("exists"),     	LFUNCVAL(os_exists)},
   {LSTRKEY("mkdir"),    	LFUNCVAL(os_mkdir)},
   {LSTRKEY("rmdir"),    	LFUNCVAL(os_rmdir)},
   {LSTRKEY("list"),     	LFUNCVAL(os_listfiles)},
@@ -1130,6 +1128,7 @@ const LUA_REG_TYPE sys_map[] = {
 		  {LSTRKEY("usb"),      	LFUNCVAL(os_usb)},
 		  {LSTRKEY("onreboot"), 	LFUNCVAL(os_onwdg_cb)},
 		  {LSTRKEY("onshutdown"),	LFUNCVAL(os_onshdwn_cb)},
+		  {LSTRKEY("onalarm"),		LFUNCVAL(os_onalarm_cb)},
 		  {LSTRKEY("showlog"),		LFUNCVAL(os_showlog)},
 		  {LSTRKEY("readreg"), 		LFUNCVAL(os_readreg) },
 		  {LSTRKEY("writereg"), 	LFUNCVAL(os_writereg) },

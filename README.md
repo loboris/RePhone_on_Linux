@@ -32,7 +32,7 @@ This implementation is specially oriented to IoT applications building.
 * Memory available to Lua programs 650~700 KB + heap for c functions ~64 KB
 * <b>os</b> module expanded with many new functions ( copy, mkdir, rmdir, list, compile )
 * <b>sys</b> module added with many RePhone related functions ( including <b>ntptime</b> function for adjusting RTC time from NTP server )
-* System functions for <b>watchdog</b>, <b>rtc</b>, scheduled <b>shut down</b> / <b>wake up</b> implemented
+* System functions for <b>watchdog</b>, <b>rtc</b>, scheduled <b>shut down</b> / <b>wake up</b> / <b>alarm</b> implemented
 * Lua <B>shell</b> is available on USB port (/dev/ttyACM0), on RePhone hardware UART and over Bluetooth
 * Many new/RePhone specific modules (written in c)
   * <b>gpio</b>, with added fonctions for gpio toggle and EINT on any eint capable pin
@@ -43,8 +43,8 @@ This implementation is specially oriented to IoT applications building.
   * <b>mqtt</b> module, complete mqtt client
   * <b>audio</b> module
   * <b>timer</b> module
-  * <b>i2c</b> module
-  * <b>spi</b> module
+  * <b>i2c</b> hw i2c module
+  * <b>spi</b> hw spi module
   * <b>tcp & udp</b> modules
   * <b>bt</b> Bluetooth module with possible Lua shell redirect 
   * <b>uart</b> Hardware UART (two ports) module with possible Lua shell redirect 

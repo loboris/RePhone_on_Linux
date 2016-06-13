@@ -7,7 +7,7 @@ starttime=os.date("*t")
 smsnum = "0992382166"
 
 -- set wake up interval 10 minutes
-os.wkupint(10)
+sys.wkupint(10)
 
 
 -- SNTP callback--    
@@ -45,14 +45,14 @@ function sntp_cb(stat)
     end
     
     -- Send SMS at full hour + 10 min
-    if starttime["min"] == 10 then
+    if starttime["min"] == 20 then
         print("Send SMS")
         gsm.sms_send(smsnum, msg)
     end
     
-    if os.usb() == 0 then
+    if sys.usb() == 0 then
         -- if usb is not connected, shutdown
-        os.schedule(0)
+        sys.schedule(0)
     else
         print(msg)
     end
@@ -77,4 +77,15 @@ end
 --test_t=timer.create(1500,test_tmr)
 
 -- get time from ntp server
-os.ntptime(2, sntp_cb)
+sim_stat = gsm.sim_info()
+if sim_stat == 1 then
+    sys.ntptime(2, sntp_cb)
+else
+    if sys.usb() == 0 then
+        -- if usb is not connected, shutdown
+        sys.schedule(0)
+    else
+        print ("No SIM!: "..sim_stat)
+    end
+end
+

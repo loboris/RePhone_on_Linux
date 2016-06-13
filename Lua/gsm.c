@@ -17,7 +17,7 @@
 
 //#define INCLUDE_CALL_FUNCTIONS
 
-#define MAX_SMS_CONTENT_LEN  160*2
+#define MAX_SMS_CONTENT_LEN  160*4
 
 #ifdef INCLUDE_CALL_FUNCTIONS
 enum VoiceCall_Status { IDLE_CALL, CALLING, RECEIVINGCALL, TALKING };
@@ -291,6 +291,8 @@ static void _gsm_text_callback(vm_gsm_sms_callback_t* callback_data) {
 					char msgdata[MAX_SMS_CONTENT_LEN] = {0};
 
 					vm_date_time_t timestamp = read_message->message_data->timestamp;
+					//vm_date_time_t timestamp;
+					//memcpy(&timestamp, &read_message->message_data->timestamp, sizeof(vm_date_time_t));
 
 					vm_chset_ucs2_to_ascii((VMSTR)msgdata, MAX_SMS_CONTENT_LEN, (VMCWSTR)(read_message->message_data->number));
 					lua_pushstring(shellL, msgdata);					// sender number
@@ -298,7 +300,7 @@ static void _gsm_text_callback(vm_gsm_sms_callback_t* callback_data) {
 							timestamp.month, timestamp.day, timestamp.year, timestamp.hour, timestamp.minute, timestamp.second);
 					lua_pushstring(shellL, msgdata);					// message time as string
 
-					vm_chset_ucs2_to_ascii((VMSTR)msgdata, 320, (VMCWSTR)(read_message->message_data->content_buffer));
+					vm_chset_ucs2_to_ascii((VMSTR)msgdata, MAX_SMS_CONTENT_LEN, (VMCWSTR)(read_message->message_data->content_buffer));
 					lua_pushstring(shellL, msgdata);					// received message
     	    	}
     		}
@@ -443,7 +445,33 @@ static int _gsm_read(lua_State *L)
 {
     int message_id = luaL_checkinteger(L, 1);
 
+	// Allocate message buffer
+	if (message_data != NULL) {
+		vm_free(message_data->content_buffer);
+		vm_free(message_data);
+		message_data = NULL;
+	}
+    message_data = vm_calloc(sizeof(vm_gsm_sms_read_message_data_t));
+    if (message_data == NULL) {
+    	vm_log_debug("message_data vm_calloc failed.");
+    	g_shell_result = -1;
+		vm_signal_post(g_shell_signal);
+		return 1;
+    }
+    content_buff = vm_calloc(((MAX_SMS_CONTENT_LEN*2)+4)*sizeof(VMWCHAR));
+    if (content_buff == NULL) {
+        vm_log_debug("content_buff vm_calloc failed.");
+    	vm_free(message_data);
+    	g_shell_result = -1;
+		vm_signal_post(g_shell_signal);
+		return 1;
+    }
+
+    message_data->content_buffer = content_buff;
+    message_data->content_buffer_size = MAX_SMS_CONTENT_LEN*2;
+
     int res = vm_gsm_sms_read_message(message_id, VM_TRUE, message_data, _gsm_text_callback, NULL);
+
 
     if (g_sms_read_cb_ref != LUA_NOREF) {
 		lua_pushnumber(L, res);
@@ -451,6 +479,17 @@ static int _gsm_read(lua_State *L)
 		vm_signal_post(g_shell_signal);
 	}
     return 1;
+}
+
+//=================================
+int _gsm_readbuf_free(lua_State *L)
+{
+	if (message_data->content_buffer) vm_free(message_data->content_buffer);
+	if (message_data) vm_free(message_data);
+	message_data = NULL;
+	g_shell_result = 0;
+	vm_signal_post(g_shell_signal);
+	return 0;
 }
 
 //===============================
@@ -467,36 +506,12 @@ static int gsm_read(lua_State *L)
 	    g_sms_read_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
 	}
 
-	// Allocate message buffer
-	if (message_data != NULL) {
-		vm_free(message_data->content_buffer);
-		vm_free(message_data);
-		message_data = NULL;
-	}
-    message_data = vm_calloc(sizeof(vm_gsm_sms_read_message_data_t));
-    if (message_data == NULL) {
-    	vm_log_debug("message_data vm_calloc failed.");
-		lua_pushnil(L);
-		return 1;
-    }
-    content_buff = vm_calloc(((MAX_SMS_CONTENT_LEN*2)+4)*sizeof(VMWCHAR));
-    if (content_buff == NULL) {
-    	vm_free(message_data);
-        vm_log_debug("content_buff vm_calloc failed.");
-		lua_pushnil(L);
-		return 1;
-    }
-    message_data->content_buffer = content_buff;
-    message_data->content_buffer_size = MAX_SMS_CONTENT_LEN*2;
-
     // Read message
-    if (g_sms_send_cb_ref == LUA_NOREF) CCwait = 2000;
+    if (g_sms_read_cb_ref == LUA_NOREF) CCwait = 2000;
     g_shell_result = -9;
 	remote_CCall(&_gsm_read);
 	if (g_shell_result < 0) { // no response
-		vm_free(message_data->content_buffer);
-		vm_free(message_data);
-		message_data = NULL;
+		remote_CCall(&_gsm_readbuf_free);
 		lua_pushnil(L);
 	    g_shell_result = 1;
 	}
@@ -541,18 +556,7 @@ static int gsm_sms_delete(lua_State *L)
 //==========================================
 static int _gsm_on_new_message(lua_State *L)
 {
-    if (g_gsm_new_message_cb_ref != LUA_NOREF) {
-    	luaL_unref(L, LUA_REGISTRYINDEX, g_gsm_new_message_cb_ref);
-		g_gsm_new_message_cb_ref = LUA_NOREF;
-    }
-	if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
-	    lua_pushvalue(L, 1);
-	    g_gsm_new_message_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
-	    lua_pushnumber(L, vm_gsm_sms_set_interrupt_event_handler(VM_GSM_SMS_EVENT_ID_SMS_NEW_MESSAGE, _gsm_on_new_message_cb, NULL));
-	}
-	else {
-		lua_pushinteger(L, -1);
-	}
+    lua_pushnumber(L, vm_gsm_sms_set_interrupt_event_handler(VM_GSM_SMS_EVENT_ID_SMS_NEW_MESSAGE, _gsm_on_new_message_cb, NULL));
 	g_shell_result = 1;
 	vm_signal_post(g_shell_signal);
     return 1;
@@ -561,7 +565,19 @@ static int _gsm_on_new_message(lua_State *L)
 //=========================================
 static int gsm_on_new_message(lua_State *L)
 {
-	remote_CCall(&_gsm_on_new_message);
+	g_shell_result = 1;
+    if (g_gsm_new_message_cb_ref != LUA_NOREF) {
+    	luaL_unref(L, LUA_REGISTRYINDEX, g_gsm_new_message_cb_ref);
+		g_gsm_new_message_cb_ref = LUA_NOREF;
+    }
+	if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
+	    lua_pushvalue(L, 1);
+	    g_gsm_new_message_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+		remote_CCall(&_gsm_on_new_message);
+	}
+	else {
+		lua_pushinteger(L, -1);
+	}
 	return g_shell_result;
 }
 
@@ -646,20 +662,24 @@ static int gsm_list_sms_received(lua_State *L)
 static int _gsm_info(lua_State *L)
 {
 	VM_GSM_SIM_ID id = vm_gsm_sim_get_active_sim_card();
+    g_shell_result = 1;
 	if (id > 0) {
-		lua_pushinteger(L, vm_gsm_sim_get_card_status(id));
-		lua_pushstring(L, vm_gsm_sim_get_imei(id));
-		lua_pushstring(L, vm_gsm_sim_get_imsi(id));
-	    g_shell_result = 3;
-		vm_signal_post(g_shell_signal);
-		return 3;
+		int simn = vm_gsm_sim_get_card_count();
+		if (simn > 0) {
+			lua_pushinteger(L, vm_gsm_sim_get_card_status(id));
+			lua_pushstring(L, vm_gsm_sim_get_imei(id));
+			lua_pushstring(L, vm_gsm_sim_get_imsi(id));
+			g_shell_result = 3;
+		}
+		else {
+			lua_pushinteger(L, 0);
+		}
 	}
 	else {
-		lua_pushnil(L);
-	    g_shell_result = 1;
-		vm_signal_post(g_shell_signal);
-		return 1;
+		lua_pushinteger(L, -2);
 	}
+	vm_signal_post(g_shell_signal);
+	return 0;
 }
 
 //===============================

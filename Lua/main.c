@@ -65,9 +65,6 @@ extern void _uart_cb(int id);
 extern int btspp_tmo;
 extern void _btspp_recv_cb(void);
 
-#define REDLED               17
-#define GREENLED             15
-#define BLUELED              12
 #define SYS_TIMER_INTERVAL   22		// HISR timer interval in ticks, 22 -> 0.10153 seconds
 #define MAX_WDT_RESET_COUNT 145		// max run time (with 50 sec reset = 7250 seconds, ~2 hours)
 
@@ -83,12 +80,16 @@ int led_blink = BLUELED;			// led blinking during session, set to 0 for no led b
 int sys_wdt_time = 0;				// used to prevent wdg reset in critical situations (Lua PANIC)
 int wdg_reboot_cb = LUA_NOREF;		// Lua callback function called before reboot
 int shutdown_cb = LUA_NOREF;		// Lua callback function called before shutdown
+int alarm_cb = LUA_NOREF;			// Lua callback function called on alarm
 int g_usb_status = 0;				// status of the USB cable connection
 
 // Local variables
 static int sys_wdt_rst_count = 0;	// watchdog resets counter
 static int sys_timer_tick = 0;		// used for timing inside HISR timer callback function
 static int do_wdt_reset = 0;		// used for communication between HISR timer and wdg system timer
+static uint32_t alarm_state = 0;
+static VMUINT8 alarm_flag = 0;
+static cb_func_param_int_t alarm_cb_param;
 
 static VM_WDT_HANDLE wdg_handle = -1;
 static VM_TIMER_ID_NON_PRECISE wdg_timer_id = NULL;
@@ -108,7 +109,6 @@ static void key_init(void) {
     vm_dcl_close(kbd_handle);
 }
 
-#define REG_BASE_ADDRESS 0xa0000000
 #define DRV_WriteReg(addr,data)     ((*(volatile uint16_t *)(addr)) = (uint16_t)(data))
 #define WDT_RESTART 	            (REG_BASE_ADDRESS+0x0008)
 #define WDT_RESTART_KEY		        0x1971
@@ -152,15 +152,17 @@ void _reset_wdg(void)
 		   ** There is a bug in "vm_wdt_reset", we can only reset wdt 149 times **
 		   ** If wdt is reset more then max reset count, we MUST REBOOT!        **
 		   ***********************************************************************/
-		if (sys_wdt_rst_count > MAX_WDT_RESET_COUNT) {
-			vm_log_debug("[SYSTMR] WDT MAX RESETS, REBOOT");
-			if (wdg_reboot_cb != LUA_NOREF) {
+		if (sys_wdt_rst_count >= MAX_WDT_RESET_COUNT) {
+			if ((sys_wdt_rst_count = MAX_WDT_RESET_COUNT) && (wdg_reboot_cb != LUA_NOREF)) {
 				// execute callback function
 				reboot_cb_params.cb_ref = wdg_reboot_cb;
+				reboot_cb_params.par = 1;
 				remote_lua_call(CB_FUNC_REBOOT, &reboot_cb_params);
-		        vm_signal_wait(g_reboot_signal);
 			}
-			vm_pwr_reboot();
+			else if (sys_wdt_rst_count > MAX_WDT_RESET_COUNT) {
+				vm_log_debug("[SYSTMR] WDT MAX RESETS, REBOOT");
+				vm_pwr_reboot();
+			}
 		}
 		vm_wdt_reset(wdg_handle);
 		sys_wdt_time = 0;
@@ -194,6 +196,7 @@ void _scheduled_startup(void) {
   start_time.year = time_now->tm_year + 1900;
 
   vm_pwr_scheduled_startup(&start_time, VM_PWR_STARTUP_ENABLE_CHECK_HMS);
+  alarm_flag = 1;
   //vm_log_debug("[SYSTMR] WAKE UP scheduled at %s", asctime(time_now));
 }
 
@@ -207,7 +210,7 @@ static void wdg_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data
 	VM_USB_CABLE_STATUS usbstat = vm_usb_get_cable_status();
 	if (g_usb_status != usbstat) {
 		g_usb_status = usbstat;
-		if ((usbstat) && (retarget_target != retarget_usb_handle)) retarget_target = retarget_usb_handle;
+		/*if ((usbstat) && (retarget_target != retarget_usb_handle)) retarget_target = retarget_usb_handle;
 		else {
 			if (retarget_target == retarget_usb_handle) {
 				#if defined (USE_UART1_TARGET)
@@ -216,31 +219,33 @@ static void wdg_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data
 				retarget_target = -1;
 				#endif
 			}
-		}
+		}*/
 	}
 
 	if (no_activity_time > max_no_activity_time) {
+		no_activity_time = 0;
 		if ((wakeup_interval > 0) && (shutdown_cb != LUA_NOREF)) {
 			// execute callback function
 			reboot_cb_params.cb_ref = shutdown_cb;
+			reboot_cb_params.par = 2;
 			remote_lua_call(CB_FUNC_REBOOT, &reboot_cb_params);
-	        vm_signal_wait(g_reboot_signal);
-			// Check again, can be changed in cb function
-			if (no_activity_time <= max_no_activity_time) return;
+			return;
 		}
-		no_activity_time = 0;
 		if (wakeup_interval > 0) {
 			_scheduled_startup();
-			if (usbstat == 0) vm_pwr_shutdown(778);
+			if (usbstat == 0) {
+				alarm_flag = 0;
+				vm_pwr_shutdown(778);
+			}
 		}
 	}
 	else {
-		// Test uart's timeout
+		// === Test uart's timeout
 		if (uart_tmo[0] >= 0) {
 			uart_tmo[0]++;
 			if (uart_tmo[0] > 2) _uart_cb(0);
 		}
-		if (uart_tmo[0] >= 0) {
+		if (uart_tmo[1] >= 0) {
 			uart_tmo[1]++;
 			if (uart_tmo[1] > 2) _uart_cb(1);
 		}
@@ -248,10 +253,20 @@ static void wdg_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data
 			btspp_tmo++;
 			if (btspp_tmo > 4) _btspp_recv_cb();
 		}
-		/*VM_DCL_HANDLE ghandle;
-		gpio_get_handle(REDLED, &ghandle);
-		if (sys_timer_tick == (SYS_TIMER_INTERVAL*5)) vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
-		else if (sys_timer_tick == (SYS_TIMER_INTERVAL*6)) vm_dcl_control(ghandle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);*/
+		// == Test alarm
+		volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + 0x0710008);
+	    uint32_t al_state = *reg;
+	    if (al_state != alarm_state) {
+	    	alarm_state = al_state;
+	    	if ((alarm_flag) && (((al_state & 1) == 0)) && (alarm_cb != LUA_NOREF)) {
+	    		if (wakeup_interval > 0) {
+	    			_scheduled_startup();
+	    		}
+				alarm_cb_param.par = 0;
+				alarm_cb_param.cb_ref = alarm_cb;
+				remote_lua_call(CB_FUNC_INT, &alarm_cb_param);
+	    	}
+	    }
 	}
 }
 
@@ -354,7 +369,7 @@ static void lua_setup()
     vm_mutex_init(&lua_func_mutex);
     g_tty_signal = vm_signal_create();
     g_shell_signal = vm_signal_create();
-    g_reboot_signal = vm_signal_create();
+    //g_reboot_signal = vm_signal_create();
 
     handle = vm_thread_create(shell_thread, shellL, 150);
     handle = vm_thread_create(tty_thread, ttyL, 160);

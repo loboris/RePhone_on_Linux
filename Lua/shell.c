@@ -48,6 +48,7 @@ extern int _mqtt_check(mqtt_info_t *p);
 extern void retarget_setup();
 extern VMUINT8 uart_has_userdata[2];
 extern uart_info_t *uart_data[2];
+int _gsm_readbuf_free(lua_State *L);
 
 
 //extern int sys_wdt_rst_usec;
@@ -280,8 +281,8 @@ extern unsigned int g_memory_size;
 extern unsigned int g_memory_size_b;
 #define MAX_SMS_CONTENT_LEN  160*2
 
-//------------------------------------------
-static int file_exists(const char *filename)
+//-----------------------------------
+int file_exists(const char *filename)
 {
     char file_name[64];
     char* ptr;
@@ -319,20 +320,23 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     retarget_setup();
 
     printf("\nLua memory: %d bytes, C heap: %d bytes\n", g_memory_size, g_memory_size_b);
-    printf("LUA SHELL STARTED\n");
 
     lua_settop(L, 0);  // clear stack
     // Check startup files
     if (file_exists("init.lc") >= 0) {
+        printf("Executing 'init.lc'\n");
         luaL_dofile(L, "init.lc");
     }
     else if (file_exists("init.lua") >= 0) {
+        printf("Executing 'init.lua'\n");
         luaL_dofile(L, "init.lua");
     }
     if (file_exists("autorun.lc") >= 0) {
+        printf("Executing 'autorun.lc'\n");
         luaL_dofile(L, "autorun.lc");
     }
     else if (file_exists("autorun.lua") >= 0) {
+        printf("Executing 'autorun.lua'\n");
         luaL_dofile(L, "autorun.lua");
     }
 
@@ -413,9 +417,10 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
             case CB_FUNC_REBOOT: {
             		cb_func_param_int_t *params = (cb_func_param_int_t*)message.user_data;
 	                lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);
-	                lua_pcall(L, 0, 0, 0);
+					lua_pushinteger(L, params->par);
+	                lua_pcall(L, 1, 0, 0);
 	                params->busy = 0;
-                	vm_signal_post(g_reboot_signal);
+                	//vm_signal_post(g_reboot_signal);
                 }
                 break;
 
@@ -456,6 +461,8 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
 	                if (params->stat == 3) {
 						char msgdata[MAX_SMS_CONTENT_LEN] = {0};
 						vm_date_time_t timestamp = params->msg->message_data->timestamp;
+						//vm_date_time_t timestamp;
+						//memcpy(&timestamp, &params->msg->message_data->timestamp, sizeof(vm_date_time_t));
 						vm_chset_ucs2_to_ascii((VMSTR)msgdata, MAX_SMS_CONTENT_LEN, (VMCWSTR)(params->msg->message_data->number));
 						lua_pushstring(L, msgdata);				// sender number
 						lua_createtable(L, 0, 6);      			// message time as table, 6 = number of fields
@@ -471,9 +478,7 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
 	                }
 	                else lua_pushnil(L);
 
-					vm_free(params->msg->message_data->content_buffer);
-					vm_free(params->msg->message_data);
-					params->msg->message_data = NULL;
+	        		remote_CCall(&_gsm_readbuf_free);
 	                lua_pcall(L, params->stat, 0, 0);
 	                params->busy = 0;
                 }
@@ -625,6 +630,7 @@ VMINT32 tty_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     vm_signal_wait(g_tty_signal);
 
     lua_settop(L, 0);  // clear stack
+    printf("LUA SHELL STARTED\n");
     //===============================================================
     dotty(L);
     //===============================================================

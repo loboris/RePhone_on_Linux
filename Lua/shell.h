@@ -13,6 +13,11 @@
 
 #define USE_UART1_TARGET
 
+#define REDLED           17
+#define GREENLED         15
+#define BLUELED          12
+#define REG_BASE_ADDRESS 0xa0000000
+
 #define UART_BUFFER_LEN 1024
 
 #define DEFAULT_CCWAIT 1000
@@ -165,7 +170,7 @@ int g_shell_result;
 
 VM_SIGNAL_ID g_shell_signal;
 VM_SIGNAL_ID g_tty_signal;
-VM_SIGNAL_ID g_reboot_signal;
+//VM_SIGNAL_ID g_reboot_signal;
 
 lua_CFunction g_CCfunc;
 cfunc_params_t g_CCparams;
@@ -185,6 +190,7 @@ void l_message (const char *pname, const char *msg);
 //void shell_docall(lua_State *L);
 int remote_CCall(lua_CFunction func);
 void remote_lua_call(VMUINT16 type, void *params);
+int file_exists(const char *filename);
 
 //void _mutex_lock(void);
 //void _mutex_unlock(void);
