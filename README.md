@@ -41,6 +41,7 @@ This implementation is specially oriented to IoT applications building.
   * <b>https</b>, with added post mode (capable of sending file or params from table)
   * <b>gsm</b> module, with complete SMS functionality (read,write,list,delete,callbacks,...)
   * <b>mqtt</b> module, complete mqtt client
+  * <b>email</b> module, only <b>smtp</b> client for now (send email)
   * <b>audio</b> module
   * <b>timer</b> module
   * <b>i2c</b> hw i2c module

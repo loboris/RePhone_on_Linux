@@ -56,6 +56,7 @@ extern int luaopen_hash_sha1(lua_State *L);
 extern int luaopen_hash_sha2(lua_State *L);
 extern int luaopen_bit(lua_State *L);
 extern int luaopen_mqtt(lua_State *L);
+extern int luaopen_email(lua_State *L);
 #if defined USE_SCREEN_MODULE
 extern int luaopen_screen(lua_State *L);
 #endif
@@ -64,6 +65,7 @@ extern int uart_tmo[2];
 extern void _uart_cb(int id);
 extern int btspp_tmo;
 extern void _btspp_recv_cb(void);
+
 
 #define SYS_TIMER_INTERVAL   22		// HISR timer interval in ticks, 22 -> 0.10153 seconds
 #define MAX_WDT_RESET_COUNT 145		// max run time (with 50 sec reset = 7250 seconds, ~2 hours)
@@ -81,6 +83,7 @@ int sys_wdt_time = 0;				// used to prevent wdg reset in critical situations (Lu
 int wdg_reboot_cb = LUA_NOREF;		// Lua callback function called before reboot
 int shutdown_cb = LUA_NOREF;		// Lua callback function called before shutdown
 int alarm_cb = LUA_NOREF;			// Lua callback function called on alarm
+VMUINT8 alarm_flag = 0;
 int g_usb_status = 0;				// status of the USB cable connection
 
 // Local variables
@@ -88,7 +91,6 @@ static int sys_wdt_rst_count = 0;	// watchdog resets counter
 static int sys_timer_tick = 0;		// used for timing inside HISR timer callback function
 static int do_wdt_reset = 0;		// used for communication between HISR timer and wdg system timer
 static uint32_t alarm_state = 0;
-static VMUINT8 alarm_flag = 0;
 static cb_func_param_int_t alarm_cb_param;
 
 static VM_WDT_HANDLE wdg_handle = -1;
@@ -350,6 +352,7 @@ static void lua_setup()
     luaopen_hash_sha1(shellL);
     luaopen_hash_sha2(shellL);
     luaopen_mqtt(shellL);
+    luaopen_email(shellL);
 
     lua_register(shellL, "msleep", msleep_c);
 

@@ -630,7 +630,7 @@ VMINT32 tty_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     vm_signal_wait(g_tty_signal);
 
     lua_settop(L, 0);  // clear stack
-    printf("LUA SHELL STARTED\n");
+    printf("LUA SHELL STARTED [%s]\n", LUA_RELEASE);
     //===============================================================
     dotty(L);
     //===============================================================

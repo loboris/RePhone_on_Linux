@@ -67,6 +67,7 @@ extern int led_blink;				// led blink during session
 extern int wdg_reboot_cb;			// Lua callback function called before reboot
 extern int shutdown_cb;				// Lua callback function called before shutdown
 extern int alarm_cb;				// Lua callback function called on alarm
+extern VMUINT8 alarm_flag;
 extern cb_func_param_bt_t bt_cb_params;
 extern int g_memory_size_b;
 
@@ -358,7 +359,8 @@ static int os_battery (lua_State *L) {
 //====================================
 static int _os_reboot (lua_State *L) {
     vm_log_info("REBOOT");
-	_scheduled_startup();
+
+    _scheduled_startup();
 	vm_pwr_reboot();
 	g_shell_result = 0;
 	vm_signal_post(g_shell_signal);
@@ -443,6 +445,7 @@ static int _os_scheduled_startup (lua_State *L) {
   start_time.year = time_now->tm_year + 1900;
 
   vm_pwr_scheduled_startup(&start_time, VM_PWR_STARTUP_ENABLE_CHECK_DHMS);
+  alarm_flag = 1;
   vm_log_info("WAKE UP SCHEDULED at %s", asctime(time_now));
   //vm_pwr_shutdown(778);
 
@@ -491,13 +494,14 @@ static int os_ntptime (lua_State *L) {
 //===========================
 int _os_getver(lua_State* L) {
 	VMCHAR value[128] = {0};
+	lua_pushstring(L, LUA_RELEASE);
 	VMUINT written = vm_firmware_get_info(value, sizeof(value)-1, VM_FIRMWARE_HOST_VERSION);
 	lua_pushstring(L, value);
 	written = vm_firmware_get_info(value, sizeof(value)-1, VM_FIRMWARE_BUILD_DATE_TIME);
 	lua_pushstring(L, value);
-	g_shell_result = 2;
+	g_shell_result = 3;
 	vm_signal_post(g_shell_signal);
-    return 2;
+    return 3;
 }
 
 //===================================
@@ -805,47 +809,41 @@ static int os_usb (lua_State *L) {
 
 //=====================================
 static int os_onwdg_cb (lua_State *L) {
+    if (wdg_reboot_cb != LUA_NOREF) {
+    	luaL_unref(L, LUA_REGISTRYINDEX, wdg_reboot_cb);
+	    wdg_reboot_cb = LUA_NOREF;
+    }
 	if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
-	    if (wdg_reboot_cb != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, wdg_reboot_cb);
 	    lua_pushvalue(L, 1);
 	    wdg_reboot_cb = luaL_ref(L, LUA_REGISTRYINDEX);
-
-	    lua_pushinteger(L, 0);
 	}
-	else {
-		lua_pushinteger(L, -1);
-	}
-    return 1;
+    return 0;
 }
 
 //=======================================
 static int os_onshdwn_cb (lua_State *L) {
+    if (shutdown_cb != LUA_NOREF) {
+    	luaL_unref(L, LUA_REGISTRYINDEX, shutdown_cb);
+	    shutdown_cb = LUA_NOREF;
+    }
 	if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
-	    if (shutdown_cb != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, shutdown_cb);
 	    lua_pushvalue(L, 1);
 	    shutdown_cb = luaL_ref(L, LUA_REGISTRYINDEX);
-
-	    lua_pushinteger(L, 0);
 	}
-	else {
-		lua_pushinteger(L, -1);
-	}
-    return 1;
+    return 0;
 }
 
 //=======================================
 static int os_onalarm_cb (lua_State *L) {
+    if (alarm_cb != LUA_NOREF) {
+    	luaL_unref(L, LUA_REGISTRYINDEX, alarm_cb);
+    	alarm_cb = LUA_NOREF;
+    }
 	if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
-	    if (alarm_cb != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, alarm_cb);
 	    lua_pushvalue(L, 1);
 	    alarm_cb = luaL_ref(L, LUA_REGISTRYINDEX);
-
-	    lua_pushinteger(L, 0);
 	}
-	else {
-		lua_pushinteger(L, -1);
-	}
-    return 1;
+    return 0;
 }
 
 
@@ -949,6 +947,21 @@ static int os_compile( lua_State* L )
 }
 
 
+void check(int depth, int prn)
+{
+	char c;
+	if ((prn) || (depth == 0)) printf("stack at %p\n", &c);
+	if (depth <= 0) return;
+	check(depth-1, 0);
+}
+
+//=====================================
+static int os_teststack( lua_State* L )
+{
+	int n = luaL_checkinteger(L, 1);
+	check(n, 1);
+	return 0;
+}
 
 #if defined USE_YMODEM
 
@@ -1133,6 +1146,7 @@ const LUA_REG_TYPE sys_map[] = {
 		  {LSTRKEY("readreg"), 		LFUNCVAL(os_readreg) },
 		  {LSTRKEY("writereg"), 	LFUNCVAL(os_writereg) },
 		  {LSTRKEY("writertcreg"),	LFUNCVAL(os_writertcreg) },
+		  {LSTRKEY("teststack"),	LFUNCVAL(os_teststack) },
 		  {LNILKEY, LNILVAL }
 };
 
