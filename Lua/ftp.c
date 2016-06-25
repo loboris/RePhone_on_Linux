@@ -27,7 +27,6 @@
 #define FTP_SEND_FROM_STRING	4
 
 
-extern int show_log;
 extern VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type;
 
 typedef struct {
@@ -67,9 +66,9 @@ static void _close(int res)
 		if ((ftp->handle >= 0) && (res < 9)) {
 			if ((ftp->handle >= 0) && (res < 9)) {
 				ftp->handle = -1;
-				vm_free(ftp);
-				ftp = NULL;
 			}
+			vm_free(ftp);
+			ftp = NULL;
 		}
 	}
 
@@ -405,14 +404,31 @@ static void tcp_connection_callback(VM_TCP_HANDLE handle, VM_TCP_EVENT event, vo
     }
 }
 
+//----------------------------
+static int check_connect(void)
+{
+	if ((ftp == NULL) || (ftp->connected == 0)) {
+    	vm_log_error("Not connected.");
+		g_shell_result = -1;
+		vm_signal_post(g_shell_signal);
+		return 1;
+	}
+	else return 0;
+}
+
 //============================
 int _ftp_connect(lua_State* L)
 {
 	int len = 0;
-	if (ftp != NULL) {
-		vm_free(ftp);
-		ftp = NULL;
+
+	if ((ftp != NULL) && (ftp->connected > 0)) {
+    	vm_log_error("Already connected.");
+		g_shell_result = -1;
+		vm_signal_post(g_shell_signal);
+		return 0;
 	}
+
+	vm_free(ftp);
 
 	ftp = vm_calloc(sizeof(ftp_t));
 	if (ftp == NULL) {
@@ -490,17 +506,10 @@ static int ftp_connect(lua_State *L)
 		return luaL_error( L, "table arg expected" );
 	}
 
-	int log = show_log;
-	int slog = 0;
-	if (lua_isnumber(L, 2)) slog = luaL_checkinteger(L, 2);
-	if (slog == 0) show_log = 0;
-
     g_shell_result = -9;
 	CCwait = 20000;
 
 	remote_CCall(&_ftp_connect);
-
-	show_log = log;
 
 	if (g_shell_result < 0) {
 		_close(9);
@@ -509,18 +518,6 @@ static int ftp_connect(lua_State *L)
 	else lua_pushinteger(L, 0);
 
 	return 1;
-}
-
-//----------------------------
-static int check_connect(void)
-{
-	if ((ftp == NULL) || (ftp->connected == 0)) {
-    	vm_log_error("Not connected.");
-		g_shell_result = -1;
-		vm_signal_post(g_shell_signal);
-		return 1;
-	}
-	else return 0;
 }
 
 //===============================
@@ -863,7 +860,7 @@ static int ftp_cwd(lua_State *L)
 		return 1;
 	}
 	else {
-		lua_pushinteger(L, 1);
+		lua_pushinteger(L, 0);
 		return 1;
 	}
 }
