@@ -56,8 +56,10 @@ static void _close(int res)
 		smtp = NULL;
 	}
 
-	g_shell_result = res;
-	vm_signal_post(g_shell_signal);
+	if (g_shell_result == -9) {
+		g_shell_result = res;
+		vm_signal_post(g_shell_signal);
+	}
 }
 
 //----------------------------------------------------------------------------

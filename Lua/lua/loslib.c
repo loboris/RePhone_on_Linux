@@ -71,7 +71,7 @@ extern VMUINT8 alarm_flag;
 extern cb_func_param_bt_t bt_cb_params;
 extern int g_memory_size_b;
 
-static int show_log = 0x1F;
+int show_log = 0x1F;
 
 //-----------------------------------------------------------------------------
 void _log_printf(int type, const char *file, int line, const char *msg, ...)
@@ -427,7 +427,7 @@ static int _os_scheduled_startup (lua_State *L) {
 
   if (nsec <= 0) {
 	  // ** wake up at next interval
-	  no_activity_time = max_no_activity_time - 5;
+	  no_activity_time = max_no_activity_time - 2;
 	  vm_log_info("WAKE UP SCHEDULED at next interval (%d sec)", wakeup_interval);
 	  goto exit;
   }

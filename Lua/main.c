@@ -57,6 +57,7 @@ extern int luaopen_hash_sha2(lua_State *L);
 extern int luaopen_bit(lua_State *L);
 extern int luaopen_mqtt(lua_State *L);
 extern int luaopen_email(lua_State *L);
+extern int luaopen_ftp(lua_State *L);
 #if defined USE_SCREEN_MODULE
 extern int luaopen_screen(lua_State *L);
 #endif
@@ -353,6 +354,7 @@ static void lua_setup()
     luaopen_hash_sha2(shellL);
     luaopen_mqtt(shellL);
     luaopen_email(shellL);
+    luaopen_ftp(shellL);
 
     lua_register(shellL, "msleep", msleep_c);
 
