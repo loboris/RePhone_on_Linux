@@ -47,7 +47,7 @@ This implementation is specially oriented to IoT applications building.
   * <b>timer</b> module
   * <b>i2c</b> hw i2c module
   * <b>spi</b> hw spi module
-  * <b>tcp & udp</b> modules
+  * <b>net</b> module, tcp & udp support
   * <b>bt</b> Bluetooth module with possible Lua shell redirect 
   * <b>uart</b> Hardware UART (two ports) module with possible Lua shell redirect 
   * <b>sensor</b> module (DS18B20, DHT-11, DHT-22 for now)

@@ -8,10 +8,14 @@
 #include "vmtimer.h"
 #include "vmdcl.h"
 #include "vmbt_cm.h"
+#include "vmsock.h"
+
 #include "lua.h"
 #include "mqtt_client.h"
 
 #define USE_UART1_TARGET
+
+#define LUA_NET "net"
 
 #define REDLED           17
 #define GREENLED         15
@@ -52,6 +56,17 @@ typedef struct {
     VMUINT8	buffer[UART_BUFFER_LEN];
 } uart_info_t;
 
+typedef struct {
+    VMINT	handle;
+    int		type;
+    int		connected;
+    int		cb_ref;
+    vm_soc_address_t address;
+    char*	send_buf;
+    int		bufsize;
+    int		bufptr;
+} net_info_t;
+
 
 typedef enum
 {
@@ -71,7 +86,8 @@ typedef enum
 	CB_FUNC_MQTT_TIMER,
 	CB_FUNC_MQTT_MESSAGE,
 	CB_FUNC_MQTT_DISCONNECT,
-	CB_FUNC_UART_RECV
+	CB_FUNC_UART_RECV,
+	CB_FUNC_NET
 } CB_FUNC_TYPE;
 
 
@@ -95,6 +111,12 @@ typedef struct {
 	int		par;
 	int		busy;
 } cb_func_param_int_t;
+
+typedef struct {
+	net_info_t *net_info;
+	int		event;
+	int		busy;
+} cb_func_param_net_t;
 
 typedef struct {
 	int		cb_ref;

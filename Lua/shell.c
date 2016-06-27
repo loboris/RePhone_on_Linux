@@ -547,6 +547,22 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
                 }
                 break;
 
+            case CB_FUNC_NET: {
+					cb_func_param_net_t *params = (cb_func_param_net_t*)message.user_data;
+			        lua_rawgeti(L, LUA_REGISTRYINDEX, params->net_info->cb_ref);
+			    	if ((lua_type(L, -1) == LUA_TFUNCTION) || (lua_type(L, -1) == LUA_TLIGHTFUNCTION)) {
+						lua_pushlightuserdata(L, params->net_info);
+						luaL_getmetatable(L, LUA_NET);
+						lua_setmetatable(L, -2);
+						lua_pushinteger(L, params->event);
+						lua_pcall(L, 2, 0, 0);
+			    	}
+			    	else {
+			    		lua_remove(L, -1);
+			    	}
+            	}
+            	break;
+
             case CB_FUNC_UART_RECV: {
             		uart_info_t *params = (uart_info_t*)message.user_data;
 	                lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);

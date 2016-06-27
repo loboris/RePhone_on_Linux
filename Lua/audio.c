@@ -11,12 +11,13 @@
 #include "lauxlib.h"
 #include "lrodefs.h"
 
-#define MAX_NAME_LEN 32  /* Max length of file name */
+#define MAX_NAME_LEN 64  // Max length of file name
 
-static VMINT g_audio_handle = -1;  /* The handle of play */
-static VMINT g_audio_interrupt_handle = 0; /* The handle of interrupt */
+static VMINT g_audio_handle = -1;			// The handle of play
+static VMINT g_audio_interrupt_handle = 0;	// The handle of interrupt
 
-/* The callback function when playing. */
+// The callback function when playing.
+//--------------------------------------------------------------------------------------
 void audio_play_callback(VM_AUDIO_HANDLE handle, VM_AUDIO_RESULT result, void* userdata)
 {
   switch (result)
@@ -38,7 +39,8 @@ void audio_play_callback(VM_AUDIO_HANDLE handle, VM_AUDIO_RESULT result, void* u
   }
 }
 
-/* Play the audio file. */
+// Play the audio file.
+//---------------------------------
 static void _audio_play(char *name)
 {
   VMINT drv ;
@@ -48,12 +50,10 @@ static void _audio_play(char *name)
 
   /* get file path */
   drv = vm_fs_get_removable_drive_letter();
-  if(drv <0)
-  {
+  if (drv < 0) {
     drv = vm_fs_get_internal_drive_letter();
-    if(drv <0)
-    {
-      vm_log_fatal("not find driver");
+    if (drv < 0) {
+      vm_log_fatal("drive not found");
       return ;
     }
   }
@@ -84,7 +84,7 @@ static void _audio_play(char *name)
   g_audio_interrupt_handle = vm_audio_register_interrupt_callback(audio_play_callback,NULL);
 }
 
-
+//==========================
 int audio_play(lua_State *L)
 {
     char *name = lua_tostring(L, -1);
@@ -94,6 +94,7 @@ int audio_play(lua_State *L)
     return 0;
 }
 
+//==========================
 int audio_stop(lua_State *L)
 {
   if(g_audio_handle >= 0)
@@ -110,6 +111,7 @@ int audio_stop(lua_State *L)
   return 0;
 }
 
+//===========================
 int audio_pause(lua_State *L)
 {
   if(g_audio_handle >= 0)
@@ -121,6 +123,7 @@ int audio_pause(lua_State *L)
   return -1;
 }
 
+//============================
 int audio_resume(lua_State *L)
 {
   if(g_audio_handle >= 0)
@@ -131,7 +134,7 @@ int audio_resume(lua_State *L)
   return -1;
 }
 
-
+//================================
 int audio_set_volume(lua_State *L)
 {
     int volume = lua_tointeger(L, -1);
@@ -141,6 +144,7 @@ int audio_set_volume(lua_State *L)
 	return 0;
 }
 
+//================================
 int audio_get_volume(lua_State *L)
 {
     int volume = vm_audio_get_volume();
