@@ -36,8 +36,9 @@ This implementation is specially oriented to IoT applications building.
 * Lua <B>shell</b> is available on USB port (/dev/ttyACM0), on RePhone hardware UART and over Bluetooth
 * Many new/RePhone specific modules (written in c)
   * <b>gpio</b>, with added fonctions for gpio toggle and EINT on any eint capable pin
-  * <b>pwm</b> module
+  * <b>pwm</b> module (part of gpio module)
   * <b>adc</b> module (part of gpio module)
+  * <b>wt2812</b> module; WT2812 - NeoPixel support (part of gpio module)
   * <b>https</b>, with added post mode (capable of sending file or params from table)
   * <b>gsm</b> module, with complete SMS functionality (read,write,list,delete,callbacks,...)
   * <b>mqtt</b> module, complete mqtt client

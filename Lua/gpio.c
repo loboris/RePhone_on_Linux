@@ -840,6 +840,126 @@ static int gpio_adc_start(lua_State* L)
     return 1;
 }
 
+#define WS2812_DELY 10
+static unsigned int ws2812_data[32];
+
+//-------------------------------------------
+static void ws2812_drive(int count, int bpin)
+{
+	int k,n,m;
+	volatile uint32_t *reg;
+
+	VMUINT32 imask = vm_irq_mask();
+    for (k=0;k<count;k++) {
+		for (n=0;n<24;n++) {
+			if (ws2812_data[k] & 0x00800000) {
+				// bit 1
+				reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20304);  // set high
+				m = 0;
+				while (m < WS2812_DELY) {
+					*reg = bpin;
+					m++;
+				}
+				reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20308);  // set low
+				m = 0;
+				while (m < WS2812_DELY/2) {
+					*reg = bpin;
+					m++;
+				}
+			}
+			else {
+				// bit 0
+				reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20304);  // set high
+				m = 0;
+				while (m < WS2812_DELY/2) {
+					*reg = bpin;
+					m++;
+				}
+				reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20308);  // set low
+				m = 0;
+				while (m < WS2812_DELY) {
+					*reg = bpin;
+					m++;
+				}
+			}
+			ws2812_data[k] <<= 1;
+		}
+    }
+	vm_irq_restore(imask);
+}
+
+//=============================
+static int ws2812(lua_State* L)
+{
+	int count = 1;
+	unsigned int rgb = 0;
+
+    unsigned int pin = luaL_checkinteger(L, 1);
+
+	// Set pin to output
+    VM_DCL_HANDLE handle;
+    if (gpio_get_handle(pin, &handle) == VM_DCL_HANDLE_INVALID) {
+        return luaL_error(L, "invalid pin handle");
+    }
+
+    vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
+    vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+    vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+
+
+    // Turn off
+	ws2812_data[0] = 0;
+    ws2812_drive(1, (1 << pin));
+    vm_thread_sleep(1);
+
+    // Get data
+    if (lua_istable(L, 2)) {
+        int datalen = lua_objlen(L, 2);
+        count = 0;
+        for (int i = 0; i < datalen; i++) {
+            lua_rawgeti(L, 2, i + 1);
+            if (lua_isnumber(L, -1)) {
+				rgb = (int)luaL_checkinteger(L, -1);
+				if (count < 32) {
+					ws2812_data[count] = ((rgb & 0x0000FF00) << 8) + ((rgb & 0x00FF0000) >> 8) + (rgb & 0x000000FF);
+					count++;
+				}
+            }
+            lua_pop(L, 1);
+        }
+        if (count == 0) {
+        	count = 1;
+        	ws2812_data[0] = 0;
+        }
+    }
+    else {
+    	rgb = luaL_checkinteger(L, 2);
+    	// convert RGB -> GRB
+    	ws2812_data[0] = ((rgb & 0x0000FF00) << 8) + ((rgb & 0x00FF0000) >> 8) + (rgb & 0x000000FF);
+    }
+
+
+    ws2812_drive(count, (1 << pin));
+    vm_thread_sleep(1);
+
+	g_shell_result = 0;
+	vm_signal_post(g_shell_signal);
+	return 0;
+}
+
+/*
+//==============================
+static int ws2812 (lua_State *L) {
+    unsigned int pin = luaL_checkinteger(L, 1);
+    unsigned int gbr = luaL_checkinteger(L, 2);
+    uint32_t dly = luaL_checkinteger(L, 3);
+
+    remote_CCall(&_ws2812);
+	return 0;
+}
+*/
+
+
 
 #undef MIN_OPT_LEVEL
 #define MIN_OPT_LEVEL 0
@@ -868,6 +988,7 @@ const LUA_REG_TYPE gpio_map[] = { { LSTRKEY("mode"), LFUNCVAL(gpio_mode) },
                                   { LSTRKEY("adc_start"), LFUNCVAL(gpio_adc_start) },
                                   { LSTRKEY("adc_stop"), LFUNCVAL(gpio_adc_stop) },
                                   { LSTRKEY("adc_config"), LFUNCVAL(gpio_adc_config) },
+                                  { LSTRKEY("ws2812"), LFUNCVAL(ws2812) },
 #if LUA_OPTIMIZE_MEMORY > 0
                                   { LSTRKEY("OUTPUT"), LNUMVAL(OUTPUT) },
                                   { LSTRKEY("INPUT"), LNUMVAL(INPUT) },
