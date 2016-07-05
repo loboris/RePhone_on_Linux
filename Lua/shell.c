@@ -414,6 +414,16 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
                 }
                 break;
 
+            case CB_FUNC_EINT: {
+            		cb_func_param_eint_t *params = (cb_func_param_eint_t*)message.user_data;
+	                lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);
+					lua_pushinteger(L, params->pin);
+					lua_pushinteger(L, params->state);
+	                lua_pcall(L, 2, 0, 0);
+	                params->busy = 0;
+                }
+                break;
+
             case CB_FUNC_REBOOT: {
             		cb_func_param_int_t *params = (cb_func_param_int_t*)message.user_data;
 	                lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);

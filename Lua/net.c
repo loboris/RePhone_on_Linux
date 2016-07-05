@@ -12,6 +12,7 @@
 #include "vmgsm_gprs.h"
 #include "vmlog.h"
 #include "vmdns.h"
+#include "sntp.h"
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -577,6 +578,36 @@ int net_close(lua_State* L)
     return 1;
 }
 
+//=====================================
+static int _net_ntptime (lua_State *L) {
+
+  int tz = luaL_checkinteger( L, 1 );
+  if ((tz > 14) || (tz < -12)) { tz = 0; }
+
+  if (ntp_cb_ref != LUA_NOREF) {
+	  luaL_unref(L, LUA_REGISTRYINDEX, ntp_cb_ref);
+	  ntp_cb_ref = LUA_NOREF;
+  }
+  if (lua_gettop(L) >= 2) {
+	if ((lua_type(L, 2) == LUA_TFUNCTION) || (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
+	  lua_pushvalue(L, 2);
+	  ntp_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+  	}
+  }
+  sntp_gettime(tz);
+
+  g_shell_result = 0;
+  vm_signal_post(g_shell_signal);
+  return 0;
+}
+
+//====================================
+static int net_ntptime (lua_State *L) {
+	int tz = luaL_checkinteger( L, 1 );
+	remote_CCall(&_net_ntptime);
+	return g_shell_result;
+}
+
 
 //----------------------
 int net_gc(lua_State* L)
@@ -613,6 +644,7 @@ int net_tostring(lua_State* L)
 #include "lrodefs.h"
 
 const LUA_REG_TYPE net_map[] = {
+		{ LSTRKEY("ntptime"),  	LFUNCVAL(net_ntptime)},
 		{ LSTRKEY("tcp_create"), LFUNCVAL(tcp_create) },
 		{ LSTRKEY("tcp_connect"), LFUNCVAL(tcp_connect) },
         { LSTRKEY("tcp_read"), LFUNCVAL(tcp_read) },

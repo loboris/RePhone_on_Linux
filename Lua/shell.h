@@ -87,7 +87,8 @@ typedef enum
 	CB_FUNC_MQTT_MESSAGE,
 	CB_FUNC_MQTT_DISCONNECT,
 	CB_FUNC_UART_RECV,
-	CB_FUNC_NET
+	CB_FUNC_NET,
+	CB_FUNC_EINT
 } CB_FUNC_TYPE;
 
 
@@ -111,6 +112,13 @@ typedef struct {
 	int		par;
 	int		busy;
 } cb_func_param_int_t;
+
+typedef struct {
+	int		cb_ref;
+	int		pin;
+	int		state;
+	int		busy;
+} cb_func_param_eint_t;
 
 typedef struct {
 	net_info_t *net_info;

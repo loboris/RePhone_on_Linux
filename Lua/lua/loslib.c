@@ -23,7 +23,6 @@
 #include "lundump.h"
 
 #include "vmdatetime.h"
-#include "sntp.h"
 #include "vmpwr.h"
 #include "vmtype.h"
 #include "vmfirmware.h"
@@ -461,36 +460,6 @@ static int os_scheduled_startup (lua_State *L) {
 	return g_shell_result;
 }
 
-//=====================================
-static int _os_ntptime (lua_State *L) {
-
-  int tz = luaL_checkinteger( L, 1 );
-  if ((tz > 14) || (tz < -12)) { tz = 0; }
-
-  if (ntp_cb_ref != LUA_NOREF) {
-	  luaL_unref(L, LUA_REGISTRYINDEX, ntp_cb_ref);
-	  ntp_cb_ref = LUA_NOREF;
-  }
-  if (lua_gettop(L) >= 2) {
-	if ((lua_type(L, 2) == LUA_TFUNCTION) || (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
-	  lua_pushvalue(L, 2);
-	  ntp_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
-  	}
-  }
-  sntp_gettime(tz);
-
-  g_shell_result = 0;
-  vm_signal_post(g_shell_signal);
-  return 0;
-}
-
-//====================================
-static int os_ntptime (lua_State *L) {
-	int tz = luaL_checkinteger( L, 1 );
-	remote_CCall(&_os_ntptime);
-	return g_shell_result;
-}
-
 //===========================
 int _os_getver(lua_State* L) {
 	VMCHAR value[128] = {0};
@@ -763,12 +732,16 @@ static int os_wakeup_int (lua_State *L) {
 //=======================================
 static int os_noact_time (lua_State *L) {
 	if (lua_gettop(L) >= 1) {
-		int noact = luaL_checkinteger(L,1);					// maximum time with no activity in minutes
+		int noact = luaL_checkinteger(L,1);	// maximum time with no activity in seconds
 
-		if (noact > 0) max_no_activity_time = noact * 60;	// set max no activity limit
-		else no_activity_time = 0;							// reset no activity counter
+		no_activity_time = 0;				// reset no activity counter
+		if (noact > 0) {
+			// set max no activity limit
+			if (noact < 10) noact = 10;
+			max_no_activity_time = noact;
+		}
 	}
-	lua_pushinteger(L, max_no_activity_time / 60);
+	lua_pushinteger(L, max_no_activity_time);
 	return 1;
 }
 
@@ -1123,7 +1096,6 @@ const LUA_REG_TYPE syslib[] = {
 /* }====================================================== */
 
 const LUA_REG_TYPE sys_map[] = {
-		  {LSTRKEY("ntptime"),  	LFUNCVAL(os_ntptime)},
 		  {LSTRKEY("ver"),  		LFUNCVAL(os_getver)},
 		  {LSTRKEY("mem"),  		LFUNCVAL(os_getmem)},
 		  {LSTRKEY("shutdown"), 	LFUNCVAL(os_shutdown)},

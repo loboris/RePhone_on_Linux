@@ -49,7 +49,7 @@ ifeq ($(UNAME_S),Darwin)
 endif
 
 CPU = -mcpu=arm7tdmi-s -mthumb -mlittle-endian
-#CC_FLAGS = $(CPU) -c -fvisibility=hidden -fpic -O2 -Wa,-adhlns=$(PROJECT).lst -save-temps
+#CC_FLAGS = $(CPU) -c -fvisibility=hidden -fpic -Os -Wa,-adhlns=$(PROJECT).lst -save-temps
 CC_FLAGS = $(CPU) -c -fvisibility=hidden -fpic -Os
 #CC_SYMBOLS += -D__HDK_LINKIT_ASSIST_2502__ -D__COMPILER_GCC__
 CC_SYMBOLS += -D__HDK_LINKIT_REPHONE__ -D__COMPILER_GCC__

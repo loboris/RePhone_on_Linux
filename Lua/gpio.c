@@ -19,9 +19,9 @@
 #define OUTPUT            1
 #define INPUT_PULLUP_HI   2
 #define INPUT_PULLUP_LOW  3
-#define EINT              4
-#define EINT_PULLUP_HI    5
-#define EINT_PULLUP_LOW   6
+//#define EINT              4
+//#define EINT_PULLUP_HI    5
+//#define EINT_PULLUP_LOW   6
 
 #define REDLED           17
 #define GREENLED         15
@@ -30,8 +30,8 @@
 #define HIGH              1
 #define LOW               0
 
-#define MAX_EINT_PINS     6
-#define MAX_PWM_PINS      2
+#define MAX_EINT_PINS     8
+#define MAX_PWM_PINS      4
 #define MAX_ADC_CHAN      4
 
 extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
@@ -40,7 +40,6 @@ extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
 typedef struct {
 	int                               			pin;
 	VM_DCL_HANDLE                     			eint_handle;
-	int                               			cb_ref;
     vm_dcl_eint_control_config_t				eint_config;
     vm_dcl_eint_control_sensitivity_t			sens_data;
     vm_dcl_eint_control_hw_debounce_t 			deboun_time;
@@ -68,16 +67,17 @@ typedef struct {
 } gpio_adc_chan_t;
 
 static gpio_eint_t gpio_eint_pins[MAX_EINT_PINS];
+static int eint_cb_ref = LUA_NOREF;
 
 static VM_DCL_HANDLE pwm_handles[MAX_PWM_PINS];
 static VMUINT32 pwm_clk[MAX_PWM_PINS];
 
 static gpio_adc_chan_t adc_chan[MAX_ADC_CHAN];
 
-static int g_eintcount = 0;
 gpio_eint_config_t eint_config;
 
 static cb_func_param_adc_t adc_cb_params;
+static cb_func_param_eint_t eint_cb_params;
 
 
 // EINT callback, to be invoked when EINT triggers.
@@ -85,25 +85,27 @@ static cb_func_param_adc_t adc_cb_params;
 static void eint_callback(void* parameter, VM_DCL_EVENT event, VM_DCL_HANDLE device_handle)
 {
 	if (event == VM_DCL_EINT_EVENTS_START) {
-		if (g_eintcount > 10000) g_eintcount = 0;
-		g_eintcount++;
-		int pin = -1;
+		int i, pin = -1;
 
-		for (int i=0; i<MAX_EINT_PINS; i++) {
+		for (i=0; i<MAX_EINT_PINS; i++) {
 			if (gpio_eint_pins[i].eint_handle == device_handle) {
 				pin = gpio_eint_pins[i].pin;
 				break;
 			}
 		}
-		//vm_log_info("pin=%d; eint count = %d", pin, g_eintcount);
-	    VM_DCL_HANDLE handle;
+		// Get pin state
 	    vm_dcl_gpio_control_level_status_t value;
+	    vm_dcl_control(device_handle, VM_DCL_GPIO_COMMAND_RETURN_OUT, &value);
 
-	    gpio_get_handle(REDLED, &handle);
-	    vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_RETURN_OUT, &value);
-
-	    if (value.level_status) vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
-	    else vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+	    if (eint_cb_ref != LUA_NOREF) {
+	    	// Call Lua eint callback function
+			if (eint_cb_params.busy == 0) {
+				eint_cb_params.cb_ref = eint_cb_ref;
+				eint_cb_params.pin = pin;
+				eint_cb_params.state = value.level_status;
+				remote_lua_call(CB_FUNC_EINT, &eint_cb_params);
+			}
+	    }
 	}
 }
 
@@ -111,7 +113,6 @@ static void eint_callback(void* parameter, VM_DCL_EVENT event, VM_DCL_HANDLE dev
 static void _clear_eint_entry(int idx)
 {
     memset(&gpio_eint_pins[idx], 0, sizeof(gpio_eint_t));
-	gpio_eint_pins[idx].cb_ref = LUA_NOREF;
 	gpio_eint_pins[idx].pin = -1;
 	gpio_eint_pins[idx].eint_handle = VM_DCL_HANDLE_INVALID;
 
@@ -141,7 +142,7 @@ int _gpio_eint(int pin, vm_dcl_callback eint_cb)
 
     for (i=0; i<MAX_EINT_PINS; i++) {
     	if (gpio_eint_pins[i].pin == pin) {
-    	    vm_log_info("pin already assigned");
+    	    vm_log_error("pin already assigned");
     		return -1;
     	}
     }
@@ -152,14 +153,14 @@ int _gpio_eint(int pin, vm_dcl_callback eint_cb)
     	}
     }
     if (ei_idx < 0) {
-	    vm_log_info("no free EINT pins");
+	    vm_log_error("no free EINT pins");
     	return -2;
     }
 
     status = vm_dcl_config_pin_mode(pin, VM_DCL_PIN_MODE_EINT); /* Sets the pin to EINT mode */
 
     if (status != VM_DCL_STATUS_OK) {
-	    vm_log_info("pin EINT mode error");
+	    vm_log_error("pin EINT mode error");
     	return -3;
     }
 
@@ -167,7 +168,7 @@ int _gpio_eint(int pin, vm_dcl_callback eint_cb)
     gpio_eint_pins[ei_idx].eint_handle = vm_dcl_open(VM_DCL_EINT, PIN2EINT(pin));
     if (VM_DCL_HANDLE_INVALID == gpio_eint_pins[ei_idx].eint_handle) {
     	_clear_eint_entry(i);
-	    vm_log_info("pin handle error");
+	    vm_log_error("pin handle error");
         return -4;
     }
     gpio_eint_pins[ei_idx].pin = pin;
@@ -255,8 +256,8 @@ exit:
     return ei_idx;
 }
 
-//================================
-static int gpio_eint(lua_State* L)
+//=====================================
+static int gpio_eint_open(lua_State* L)
 {
     VM_DCL_HANDLE handle;
     VM_DCL_STATUS status;
@@ -287,20 +288,39 @@ static int gpio_eint(lua_State* L)
     return 1;
 }
 
+//-----------------------------------
+static int gpio_eint_on(lua_State* L)
+{
+	if (eint_cb_ref != LUA_NOREF) {
+		luaL_unref(L, LUA_REGISTRYINDEX, eint_cb_ref);
+		eint_cb_ref = LUA_NOREF;
+	}
+    // === Register Lua callback function if given
+	if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
+		// register eint callback function
+		lua_pushvalue(L, -1);
+		eint_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+	}
+	return 0;
+}
+
 //=====================================
 static int gpio_eint_mask(lua_State* L)
 {
+	int mask = -1, res = -1;
     int pin = luaL_checkinteger(L, 1);
     for (int i=0; i<MAX_EINT_PINS; i++) {
     	if (gpio_eint_pins[i].pin == pin) {
-    	    int mask = luaL_checkinteger(L, 2);
+    	    mask = luaL_checkinteger(L, 2);
     	    if (mask != 0) mask = 1;
 
-    	    if (mask) vm_dcl_control(gpio_eint_pins[i].eint_handle, VM_DCL_EINT_COMMAND_MASK, NULL);
-    	    else vm_dcl_control(gpio_eint_pins[i].eint_handle, VM_DCL_EINT_COMMAND_UNMASK, NULL);
-    	    lua_pushinteger(L, mask);
+    	    if (mask) res =vm_dcl_control(gpio_eint_pins[i].eint_handle, VM_DCL_EINT_COMMAND_MASK, NULL);
+    	    else res = vm_dcl_control(gpio_eint_pins[i].eint_handle, VM_DCL_EINT_COMMAND_UNMASK, NULL);
+    	    if (res < 0) mask = res;
+    	    break;
     	}
     }
+    lua_pushinteger(L, mask);
     return 1;
 }
 
@@ -317,8 +337,8 @@ int _eint_pin_close(int pin)
     return -1;
 }
 
-//=====================================
-static int gpio_eintclose(lua_State* L)
+//======================================
+static int gpio_eint_close(lua_State* L)
 {
     int pin = luaL_checkinteger(L, 1);
 
@@ -351,6 +371,7 @@ static int gpio_mode(lua_State* L)
         	else if (mode == INPUT_PULLUP_LOW) vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_SET_PULL_LOW, NULL);
         }
     }
+    else return luaL_error(L, "invalid pin mode");
 
     return 0;
 }
@@ -368,7 +389,7 @@ static int gpio_read(lua_State* L)
 
     vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_RETURN_DIRECTION, &dir);
     if (dir.direction_status == 1) {
-        return luaL_error(L, "pin is output");
+        return luaL_error(L, "cannot read, pin is output");
     }
 
     vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_READ, &data);
@@ -391,7 +412,7 @@ static int gpio_write(lua_State* L)
 
     vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_RETURN_DIRECTION, &dir);
     if (dir.direction_status == 0) {
-        return luaL_error(L, "pin is input");
+        return luaL_error(L, "cannot write, pin is input");
     }
 
     if (value) vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
@@ -414,7 +435,7 @@ static int gpio_toggle(lua_State* L)
 
     vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_RETURN_DIRECTION, &dir);
     if (dir.direction_status == 0) {
-        return luaL_error(L, "pin is input");
+        return luaL_error(L, "cannot toggle, pin is input");
     }
     vm_dcl_control(handle, VM_DCL_GPIO_COMMAND_RETURN_OUT, &value);
 
@@ -428,7 +449,7 @@ static int gpio_toggle(lua_State* L)
 
 /* Start PWM
  * gpio.pwm_start(pwm_id)
- * pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3)
+ * pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3), pwm_id: 2 -> PWM0 (GPIO2), 3 -> PWM1 (GPIO19)
  */
 //=====================================
 static int gpio_pwm_start(lua_State* L)
@@ -440,6 +461,8 @@ static int gpio_pwm_start(lua_State* L)
 
     if (pin == 0) gpio_pin = 13;
     else if (pin == 1) gpio_pin = 3;
+    else if (pin == 2) gpio_pin = 2;
+    else if (pin == 3) gpio_pin = 19;
 
     //set pin mode as PWM
     int status = vm_dcl_config_pin_mode(gpio_pin,VM_DCL_PIN_MODE_PWM);
@@ -457,7 +480,7 @@ static int gpio_pwm_start(lua_State* L)
 
 /* Set PWM clock source
  * gpio.pwm_clock(pwm_id, clksrc, div)
- * pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3)
+ * pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3), pwm_id: 2 -> PWM0 (GPIO2), 3 -> PWM1 (GPIO19)
  * clksrc: clock source 0 -> 13MHz; 1 -> 32.768 kHz
  *    div:     division 0->1, 1->2, 2->4, 3->8
  * !! Main PWM clock (pwm_clk) is 13000000 / div or 32768 / div !!
@@ -489,7 +512,7 @@ static int gpio_pwm_clock(lua_State* L)
 
 /* Set PWM in count mode
  * gpio.pwm_count(pwm_id, count, treshold)
- *    pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3)
+ * pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3), pwm_id: 2 -> PWM0 (GPIO2), 3 -> PWM1 (GPIO19)
  *     count: the pwm cycle: 0 ~ 8191
  *  treshold: value at which pwm gpio goes to LOW state: 0 ~ count
  *  !! PWM FREQUENCY IS pwm_clk / count !!
@@ -518,7 +541,7 @@ static int gpio_pwm_count(lua_State* L)
 
 /* Set PWM in frequency mode
  * gpio.pwm_freq(pwm_id, freq, duty)
- * pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3)
+ * pwm_id: 0 -> PWM0 (GPIO13), 1 -> PWM1 (GPIO3), pwm_id: 2 -> PWM0 (GPIO2), 3 -> PWM1 (GPIO19)
  *   freq: the pwm frequency in Hz: 0 ~ pwm_clk
  *   duty: PWM duty cycle: 0 ~ 100
  */
@@ -840,8 +863,8 @@ static int gpio_adc_start(lua_State* L)
     return 1;
 }
 
-#define WS2812_DELY 10
 static unsigned int ws2812_data[32];
+static unsigned int ws2812_dly = 10;
 
 //-------------------------------------------
 static void ws2812_drive(int count, int bpin)
@@ -856,13 +879,13 @@ static void ws2812_drive(int count, int bpin)
 				// bit 1
 				reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20304);  // set high
 				m = 0;
-				while (m < WS2812_DELY) {
+				while (m < ws2812_dly) {
 					*reg = bpin;
 					m++;
 				}
 				reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20308);  // set low
 				m = 0;
-				while (m < WS2812_DELY/2) {
+				while (m < ws2812_dly/2) {
 					*reg = bpin;
 					m++;
 				}
@@ -871,13 +894,13 @@ static void ws2812_drive(int count, int bpin)
 				// bit 0
 				reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20304);  // set high
 				m = 0;
-				while (m < WS2812_DELY/2) {
+				while (m < ws2812_dly/2) {
 					*reg = bpin;
 					m++;
 				}
 				reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20308);  // set low
 				m = 0;
-				while (m < WS2812_DELY) {
+				while (m < ws2812_dly) {
 					*reg = bpin;
 					m++;
 				}
@@ -892,9 +915,20 @@ static void ws2812_drive(int count, int bpin)
 static int ws2812(lua_State* L)
 {
 	int count = 1;
+	int nled = 1;
 	unsigned int rgb = 0;
+	unsigned int default_color = 0;
 
     unsigned int pin = luaL_checkinteger(L, 1);
+
+    if (lua_isnumber(L, 3)) {
+    	nled = luaL_checkinteger(L, 3);
+    	if (nled > 32) nled = 32;
+    }
+    if (lua_isnumber(L, 4)) {
+    	rgb = luaL_checkinteger(L, 4);
+    	default_color = ((rgb & 0x0000FF00) << 8) + ((rgb & 0x00FF0000) >> 8) + (rgb & 0x000000FF);
+    }
 
 	// Set pin to output
     VM_DCL_HANDLE handle;
@@ -938,6 +972,12 @@ static int ws2812(lua_State* L)
     	ws2812_data[0] = ((rgb & 0x0000FF00) << 8) + ((rgb & 0x00FF0000) >> 8) + (rgb & 0x000000FF);
     }
 
+    if (count < nled) {
+    	for (int i=count;i<nled;i++) {
+    		ws2812_data[i] = default_color;
+    	}
+    	count = nled;
+    }
 
     ws2812_drive(count, (1 << pin));
     vm_thread_sleep(1);
@@ -947,17 +987,15 @@ static int ws2812(lua_State* L)
 	return 0;
 }
 
-/*
-//==============================
-static int ws2812 (lua_State *L) {
-    unsigned int pin = luaL_checkinteger(L, 1);
-    unsigned int gbr = luaL_checkinteger(L, 2);
-    uint32_t dly = luaL_checkinteger(L, 3);
+//================================
+static int ws2812dly(lua_State* L)
+{
+	ws2812_dly = luaL_checkinteger(L, 1);
+    if ((ws2812_dly < 5) || (ws2812_dly > 50)) ws2812_dly = 10;
 
-    remote_CCall(&_ws2812);
-	return 0;
+    return 0;
 }
-*/
+
 
 
 
@@ -973,31 +1011,36 @@ static int ws2812 (lua_State *L) {
     lua_pushnumber(L, value);         \
     lua_setglobal(L, name)
 
-const LUA_REG_TYPE gpio_map[] = { { LSTRKEY("mode"), LFUNCVAL(gpio_mode) },
-								  { LSTRKEY("eintopen"), LFUNCVAL(gpio_eint) },
-								  { LSTRKEY("eintclose"), LFUNCVAL(gpio_eintclose) },
-								  { LSTRKEY("eintmask"), LFUNCVAL(gpio_eint_mask) },
-                                  { LSTRKEY("read"), LFUNCVAL(gpio_read) },
-                                  { LSTRKEY("write"), LFUNCVAL(gpio_write) },
-                                  { LSTRKEY("toggle"), LFUNCVAL(gpio_toggle) },
-                                  { LSTRKEY("pwm_start"), LFUNCVAL(gpio_pwm_start) },
-                                  { LSTRKEY("pwm_stop"), LFUNCVAL(gpio_pwm_stop) },
-                                  { LSTRKEY("pwm_freq"), LFUNCVAL(gpio_pwm_freq) },
-                                  { LSTRKEY("pwm_count"), LFUNCVAL(gpio_pwm_count) },
-                                  { LSTRKEY("pwm_clock"), LFUNCVAL(gpio_pwm_clock) },
-                                  { LSTRKEY("adc_start"), LFUNCVAL(gpio_adc_start) },
-                                  { LSTRKEY("adc_stop"), LFUNCVAL(gpio_adc_stop) },
-                                  { LSTRKEY("adc_config"), LFUNCVAL(gpio_adc_config) },
-                                  { LSTRKEY("ws2812"), LFUNCVAL(ws2812) },
+const LUA_REG_TYPE gpio_map[] = {
+		{ LSTRKEY("mode"), LFUNCVAL(gpio_mode) },
+		{ LSTRKEY("read"), LFUNCVAL(gpio_read) },
+		{ LSTRKEY("write"), LFUNCVAL(gpio_write) },
+		{ LSTRKEY("toggle"), LFUNCVAL(gpio_toggle) },
+		{ LSTRKEY("eint_open"), LFUNCVAL(gpio_eint_open) },
+		{ LSTRKEY("eint_close"), LFUNCVAL(gpio_eint_close) },
+		{ LSTRKEY("eint_mask"), LFUNCVAL(gpio_eint_mask) },
+		{ LSTRKEY("eint_on"), LFUNCVAL(gpio_eint_on) },
+		{ LSTRKEY("pwm_start"), LFUNCVAL(gpio_pwm_start) },
+		{ LSTRKEY("pwm_stop"), LFUNCVAL(gpio_pwm_stop) },
+		{ LSTRKEY("pwm_freq"), LFUNCVAL(gpio_pwm_freq) },
+		{ LSTRKEY("pwm_count"), LFUNCVAL(gpio_pwm_count) },
+		{ LSTRKEY("pwm_clock"), LFUNCVAL(gpio_pwm_clock) },
+		{ LSTRKEY("adc_start"), LFUNCVAL(gpio_adc_start) },
+		{ LSTRKEY("adc_stop"), LFUNCVAL(gpio_adc_stop) },
+		{ LSTRKEY("adc_config"), LFUNCVAL(gpio_adc_config) },
+		{ LSTRKEY("ws2812"), LFUNCVAL(ws2812) },
+		{ LSTRKEY("ws2812dly"), LFUNCVAL(ws2812dly)
+	},
 #if LUA_OPTIMIZE_MEMORY > 0
-                                  { LSTRKEY("OUTPUT"), LNUMVAL(OUTPUT) },
-                                  { LSTRKEY("INPUT"), LNUMVAL(INPUT) },
-                                  { LSTRKEY("HIGH"), LNUMVAL(HIGH) },
-                                  { LSTRKEY("LOW"), LNUMVAL(LOW) },
-                                  { LSTRKEY("INPUT_PULLUP_HI"), LNUMVAL(INPUT_PULLUP_HI) },
-                                  { LSTRKEY("INPUT_PULLUP_LOW"), LNUMVAL(INPUT_PULLUP_LOW) },
+		{ LSTRKEY("OUTPUT"), LNUMVAL(OUTPUT) },
+		{ LSTRKEY("INPUT"), LNUMVAL(INPUT) },
+		{ LSTRKEY("HIGH"), LNUMVAL(HIGH) },
+		{ LSTRKEY("LOW"), LNUMVAL(LOW) },
+		{ LSTRKEY("INPUT_PULLUP_HI"), LNUMVAL(INPUT_PULLUP_HI) },
+		{ LSTRKEY("INPUT_PULLUP_LOW"), LNUMVAL(INPUT_PULLUP_LOW) },
 #endif
-                                  { LNILKEY, LNILVAL } };
+		{ LNILKEY, LNILVAL }
+};
 
 LUALIB_API int luaopen_gpio(lua_State* L)
 {
@@ -1019,21 +1062,19 @@ LUALIB_API int luaopen_gpio(lua_State* L)
     adc_cb_params.cb_ref = LUA_NOREF;
 
     lua_register(L, "pinMode", gpio_mode);
-    lua_register(L, "pinEintOpen", gpio_eint);
-    lua_register(L, "pinEintClose", gpio_eintclose);
-    lua_register(L, "pinEintMask", gpio_eint_mask);
     lua_register(L, "digitalRead", gpio_read);
     lua_register(L, "digitalWrite", gpio_write);
+    lua_register(L, "digitalToggle", gpio_toggle);
 
     GLOBAL_NUMBER(L, "OUTPUT", OUTPUT);
     GLOBAL_NUMBER(L, "INPUT", INPUT);
     GLOBAL_NUMBER(L, "HIGH", HIGH);
     GLOBAL_NUMBER(L, "LOW", LOW);
-    GLOBAL_NUMBER(L, "INPUT_PULLUP_HI", INPUT_PULLUP_HI);
-    GLOBAL_NUMBER(L, "INPUT_PULLUP_LOW", INPUT_PULLUP_LOW);
-    GLOBAL_NUMBER(L, "EINT", EINT);
-    GLOBAL_NUMBER(L, "EINT_PULLUP_HI", EINT_PULLUP_HI);
-    GLOBAL_NUMBER(L, "EINT_PULLUP_LOW", EINT_PULLUP_LOW);
+    GLOBAL_NUMBER(L, "INPUT_PULLUP", INPUT_PULLUP_HI);
+    GLOBAL_NUMBER(L, "INPUT_PULLDOWN", INPUT_PULLUP_LOW);
+    //GLOBAL_NUMBER(L, "EINT", EINT);
+    //GLOBAL_NUMBER(L, "EINT_PULLUP", EINT_PULLUP_HI);
+    //GLOBAL_NUMBER(L, "EINT_PULLDOWN", EINT_PULLUP_LOW);
     GLOBAL_NUMBER(L, "REDLED", REDLED);
     GLOBAL_NUMBER(L, "GREENLED", GREENLED);
     GLOBAL_NUMBER(L, "BLUELED", BLUELED);
@@ -1048,11 +1089,11 @@ LUALIB_API int luaopen_gpio(lua_State* L)
     MOD_REG_NUMBER(L, "INPUT", INPUT);
     MOD_REG_NUMBER(L, "HIGH", HIGH);
     MOD_REG_NUMBER(L, "LOW", LOW);
-    MOD_REG_NUMBER(L, "INPUT_PULLUP_HI", INPUT_PULLUP_HI);
-    MOD_REG_NUMBER(L, "INPUT_PULLUP_LOW", INPUT_PULLUP_LOW);
-    MOD_REG_NUMBER(L, "EINT", EINT);
-    MOD_REG_NUMBER(L, "EINT_PULLUP_HI", EINT_PULLUP_HI);
-    MOD_REG_NUMBER(L, "EINT_PULLUP_LOW", EINT_PULLUP_LOW);
+    MOD_REG_NUMBER(L, "INPUT_PULLUP", INPUT_PULLUP_HI);
+    MOD_REG_NUMBER(L, "INPUT_PULLDOWN", INPUT_PULLUP_LOW);
+    //MOD_REG_NUMBER(L, "EINT", EINT);
+    //MOD_REG_NUMBER(L, "EINT_PULLUP", EINT_PULLUP_HI);
+    //MOD_REG_NUMBER(L, "EINT_PULLDOWN", EINT_PULLUP_LOW);
     MOD_REG_NUMBER(L, "REDLED", REDLED);
     MOD_REG_NUMBER(L, "GREENLED", GREENLED);
     MOD_REG_NUMBER(L, "BLUELED", BLUELED);
