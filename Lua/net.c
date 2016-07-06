@@ -28,8 +28,17 @@ typedef struct {
     vm_dns_result_t	result;
 } dns_data_t;
 
+VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type = VM_BEARER_DATA_ACCOUNT_TYPE_GPRS_NONE_PROXY_APN;
 
-extern VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type;
+vm_gsm_gprs_apn_info_t apn_info = {
+		.apn = "0.0.0.0",                     // The APN name.
+		.using_proxy = VM_FALSE,              // The boolean to determine if a proxy server is used.
+		.proxy_type = VM_GSM_GPRS_PROXY_NONE, // The proxy server type.
+		.proxy_address = "0.0.0.0",           // The proxy server address type.
+		.proxy_port = 0,                      // The proxy server port type.
+		.proxy_username = {0},                // The proxy server User name.
+		.proxy_password = {0},                // The proxy server Password.
+};
 
 static cb_func_param_net_t cb_func_param;
 static net_info_t* net_udata[NET_MAX_SOCKETS];
@@ -175,14 +184,13 @@ static int _tcp_create(lua_State* L)
     luaL_getmetatable(L, LUA_NET);
     lua_setmetatable(L, -2);
 
-    if ((lua_type(L, 3) == LUA_TFUNCTION) || (lua_type(L, 3) == LUA_TLIGHTFUNCTION)) {
-		lua_pushvalue(L, 3);
-		ref = luaL_ref(L, LUA_REGISTRYINDEX);
-	    p->cb_ref = ref;
-    }
-    else if (lua_type(L, 3) == LUA_TSTRING) {
+	lua_pushvalue(L, 3);
+	ref = luaL_ref(L, LUA_REGISTRYINDEX);
+	p->cb_ref = ref;
+
+	if (lua_type(L, 4) == LUA_TSTRING) {
         size_t sl;
-        const char* pdata = luaL_checklstring(L, 3, &sl);
+        const char* pdata = luaL_checklstring(L, 4, &sl);
 
         p->send_buf = vm_calloc(sl+1);
         if (p->send_buf == NULL) {
@@ -199,9 +207,6 @@ static int _tcp_create(lua_State* L)
 			}
         }
     }
-    else {
-    	vm_log_warn("no send data and no cb function");
-    }
 
     p->handle = vm_tcp_connect(addr, port, gprs_bearer_type, p, __tcp_callback);
 	g_shell_result = p->handle;
@@ -215,6 +220,9 @@ static int tcp_create(lua_State* L)
 {
     char* addr = luaL_checkstring(L, 1);
     unsigned port = luaL_checkinteger(L, 2);
+    if ((lua_type(L, 3) != LUA_TFUNCTION) && (lua_type(L, 3) == LUA_TLIGHTFUNCTION)) {
+    	return luaL_error(L, "callback function missing");
+    }
 
     remote_CCall(&_tcp_create);
 
@@ -386,11 +394,9 @@ static int _udp_create(lua_State* L)
     luaL_getmetatable(L, LUA_NET);
     lua_setmetatable(L, -2);
 
-    if ((lua_type(L, 2) == LUA_TFUNCTION) || (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
-		lua_pushvalue(L, 2);
-		ref = luaL_ref(L, LUA_REGISTRYINDEX);
-	    p->cb_ref = ref;
-    }
+	lua_pushvalue(L, 2);
+	ref = luaL_ref(L, LUA_REGISTRYINDEX);
+	p->cb_ref = ref;
 
 	for (int i=0; i<NET_MAX_SOCKETS; i++) {
 		if (net_udata[i] == NULL) {
@@ -401,7 +407,6 @@ static int _udp_create(lua_State* L)
 
     p->handle = vm_udp_create(port, gprs_bearer_type, __udp_callback, 0);
 
-exit:
 	vm_signal_post(g_shell_signal);
 	return 0;
 }
@@ -410,6 +415,18 @@ exit:
 static int udp_create(lua_State* L)
 {
     unsigned port = luaL_checkinteger(L, 1);
+    if ((lua_type(L, 2) != LUA_TFUNCTION) && (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
+    	return luaL_error(L, "callback function missing");
+    }
+    int i;
+	for (i=0; i<NET_MAX_SOCKETS; i++) {
+		if (net_udata[i] == NULL) {
+			break;
+		}
+	}
+	if (i >= NET_MAX_SOCKETS) {
+    	return luaL_error(L, "no free udp sockets");
+	}
 
     remote_CCall(&_udp_create);
 
@@ -639,11 +656,171 @@ int net_tostring(lua_State* L)
     return 1;
 }
 
+
+//-----------------------
+void set_custom_apn(void)
+{
+    vm_gsm_gprs_set_customized_apn_info(&apn_info);
+}
+
+//===================================
+static int _gprs_setapn(lua_State *L)
+{
+	int len = 0;
+	int ipar = 0;
+	int err = 0;
+	const char *param;
+
+	lua_getfield(L, 1, "apn");
+	if (!lua_isnil(L, -1)) {
+	  if( lua_isstring(L, -1) ) {
+	    param = luaL_checklstring( L, -1, &len );
+	    if(len > VM_GSM_GPRS_APN_MAX_LENGTH) return luaL_error( L, "apn wrong" );
+	    strncpy(apn_info.apn, param, len);
+	  }
+	  else {
+ 		 err = -100;
+ 		 vm_log_error("wrong arg type: apn" );
+ 		 goto exit;
+	  }
+	}
+	else {
+		err = -101;
+		vm_log_error("apn missing" );
+		goto exit;
+	}
+
+	lua_getfield(L, 1, "useproxy");
+	if (!lua_isnil(L, -1)) {
+	  if ( lua_isnumber(L, -1) ) {
+	    ipar = luaL_checkinteger( L, -1 );
+	    if (ipar == 0) apn_info.using_proxy = VM_FALSE;
+	    else apn_info.using_proxy = VM_TRUE;
+	  }
+	  else {
+	 	  err = -102;
+	 	  vm_log_error("wrong arg type: useproxy" );
+	 	  goto exit;
+	  }
+	}
+	else apn_info.using_proxy = VM_FALSE;
+
+	if (apn_info.using_proxy != VM_FALSE) {
+		lua_getfield(L, 1, "proxy");
+		if (!lua_isnil(L, -1)) {
+		  if ( lua_isstring(L, -1) ) {
+			param = luaL_checklstring( L, -1, &len );
+			if(len > VM_GSM_GPRS_APN_MAX_PROXY_ADDRESS_LENGTH) return luaL_error( L, "proxy wrong" );
+			strncpy(apn_info.proxy_address, param, len);
+		  }
+		  else {
+		 	  err = -103;
+		 	  vm_log_error("wrong arg type: proxy" );
+		 	  goto exit;
+		  }
+		}
+		else {
+		 	err = -104;
+		 	vm_log_error("proxy arg missing" );
+		 	goto exit;
+		}
+
+		lua_getfield(L, 1, "proxyport");
+		if (!lua_isnil(L, -1)) {
+		  if ( lua_isnumber(L, -1) ) {
+		    ipar = luaL_checkinteger( L, -1 );
+			if ((ipar < 1) || (ipar > 65536)) return luaL_error( L, "proxyport wrong" );
+			apn_info.proxy_port = ipar;
+		  }
+		  else {
+		 	  err = -105;
+		 	  vm_log_error("wrong arg type: proxyport" );
+		 	  goto exit;
+		  }
+		}
+		else {
+		 	err = -106;
+		 	vm_log_error("proxyport arg missing" );
+		 	goto exit;
+		}
+
+		lua_getfield(L, 1, "proxytype");
+		if (!lua_isnil(L, -1)) {
+		  if ( lua_isnumber(L, -1) ) {
+		    ipar = luaL_checkinteger( L, -1 );
+			if ((ipar < 0) || (ipar > 9)) return luaL_error( L, "proxyport wrong" );
+			apn_info.proxy_type = ipar;
+		  }
+		  else {
+		 	  err = -107;
+		 	  vm_log_error("wrong arg type: proxytype" );
+		 	  goto exit;
+		  }
+		}
+		else {
+			apn_info.proxy_type = VM_GSM_GPRS_PROXY_NONE;
+		}
+
+		lua_getfield(L, 1, "proxyuser");
+		if (!lua_isnil(L, -1)) {
+		  if ( lua_isstring(L, -1) ) {
+			param = luaL_checklstring( L, -1, &len );
+			if(len > VM_GSM_GPRS_APN_MAX_USERNAME_LENGTH) return luaL_error( L, "proxyuser wrong" );
+			strncpy(apn_info.proxy_username, param, len);
+		  }
+		  else {
+		 	  err = -108;
+		 	  vm_log_error("wrong arg type: proxyuser" );
+		 	  goto exit;
+		  }
+		}
+		else apn_info.proxy_username[0] = '\0';
+
+		lua_getfield(L, 1, "proxypass");
+		if (!lua_isnil(L, -1)) {
+		  if ( lua_isstring(L, -1) ) {
+			param = luaL_checklstring( L, -1, &len );
+			if(len > VM_GSM_GPRS_APN_MAX_USERNAME_LENGTH) return luaL_error( L, "proxypass wrong" );
+			strncpy(apn_info.proxy_password, param, len);
+		  }
+		  else {
+		 	  err = -109;
+		 	  vm_log_error("wrong arg type: proxypass" );
+		 	  goto exit;
+		  }
+		}
+		else apn_info.proxy_password[0] = '\0';
+	}
+
+	gprs_bearer_type = VM_BEARER_DATA_ACCOUNT_TYPE_GPRS_CUSTOMIZED_APN;
+
+	err = vm_gsm_gprs_set_customized_apn_info(&apn_info);
+
+exit:
+	lua_pushinteger(L, err);
+	g_shell_result = 1;
+	vm_signal_post(g_shell_signal);
+    return 1;
+}
+
+//==================================
+static int gprs_setapn(lua_State *L)
+{
+	if (!lua_istable(L, 1)) {
+		return luaL_error( L, "table arg expected" );
+	}
+	remote_CCall(&_gprs_setapn);
+	return g_shell_result;
+}
+
+
+
 #undef MIN_OPT_LEVEL
 #define MIN_OPT_LEVEL 0
 #include "lrodefs.h"
 
 const LUA_REG_TYPE net_map[] = {
+		{ LSTRKEY("setapn"), LFUNCVAL(gprs_setapn)},
 		{ LSTRKEY("ntptime"),  	LFUNCVAL(net_ntptime)},
 		{ LSTRKEY("tcp_create"), LFUNCVAL(tcp_create) },
 		{ LSTRKEY("tcp_connect"), LFUNCVAL(tcp_connect) },

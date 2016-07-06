@@ -68,7 +68,7 @@ typedef enum
 #define VM_PIN_P8   11
 #define VM_PIN_P9    1
 #define VM_PIN_P10   2
-#define VM_PIN_P11  52
+#define VM_PIN_P11  25
 #define VM_PIN_P12  17
 #define VM_PIN_P13  15
 #define VM_PIN_P14  12

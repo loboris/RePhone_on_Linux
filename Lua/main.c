@@ -46,7 +46,6 @@ extern int luaopen_i2c(lua_State *L);
 extern int luaopen_spi(lua_State *L);
 extern int luaopen_net(lua_State* L);
 extern int luaopen_https(lua_State* L);
-extern int luaopen_gprs(lua_State* L);
 extern int luaopen_struct(lua_State* L);
 extern int luaopen_sensor(lua_State* L);
 extern int luaopen_cjson(lua_State *l);
@@ -344,7 +343,6 @@ static void lua_setup()
     luaopen_spi(shellL);
     luaopen_net(shellL);
     luaopen_https(shellL);
-    luaopen_gprs(shellL);
     luaopen_sensor(shellL);
     luaopen_struct(shellL);
     luaopen_cjson(shellL);
