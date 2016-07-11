@@ -83,6 +83,7 @@ int sys_wdt_time = 0;				// used to prevent wdg reset in critical situations (Lu
 int wdg_reboot_cb = LUA_NOREF;		// Lua callback function called before reboot
 int shutdown_cb = LUA_NOREF;		// Lua callback function called before shutdown
 int alarm_cb = LUA_NOREF;			// Lua callback function called on alarm
+int key_cb = LUA_NOREF;				// Lua callback function called on key up/down
 VMUINT8 alarm_flag = 0;
 int g_usb_status = 0;				// status of the USB cable connection
 
@@ -275,14 +276,14 @@ static void wdg_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data
 //-------------------------------------------------------------------
 static VMINT handle_keypad_event(VM_KEYPAD_EVENT event, VMINT code) {
     if (code == 30) {
-        if (event == VM_KEYPAD_EVENT_LONG_PRESS) {
-
-        } else if (event == VM_KEYPAD_EVENT_DOWN) {
-            printf("\n[KEY] pressed\n");
-        } else if (event == VM_KEYPAD_EVENT_UP) {
-        	printf("\n[KEY] APP REBOOT\n");
-            vm_pwr_reboot();
-        }
+        if (((event != VM_KEYPAD_EVENT_DOWN) || (event != VM_KEYPAD_EVENT_UP)) && (key_cb != LUA_NOREF)) {
+        	if (alarm_cb_param.busy == 0) {
+        		alarm_cb_param.busy = 1;
+        		alarm_cb_param.cb_ref = key_cb;
+        		alarm_cb_param.par = event;
+        		remote_lua_call(CB_FUNC_INT, &alarm_cb_param);
+        	}
+		}
     }
     return 0;
 }

@@ -39,6 +39,9 @@ extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
 
 typedef struct {
 	int                               			pin;
+	VMUINT32									count;
+	VMUINT32									count_beforeint;
+	VM_TIME_UST_COUNT							start_time;
 	VM_DCL_HANDLE                     			eint_handle;
     vm_dcl_eint_control_config_t				eint_config;
     vm_dcl_eint_control_sensitivity_t			sens_data;
@@ -53,6 +56,7 @@ typedef struct {
 	VMUINT8 deboun;
 	VMUINT8 deboun_time;
 	int autopol;
+	unsigned int countbefore;
 } gpio_eint_config_t;
 
 typedef struct {
@@ -93,17 +97,38 @@ static void eint_callback(void* parameter, VM_DCL_EVENT event, VM_DCL_HANDLE dev
 				break;
 			}
 		}
+		if (i >= MAX_EINT_PINS) return;
+
+		gpio_eint_pins[i].count++;
+		VM_TIME_UST_COUNT tmnow = vm_time_ust_get_count();
+		VMUINT32 dur;
+		if (tmnow > gpio_eint_pins[i].start_time) dur = tmnow - dur;
+		else {
+			dur = tmnow + (0xFFFFFFFF - gpio_eint_pins[i].start_time);
+			gpio_eint_pins[i].start_time = tmnow;
+		}
 		// Get pin state
-	    vm_dcl_gpio_control_level_status_t value;
-	    vm_dcl_control(device_handle, VM_DCL_GPIO_COMMAND_RETURN_OUT, &value);
+		volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20400);  // GPIO IN register
+		int value = 0;
+		if (*reg & (1 << pin)) value = 1;
 
 	    if (eint_cb_ref != LUA_NOREF) {
 	    	// Call Lua eint callback function
 			if (eint_cb_params.busy == 0) {
-				eint_cb_params.cb_ref = eint_cb_ref;
-				eint_cb_params.pin = pin;
-				eint_cb_params.state = value.level_status;
-				remote_lua_call(CB_FUNC_EINT, &eint_cb_params);
+				if ((gpio_eint_pins[i].count_beforeint == 0) || (gpio_eint_pins[i].count >= gpio_eint_pins[i].count_beforeint)) {
+					eint_cb_params.busy = 1;
+					eint_cb_params.cb_ref = eint_cb_ref;
+					eint_cb_params.pin = pin;
+					eint_cb_params.state = value;
+					eint_cb_params.time = dur;
+					eint_cb_params.count = gpio_eint_pins[i].count;
+					if (gpio_eint_pins[i].count_beforeint > 0) {
+						gpio_eint_pins[i].count = 0;
+					}
+					gpio_eint_pins[i].start_time = tmnow;
+
+					remote_lua_call(CB_FUNC_EINT, &eint_cb_params);
+				}
 			}
 	    }
 	}
@@ -157,6 +182,7 @@ int _gpio_eint(int pin, vm_dcl_callback eint_cb)
     	return -2;
     }
 
+	_clear_eint_entry(ei_idx);
     status = vm_dcl_config_pin_mode(pin, VM_DCL_PIN_MODE_EINT); /* Sets the pin to EINT mode */
 
     if (status != VM_DCL_STATUS_OK) {
@@ -167,7 +193,7 @@ int _gpio_eint(int pin, vm_dcl_callback eint_cb)
     // Opens and attaches EINT pin
     gpio_eint_pins[ei_idx].eint_handle = vm_dcl_open(VM_DCL_EINT, PIN2EINT(pin));
     if (VM_DCL_HANDLE_INVALID == gpio_eint_pins[ei_idx].eint_handle) {
-    	_clear_eint_entry(i);
+    	_clear_eint_entry(ei_idx);
 	    vm_log_error("pin handle error");
         return -4;
     }
@@ -220,7 +246,7 @@ int _gpio_eint(int pin, vm_dcl_callback eint_cb)
       goto exit;
     }
 
-    // Configure auto change polarity
+    // Configure auto change polarity=gpio.eint_mask(13,0)
     gpio_eint_pins[ei_idx].auto_change.auto_change_polarity = eint_config.autopol;
     status = vm_dcl_control(gpio_eint_pins[ei_idx].eint_handle, VM_DCL_EINT_COMMAND_MASK, NULL);
 	status = vm_dcl_control(gpio_eint_pins[ei_idx].eint_handle ,VM_DCL_EINT_COMMAND_SET_AUTO_CHANGE_POLARITY,(void *)&gpio_eint_pins[ei_idx].auto_change);
@@ -239,8 +265,12 @@ int _gpio_eint(int pin, vm_dcl_callback eint_cb)
       goto exit;
     }
 
+    gpio_eint_pins[ei_idx].start_time = vm_time_ust_get_count();
+	gpio_eint_pins[ei_idx].count = 0;
+	gpio_eint_pins[ei_idx].count_beforeint = eint_config.countbefore;
+
     // ** Unmask EINT
-    status = vm_dcl_control(gpio_eint_pins[ei_idx].eint_handle, VM_DCL_EINT_COMMAND_UNMASK, NULL);
+	status = vm_dcl_control(gpio_eint_pins[ei_idx].eint_handle, VM_DCL_EINT_COMMAND_UNMASK, NULL);
     if (status != VM_DCL_STATUS_OK) {
       err++;
       vm_log_info("VM_DCL_EINT_COMMAND_UNMASK  = %d", status);
@@ -270,18 +300,20 @@ static int gpio_eint_open(lua_State* L)
     	lua_settop(L, 2);  // make sure table is at the top
     	eint_config.autounmask = getfield(L, "autounmask", 0);
     	eint_config.autopol = getfield(L, "autopol", 0);
-    	eint_config.sensit = getfield(L, "sensitivity", 0);
+    	eint_config.sensit = getfield(L, "sensitivity", 1);
     	eint_config.polar = getfield(L, "polarity", 0);
-    	eint_config.deboun = getfield(L, "deboun", 0);
+    	eint_config.deboun = getfield(L, "deboun", 1);
     	eint_config.deboun_time = getfield(L, "debountime", 10);
+    	eint_config.countbefore = getfield(L, "count", 0);
     }
     else {
         eint_config.autounmask = 0;
-        eint_config.sensit = 0;
+        eint_config.sensit = 1;
         eint_config.polar = 0;
-        eint_config.deboun = 0;
+        eint_config.deboun = 1;
         eint_config.deboun_time = 10;
         eint_config.autopol = 0;
+    	eint_config.countbefore = 0;
     }
 
     lua_pushinteger(L, _gpio_eint(pin, (vm_dcl_callback)eint_callback));
@@ -615,12 +647,8 @@ void adc_callback(void* parameter, VM_DCL_EVENT event, VM_DCL_HANDLE device_hand
 
 			if ( result != NULL )
 			{
-				double *p;
-				int *v;
-				p =(double*)&(result->value);
-				adc_chan[_chan].result = (unsigned int)*p;
-				v =(int*)&(result->volt_value);
-				adc_chan[_chan].vresult = (int)*v;
+				adc_chan[_chan].result = (unsigned int)result->value;
+				adc_chan[_chan].vresult = result->volt_value;
 			}
 		}
 
@@ -636,11 +664,10 @@ void adc_callback(void* parameter, VM_DCL_EVENT event, VM_DCL_HANDLE device_hand
 				adc_cb_params.chan = adc_chan[_chan].chan;
 				remote_lua_call(CB_FUNC_ADC, &adc_cb_params);
 			}
-		    //else vm_log_debug("[ADC CB] busy");
 		}
 		else if (adc_chan[_chan].cb_wait != 0) {
-			vm_signal_post(g_shell_signal);
 			adc_chan[_chan].cb_wait = 0;
+			vm_signal_post(g_shell_signal);
 		}
     }
 	if (adc_chan[_chan].repeat == 0) {
@@ -689,6 +716,7 @@ static int gpio_adc_config(lua_State* L)
     if (lua_gettop(L) > 2) count = luaL_checkinteger(L, 3) & 0x00FF;
 
     // === Setup channel variables
+    adc_cb_params.fval = -999999.9;
     adc_chan[chan].cb_wait = 0;
     adc_chan[chan].repeat = 0;
     adc_chan[chan].chan = chan;
@@ -834,8 +862,8 @@ static int gpio_adc_start(lua_State* L)
     // === Start ADC
     if (adc_chan[chan].adc_cb_ref == LUA_NOREF) adc_chan[chan].cb_wait = 1;
     else adc_chan[chan].cb_wait = 0;
-	adc_chan[chan].vresult = -999999.9;
-	adc_chan[chan].result = -999999;
+	adc_chan[chan].vresult = -999999;
+	adc_chan[chan].result = 999999;
 	adc_chan[chan].repeat = repeat;
 
 	vm_dcl_adc_control_send_start_t start_data;
@@ -852,7 +880,7 @@ static int gpio_adc_start(lua_State* L)
 			// wait for result
 			if (vm_signal_timed_wait(g_shell_signal, adc_chan[chan].time * 2) != 0) {
 				vm_log_debug("No adc result");
-				lua_pushinteger(L, -9);
+				lua_pushinteger(L, -999999);
 			}
 			else lua_pushnumber(L, adc_cb_params.fval);
 			adc_chan[chan].cb_wait = 0;

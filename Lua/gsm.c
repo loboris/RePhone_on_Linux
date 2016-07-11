@@ -17,8 +17,6 @@
 
 //#define INCLUDE_CALL_FUNCTIONS
 
-#define MAX_SMS_CONTENT_LEN  160*4
-
 #ifdef INCLUDE_CALL_FUNCTIONS
 enum VoiceCall_Status { IDLE_CALL, CALLING, RECEIVINGCALL, TALKING };
 static int g_gsm_incoming_call_cb_ref = LUA_NOREF;

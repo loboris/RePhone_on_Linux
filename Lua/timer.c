@@ -41,6 +41,7 @@ static int _timer_create(lua_State *L)
 	lua_pushvalue(L, 2);
 	ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
+	// Check if starting in paused mode
 	if (lua_isnumber(L,3)) paused = luaL_checkinteger(L, 3) & 0x01;
 
 	// Create userdata for this timer

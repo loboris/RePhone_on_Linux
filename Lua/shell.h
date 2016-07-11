@@ -22,6 +22,8 @@
 #define BLUELED          12
 #define REG_BASE_ADDRESS 0xa0000000
 
+#define MAX_SMS_CONTENT_LEN		160*4
+
 #define UART_BUFFER_LEN 1024
 
 #define DEFAULT_CCWAIT 1000
@@ -114,10 +116,12 @@ typedef struct {
 } cb_func_param_int_t;
 
 typedef struct {
-	int		cb_ref;
-	int		pin;
-	int		state;
-	int		busy;
+	int					cb_ref;
+	int					pin;
+	VMUINT32			state;
+	VMUINT32			count;
+	VM_TIME_UST_COUNT	time;
+	int					busy;
 } cb_func_param_eint_t;
 
 typedef struct {

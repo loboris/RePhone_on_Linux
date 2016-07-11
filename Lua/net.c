@@ -28,7 +28,7 @@ typedef struct {
     vm_dns_result_t	result;
 } dns_data_t;
 
-VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type = VM_BEARER_DATA_ACCOUNT_TYPE_GPRS_NONE_PROXY_APN;
+VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type = VM_BEARER_DATA_ACCOUNT_TYPE_GPRS_CUSTOMIZED_APN;
 
 vm_gsm_gprs_apn_info_t apn_info = {
 		.apn = "0.0.0.0",                     // The APN name.
@@ -656,12 +656,6 @@ int net_tostring(lua_State* L)
     return 1;
 }
 
-
-//-----------------------
-void set_custom_apn(void)
-{
-    vm_gsm_gprs_set_customized_apn_info(&apn_info);
-}
 
 //===================================
 static int _gprs_setapn(lua_State *L)

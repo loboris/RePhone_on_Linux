@@ -12,6 +12,7 @@
 #include "vmchset.h"
 #include "vmmemory.h"
 #include "vmfs.h"
+#include "vmgsm_gprs.h"
 
 #define lua_c
 
@@ -31,6 +32,7 @@ vm_thread_message_t g_cbcall_message = {CB_MESSAGE_ID, &g_CBparams};
 //int g_shell_result;
 lua_CFunction g_CCfunc = NULL;
 int CCwait = 1000;
+char* param_buf = NULL;
 
 VM_DCL_OWNER_ID g_owner_id = 0;  // Module owner of APP
 VM_DCL_HANDLE retarget_usb_handle = -1;
@@ -42,13 +44,15 @@ int retarget_target = -1;
 static lua_State *globalL = NULL;
 static const char *progname = LUA_PROGNAME;
 
+extern int show_log;
 extern int sys_wdt_rst_time;
 extern int no_activity_time;
 extern int _mqtt_check(mqtt_info_t *p);
 extern void retarget_setup();
 extern VMUINT8 uart_has_userdata[2];
 extern uart_info_t *uart_data[2];
-int _gsm_readbuf_free(lua_State *L);
+extern int _read_params(lua_State *L);
+extern int _gsm_readbuf_free(lua_State *L);
 
 
 //extern int sys_wdt_rst_usec;
@@ -279,7 +283,6 @@ static void setboolfield (lua_State *L, const char *key, int value) {
 #include "legc.h"
 extern unsigned int g_memory_size;
 extern unsigned int g_memory_size_b;
-#define MAX_SMS_CONTENT_LEN  160*2
 
 //-----------------------------------
 int file_exists(const char *filename)
@@ -304,6 +307,60 @@ int file_exists(const char *filename)
     return g_shell_result;
 }
 
+extern vm_gsm_gprs_apn_info_t apn_info;
+extern VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type;
+
+//--------------------------------------
+static int _set_custom_apn(lua_State *L)
+{
+	gprs_bearer_type = VM_BEARER_DATA_ACCOUNT_TYPE_GPRS_CUSTOMIZED_APN;
+    vm_gsm_gprs_set_customized_apn_info(&apn_info);
+	vm_signal_post(g_shell_signal);
+    return 0;
+}
+
+//-----------------------------------------
+static void setup_from_params(lua_State *L)
+{
+	show_log = 0;
+	remote_CCall(&_read_params);
+	show_log = 0x1F;
+
+	if (g_shell_result < 0) return;
+
+	// execute, set params
+	lua_pcall(L, 0, 0, 0);
+
+	lua_getglobal(L, "__SYSPAR");
+	if (!lua_istable(L, -1)) {
+		lua_pop(L, 1);  // removes nil
+		return;
+	}
+
+	printf("System parameters loaded\n");
+    size_t klen = 0;
+    size_t vlen = 0;
+    const char* key;
+    const char* value;
+
+    lua_pushnil(L);  // first key
+    while (lua_next(L, 1) != 0) {
+      // Pops a key from the stack, and pushes a key-value pair from the table
+      // 'key' (at index -2) and 'value' (at index -1)
+      if ((lua_isstring(L, -1)) && (lua_isstring(L, -2))) {
+        key = lua_tolstring(L, -2, &klen);
+        value = lua_tolstring(L, -1, &vlen);
+        if ((klen == 3) && (strstr(key, "apn") == key)) {
+    	    sprintf(apn_info.apn, value);
+        	printf("  'apn' parameter loaded [%s]\n", apn_info.apn);
+    		remote_CCall(&_set_custom_apn);
+        }
+      }
+      lua_pop(L, 1);  // removes 'value'; keeps 'key' for next iteration
+    }
+    lua_pop(L, 1);  // removes '__SYSPAR' table
+}
+
 //===================================================================
 VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
 {
@@ -320,6 +377,10 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     retarget_setup();
 
     printf("\nLua memory: %d bytes, C heap: %d bytes\n", g_memory_size, g_memory_size_b);
+
+    lua_settop(L, 0);  // clear stack
+
+    setup_from_params(L);
 
     lua_settop(L, 0);  // clear stack
     // Check startup files
@@ -419,7 +480,9 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
 	                lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);
 					lua_pushinteger(L, params->pin);
 					lua_pushinteger(L, params->state);
-	                lua_pcall(L, 2, 0, 0);
+					lua_pushinteger(L, params->count);
+					lua_pushinteger(L, params->time);
+	                lua_pcall(L, 4, 0, 0);
 	                params->busy = 0;
                 }
                 break;

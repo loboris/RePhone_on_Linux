@@ -48,6 +48,8 @@
 #define SHOW_LOG_INFO		0x04
 #define SHOW_LOG_DEBUG		0x10
 
+#define MAX_SYSTEM_PARAMS_SIZE	1020
+
 extern void retarget_putc(char ch);
 extern int retarget_waitc(unsigned char *c, int timeout);
 extern int retarget_waitchars(unsigned char *buf, int *count, int timeout);
@@ -66,6 +68,7 @@ extern int led_blink;				// led blink during session
 extern int wdg_reboot_cb;			// Lua callback function called before reboot
 extern int shutdown_cb;				// Lua callback function called before shutdown
 extern int alarm_cb;				// Lua callback function called on alarm
+extern int key_cb;					// Lua callback function called on key up/down
 extern VMUINT8 alarm_flag;
 extern cb_func_param_bt_t bt_cb_params;
 extern int g_memory_size_b;
@@ -819,6 +822,19 @@ static int os_onalarm_cb (lua_State *L) {
     return 0;
 }
 
+//=====================================
+static int os_onkey_cb (lua_State *L) {
+    if (key_cb != LUA_NOREF) {
+    	luaL_unref(L, LUA_REGISTRYINDEX, key_cb);
+    	key_cb = LUA_NOREF;
+    }
+	if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
+	    lua_pushvalue(L, 1);
+	    key_cb = luaL_ref(L, LUA_REGISTRYINDEX);
+	}
+    return 0;
+}
+
 
 //===================================
 static int os_readreg(lua_State* L)
@@ -935,6 +951,234 @@ static int os_teststack( lua_State* L )
 	check(n, 1);
 	return 0;
 }
+
+//----------------------------
+int _read_params(lua_State *L)
+{
+	int psize;
+
+	psize = vm_fs_app_data_get_free_space();
+	if (psize > MAX_SYSTEM_PARAMS_SIZE) {
+		// no parameters
+    	vm_log_debug("no parameters");
+		g_shell_result = -1;
+		goto exit;
+	}
+
+	char* param_buf = vm_calloc(MAX_SYSTEM_PARAMS_SIZE+1);
+	if (param_buf == NULL) {
+    	vm_log_error("error allocating buffer");
+		g_shell_result = -2;
+		goto exit1;
+	}
+
+	VM_FS_HANDLE phandle = vm_fs_app_data_open(VM_FS_MODE_READ, VM_FALSE);
+	if (phandle < VM_FS_SUCCESS) {
+    	vm_log_error("error opening params");
+		g_shell_result = phandle;
+		goto exit;
+	}
+
+	g_shell_result = vm_fs_app_data_read(phandle, param_buf, MAX_SYSTEM_PARAMS_SIZE, &psize);
+	if (g_shell_result > 0) {
+		param_buf[g_shell_result] = '\0';
+		vm_fs_app_data_close(phandle);
+		g_shell_result = luaL_loadbuffer(L, param_buf, strlen(param_buf), "param");
+		if (g_shell_result) {
+			lua_pop(L, 1);  // pop error message from the stack
+	    	vm_log_error("error in parameters");
+	    	g_shell_result = -3;
+		}
+		else {
+			vm_log_debug("%s", param_buf);
+	    	g_shell_result = psize;
+		}
+	}
+	else {
+    	vm_log_error("error reading params");
+	}
+
+exit:
+	vm_free(param_buf);
+	param_buf = NULL;
+exit1:
+	vm_signal_post(g_shell_signal);
+	return 0;
+}
+
+
+//-----------------------------------
+static int _save_params(lua_State *L)
+{
+	int err = 0;
+	int psize;
+
+	char* param_buf = vm_calloc(MAX_SYSTEM_PARAMS_SIZE+1);
+	if (param_buf == NULL) {
+    	vm_log_error("error allocating buffer");
+    	err = -1;
+    	goto exit1;
+	}
+
+    size_t klen = 0;
+    size_t vlen = 0;
+    int idx = 0;
+    int items = 0;
+    char sep[2] = {0};
+    const char* key;
+    const char* value;
+
+    lua_getglobal(L, "__SYSPAR");
+	if (!lua_istable(L, -1)) {
+		lua_pop(L, 1);  // removes nil
+    	vm_log_error("param table not found");
+    	err = -2;
+    	goto exit;
+	}
+
+	idx = sprintf(param_buf, "__SYSPAR={");
+
+    lua_pushnil(L);  // first key
+    while (lua_next(L, 1) != 0) {
+      // Pops a key from the stack, and pushes a key-value pair from the table
+      // 'key' (at index -2) and 'value' (at index -1)
+      if (lua_isstring(L, -2)) {
+    	  key = lua_tolstring(L, -2, &klen);
+          if (lua_isnumber(L, -1)) {
+        	  value = lua_tolstring(L, -1, &vlen);
+        	  if ((idx+klen+vlen+2) <= MAX_SYSTEM_PARAMS_SIZE) {
+        		  idx += sprintf(param_buf+idx, "%s%s=%s", sep, key, value);
+        		  items++;
+        	  }
+          }
+          else if (lua_isstring(L, -1)) {
+        	  value = lua_tolstring(L, -1, &vlen);
+        	  if ((idx+klen+vlen+4) <= MAX_SYSTEM_PARAMS_SIZE) {
+        		  idx += sprintf(param_buf+idx, "%s%s=\"%s\"", sep, key, value);
+        		  items++;
+        	  }
+          }
+		  if (items > 0) sep[0] = ',';
+      }
+      lua_pop(L, 1);  // removes 'value'; keeps 'key' for next iteration
+    }
+	lua_pop(L, 1);  // removes '__SYSPAR' table
+	idx = sprintf(param_buf+idx, "}");
+
+    if (items == 0) {
+    	vm_log_debug("no params found");
+    	err = -3;
+    	goto exit1;
+    }
+
+	err = items;
+	VM_FS_HANDLE phandle = vm_fs_app_data_open(VM_FS_MODE_CREATE_ALWAYS_WRITE, VM_FALSE);
+	if (phandle < VM_FS_SUCCESS) {
+    	vm_log_error("error opening params");
+		err = phandle;
+		goto exit;
+	}
+
+	err = vm_fs_app_data_write(phandle, param_buf, strlen(param_buf), &psize);
+	if (err < 0) {
+    	vm_log_error("error writing params");
+	}
+	else {
+		err = psize;
+		vm_log_debug("%s", param_buf);
+	}
+
+	vm_fs_app_data_close(phandle);
+
+exit:
+	vm_free(param_buf);
+	param_buf = NULL;
+exit1:
+	g_shell_result = err;
+	vm_signal_post(g_shell_signal);
+	return 0;
+}
+
+
+//==================================
+static int read_params(lua_State *L)
+{
+	remote_CCall(&_read_params);
+
+	if (g_shell_result < 0) lua_pushinteger(L, g_shell_result);
+	else {
+		lua_pcall(L, 0, 0, 0);
+    	lua_pushinteger(L, 0);
+	}
+
+	return 1;
+}
+
+//=================================
+static int save_params(lua_State *L)
+{
+	remote_CCall(&_save_params);
+
+	lua_pushinteger(L, g_shell_result);
+
+	return 1;
+}
+
+//==================================
+static int _get_params(lua_State *L)
+{
+	char* param_buf = vm_calloc(MAX_SYSTEM_PARAMS_SIZE+1);
+	if (param_buf == NULL) {
+    	lua_pushnil(L);
+    	return 1;
+	}
+	int idx = 0;
+
+	lua_getglobal(L, "__SYSPAR");
+	if (lua_istable(L, 1)) {
+		size_t klen = 0;
+		size_t vlen = 0;
+		const char* key;
+		const char* value;
+
+		lua_pushnil(L);  // first key
+		while (lua_next(L, 1) != 0) {
+		  // Pops a key from the stack, and pushes a key-value pair from the table
+		  // 'key' (at index -2) and 'value' (at index -1)
+		  if (lua_isstring(L, -2)) {
+			  key = lua_tolstring(L, -2, &klen);
+			  if (lua_isnumber(L, -1)) {
+				  value = lua_tolstring(L, -1, &vlen);
+				  if ((idx+klen+vlen+2) <= MAX_SYSTEM_PARAMS_SIZE) {
+					  idx += sprintf(param_buf+idx, "%s=%s\n", key, value);
+				  }
+			  }
+			  else if (lua_isstring(L, -1)) {
+				  value = lua_tolstring(L, -1, &vlen);
+				  if ((idx+klen+vlen+4) <= MAX_SYSTEM_PARAMS_SIZE) {
+					  idx += sprintf(param_buf+idx, "%s=\"%s\"\n", key, value);
+				  }
+			  }
+		  }
+		  lua_pop(L, 1);  // removes 'value'; keeps 'key' for next iteration
+		}
+	}
+	lua_pop(L, 1);  // removes '__SYSPAR' table
+
+	lua_pushstring(L, param_buf);
+	vm_free(param_buf);
+	vm_signal_post(g_shell_signal);
+	return 0;
+}
+
+//=================================
+static int get_params(lua_State *L)
+{
+	remote_CCall(&_get_params);
+
+	return 1;
+}
+
 
 #if defined USE_YMODEM
 
@@ -1114,11 +1358,15 @@ const LUA_REG_TYPE sys_map[] = {
 		  {LSTRKEY("onreboot"), 	LFUNCVAL(os_onwdg_cb)},
 		  {LSTRKEY("onshutdown"),	LFUNCVAL(os_onshdwn_cb)},
 		  {LSTRKEY("onalarm"),		LFUNCVAL(os_onalarm_cb)},
+		  {LSTRKEY("onkey"),		LFUNCVAL(os_onkey_cb)},
 		  {LSTRKEY("showlog"),		LFUNCVAL(os_showlog)},
 		  {LSTRKEY("readreg"), 		LFUNCVAL(os_readreg) },
 		  {LSTRKEY("writereg"), 	LFUNCVAL(os_writereg) },
 		  {LSTRKEY("writertcreg"),	LFUNCVAL(os_writertcreg) },
 		  {LSTRKEY("teststack"),	LFUNCVAL(os_teststack) },
+		  {LSTRKEY("read_params"),	LFUNCVAL(read_params) },
+		  {LSTRKEY("save_params"),	LFUNCVAL(save_params) },
+		  {LSTRKEY("get_params"),	LFUNCVAL(get_params) },
 		  {LNILKEY, LNILVAL }
 };
 
@@ -1136,6 +1384,9 @@ LUALIB_API int luaopen_os (lua_State *L) {
 	GLOBAL_NUMBER(L, "LOG_DEBUG", SHOW_LOG_DEBUG);
 	GLOBAL_NUMBER(L, "LOG_ALL", 0x1F);
 	GLOBAL_NUMBER(L, "LOG_NONE", 0x00);
+
+    lua_newtable(L);				// create table
+    lua_setglobal(L, "__SYSPAR");	// create global "__SYSPAR" table
 
     LREGISTER(L, LUA_OSLIBNAME, syslib);
 }

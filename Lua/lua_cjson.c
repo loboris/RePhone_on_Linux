@@ -47,7 +47,8 @@
 #include "fpconv.h"
 
 #ifndef CJSON_MODNAME
-#define CJSON_MODNAME   "cjson"
+#define CJSON_MODNAME		"cjson"
+#define CJSON_SAFE_MODNAME	"cjson_safe"
 #endif
 
 #ifndef CJSON_VERSION
@@ -1421,6 +1422,12 @@ int luaopen_cjson(lua_State *l)
 int luaopen_cjson_safe(lua_State *l)
 {
     lua_cjson_safe_new(l);
+
+#ifdef ENABLE_CJSON_GLOBAL
+    /* Register a global "cjson" table. */
+    lua_pushvalue(l, -1);
+    lua_setglobal(l, CJSON_SAFE_MODNAME);
+#endif
 
     /* Return cjson.safe table */
     return 1;
