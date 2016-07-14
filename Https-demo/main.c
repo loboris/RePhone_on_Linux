@@ -27,6 +27,7 @@
 #include "vmcmd.h" 
 #include "vmdcl.h"
 #include "vmdcl_gpio.h"
+#include "vmdcl_i2c.h"
 #include "vmthread.h"
 
 #include "vmhttps.h"
@@ -34,6 +35,7 @@
 #include "vmgsm_gprs.h"
 #include "vmwdt.h"
 #include "vmpwr.h"
+#include "vmlog.h"
 
 #include "vmsock.h"
 #include "vmbearer.h"
@@ -93,6 +95,73 @@ static VMINT g_soc_sockname;
 static VMINT g_soc_client;
 
 extern void retarget_setup();
+
+#define I2C_SCL_PIN_NAME	43
+#define I2C_SDA_PIN_NAME	44
+
+static VM_DCL_HANDLE g_i2c_handle = VM_DCL_HANDLE_INVALID;
+
+// Lua: i2c.setup(address [, speed])
+//=================================
+static void i2c_setup(void)
+{
+    vm_dcl_i2c_control_config_t conf_data;
+    int result;
+    VMINT8 address = 0x76;
+    VMUINT32 speed = 100; // default speed - 100kbps
+
+	vm_log_debug("=== configuring i2c ===");
+    if (g_i2c_handle == VM_DCL_HANDLE_INVALID) {
+    	// SPI_MOSI gpio config
+    	/*vm_log_debug("configuring i2c pins");
+    	VM_DCL_HANDLE gpio_handle = vm_dcl_open(VM_DCL_GPIO, I2C_SCL_PIN_NAME);
+        //if (gpio_handle == VM_DCL_HANDLE_INVALID) goto exit;
+        //vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_SET_MODE_1, NULL);
+    	vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+    	vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_ENABLE_PULL, NULL);
+    	gpio_handle = vm_dcl_open(VM_DCL_GPIO, I2C_SDA_PIN_NAME);
+        //if (gpio_handle == VM_DCL_HANDLE_INVALID) goto exit;
+        //vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_SET_MODE_1, NULL);
+    	vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
+    	vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_ENABLE_PULL, NULL);*/
+
+    	//vm_log_debug("configuring SCL %d", vm_dcl_config_pin_mode(I2C_SCL_PIN_NAME, VM_DCL_PIN_MODE_I2C));
+    	//vm_log_debug("configuring SDA %d", vm_dcl_config_pin_mode(I2C_SDA_PIN_NAME, VM_DCL_PIN_MODE_I2C));
+
+    	vm_log_debug("opening i2c");
+        g_i2c_handle = vm_dcl_open(VM_DCL_I2C, 0);
+        if (g_i2c_handle < 0) {
+        	vm_log_error("error opening i2c %d", g_i2c_handle);
+        	g_i2c_handle = VM_DCL_HANDLE_INVALID;
+        }
+        else {
+        	vm_log_error("OK, handle = %d", g_i2c_handle);
+        }
+    }
+    if (g_i2c_handle != VM_DCL_HANDLE_INVALID) {
+        if (speed > 400) {
+        	conf_data.transaction_mode = VM_DCL_I2C_TRANSACTION_HIGH_SPEED_MODE;
+    		conf_data.fast_mode_speed = 0;
+    		conf_data.high_mode_speed = speed;
+        }
+        else {
+        	conf_data.transaction_mode = VM_DCL_I2C_TRANSACTION_FAST_MODE;
+    		conf_data.fast_mode_speed = 0;
+    		conf_data.high_mode_speed = speed;
+        }
+		conf_data.reserved_0 = (VM_DCL_I2C_OWNER)0;
+		conf_data.get_handle_wait = 0;
+		conf_data.reserved_1 = 0;
+		conf_data.delay_length = 0;
+		conf_data.slave_address = (address << 1);
+    	vm_log_debug("configuring i2c %d", g_i2c_handle);
+		result = vm_dcl_control(g_i2c_handle, VM_DCL_I2C_CMD_CONFIG, (void *)&conf_data);
+    	vm_log_debug("result %d", result);
+
+    }
+}
+
+
 
 static void https_send_request_set_channel_rsp_cb(VMUINT32 req_id, VMUINT8 channel_id, VMUINT8 result)
 {
@@ -338,7 +407,8 @@ void handle_sysevt(VMINT message, VMINT param)
     case VM_EVENT_CREATE:
         set_custom_apn();
         //vm_timer_create_non_precise(VMHTTPS_TEST_DELAY, https_send_request, NULL);
-        vm_timer_create_non_precise(20000, start_doing, NULL);
+        //vm_timer_create_non_precise(20000, start_doing, NULL);
+        i2c_setup();
         break;
 
     case VM_EVENT_QUIT:
@@ -349,7 +419,7 @@ void handle_sysevt(VMINT message, VMINT param)
 void vm_main(void) 
 {
     retarget_setup();
-    printf("\n=== https example ===\n");
+    printf("\n=== TEST ===\n");
 
     /* register system events handler */
     vm_pmng_register_system_event_callback(handle_sysevt);

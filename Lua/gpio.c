@@ -102,7 +102,7 @@ static void eint_callback(void* parameter, VM_DCL_EVENT event, VM_DCL_HANDLE dev
 		gpio_eint_pins[i].count++;
 		VM_TIME_UST_COUNT tmnow = vm_time_ust_get_count();
 		VMUINT32 dur;
-		if (tmnow > gpio_eint_pins[i].start_time) dur = tmnow - dur;
+		if (tmnow > gpio_eint_pins[i].start_time) dur = tmnow - gpio_eint_pins[i].start_time;
 		else {
 			dur = tmnow + (0xFFFFFFFF - gpio_eint_pins[i].start_time);
 			gpio_eint_pins[i].start_time = tmnow;
