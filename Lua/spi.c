@@ -132,7 +132,7 @@ static int _spi_setup(lua_State* L)
 		if (!lua_isnil(L, -1)) {
 		  if ( lua_isnumber(L, -1) ) {
 		    int param = luaL_checkinteger( L, -1 );
-		    if ((param >= 0) && (param <= 4)) {
+		    if ((param >= 0) && (param < 4)) {
 		        switch (param) {
 		            case 0:
 		            	conf_data.clock_polarity = VM_DCL_SPI_CLOCK_POLARITY_0;
@@ -215,6 +215,7 @@ static int _spi_setup(lua_State* L)
 		        vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 		    }
 		    else {
+		    	g_spi_cs_handle = VM_DCL_HANDLE_INVALID;
 				vm_log_error("error initializing CS on pin #%d", param);
 		    }
 		  }
@@ -230,6 +231,7 @@ static int _spi_setup(lua_State* L)
 		        spi_dc_state = 1;
 		    }
 		    else {
+		    	g_spi_dc_handle = VM_DCL_HANDLE_INVALID;
 				vm_log_error("error initializing DC on pin #%d", param);
 		    }
 		  }
@@ -432,7 +434,6 @@ static int spi_recv(lua_State* L)
     g_spi_write_data->write_len = 0;
     int rd = 0;
 
-    printf("spiRead[");
     if (size > 0) {
 		do {
 			if (size >= VM_SPI_READ_BUFFER_SIZE) {
@@ -442,7 +443,6 @@ static int spi_recv(lua_State* L)
 
 				for (i = 0; i < VM_SPI_READ_BUFFER_SIZE; i++) {
 					luaL_addchar(&b, g_spi_read_data->read_buffer[i]);
-					printf("%02x ", *(g_spi_read_data->read_buffer+i));
 				}
 
 				size -= VM_SPI_READ_BUFFER_SIZE;
@@ -455,7 +455,6 @@ static int spi_recv(lua_State* L)
 
 				for (i = 0; i < size; i++) {
 					luaL_addchar(&b, g_spi_read_data->read_buffer[i]);
-					printf("%02x ", *(g_spi_read_data->read_buffer+i));
 				}
 
 				rd += size;
@@ -463,7 +462,6 @@ static int spi_recv(lua_State* L)
 			}
 		} while(size > 0);
     }
-    printf("]\n");
 
     luaL_pushresult(&b);
     lua_pushinteger(L, rd);
@@ -566,8 +564,9 @@ static int spi_setdc(lua_State* L)
 #define MIN_OPT_LEVEL 0
 #include "lrodefs.h"
 
-const LUA_REG_TYPE spi_map[] = { { LSTRKEY("setup"), LFUNCVAL(spi_setup) },
-        { LSTRKEY("deinit"), LFUNCVAL(spi_deinit) },
+const LUA_REG_TYPE spi_map[] = {
+		{ LSTRKEY("setup"), LFUNCVAL(spi_setup) },
+        { LSTRKEY("close"), LFUNCVAL(spi_deinit) },
 		{ LSTRKEY("write"), LFUNCVAL(spi_send) },
         { LSTRKEY("read"), LFUNCVAL(spi_recv) },
         { LSTRKEY("txrx"), LFUNCVAL(spi_txrx) },

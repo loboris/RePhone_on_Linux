@@ -608,8 +608,8 @@ static int i2c_close(lua_State* L)
 
 const LUA_REG_TYPE i2c_map[] = {
 		{ LSTRKEY("setup"), LFUNCVAL(i2c_setup) },
-        { LSTRKEY("send"), LFUNCVAL(i2c_send) },
-        { LSTRKEY("recv"), LFUNCVAL(i2c_recv) },
+        { LSTRKEY("write"), LFUNCVAL(i2c_send) },
+        { LSTRKEY("read"), LFUNCVAL(i2c_recv) },
         { LSTRKEY("txrx"), LFUNCVAL(i2c_txrx) },
         { LSTRKEY("close"), LFUNCVAL(i2c_close) },
         { LNILKEY, LNILVAL }
