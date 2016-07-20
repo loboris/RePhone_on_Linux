@@ -992,7 +992,6 @@ const LUA_REG_TYPE ftp_map[] = {
 		{LSTRKEY("send"), LFUNCVAL(ftp_send)},
 		{LSTRKEY("chdir"), LFUNCVAL(ftp_cwd)},
 		{LSTRKEY("getdir"), LFUNCVAL(ftp_pwd)},
-		{LSTRKEY("send"), LFUNCVAL(ftp_send)},
         {LNILKEY, LNILVAL}
 };
 
