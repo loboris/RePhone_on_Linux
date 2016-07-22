@@ -641,8 +641,8 @@ static int gsm_list_sms_received(lua_State *L)
     	luaL_unref(L, LUA_REGISTRYINDEX, g_sms_list_cb_ref);
     	g_sms_list_cb_ref = LUA_NOREF;
     }
-	if ((lua_type(L, 2) == LUA_TFUNCTION) || (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
-	    lua_pushvalue(L, 2);
+	if ((lua_type(L, -1) == LUA_TFUNCTION) || (lua_type(L, -1) == LUA_TLIGHTFUNCTION)) {
+	    lua_pushvalue(L, -1);
 	    g_sms_list_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
 	}
 
@@ -692,28 +692,33 @@ static int gsm_info(lua_State *L)
 #define MIN_OPT_LEVEL 0
 #include "lrodefs.h"
 
+#ifdef INCLUDE_CALL_FUNCTIONS
 const LUA_REG_TYPE gsm_map[] = {
-		#ifdef INCLUDE_CALL_FUNCTIONS
 		{LSTRKEY("call"), LFUNCVAL(gsm_call)},
 		{LSTRKEY("answer"), LFUNCVAL(gsm_anwser)},
 		{LSTRKEY("hang"), LFUNCVAL(gsm_hang)},
 		{LSTRKEY("on_incoming_call"), LFUNCVAL(gsm_on_incoming_call)},
-		#endif
-		{LSTRKEY("sms_send"), LFUNCVAL(gsm_send)},
-		{LSTRKEY("sms_read"), LFUNCVAL(gsm_read)},
-		{LSTRKEY("sms_num"), LFUNCVAL(gsm_num_sms_received)},
-		{LSTRKEY("sms_delete"), LFUNCVAL(gsm_sms_delete)},
-		{LSTRKEY("sms_list"), LFUNCVAL(gsm_list_sms_received)},
-		{LSTRKEY("sim_info"), LFUNCVAL(gsm_info)},
-		{LSTRKEY("on_new_message"), LFUNCVAL(gsm_on_new_message)},
+		{LNILKEY, LNILVAL}
+};
+#endif
+
+const LUA_REG_TYPE sms_map[] = {
+		{LSTRKEY("send"), LFUNCVAL(gsm_send)},
+		{LSTRKEY("read"), LFUNCVAL(gsm_read)},
+		{LSTRKEY("numrec"), LFUNCVAL(gsm_num_sms_received)},
+		{LSTRKEY("delete"), LFUNCVAL(gsm_sms_delete)},
+		{LSTRKEY("list"), LFUNCVAL(gsm_list_sms_received)},
+		{LSTRKEY("siminfo"), LFUNCVAL(gsm_info)},
+		{LSTRKEY("onmessage"), LFUNCVAL(gsm_on_new_message)},
 		{LNILKEY, LNILVAL}
 };
 
 LUALIB_API int luaopen_gsm(lua_State *L) {
   #ifdef INCLUDE_CALL_FUNCTIONS
   vm_gsm_tel_call_reg_listener(call_listener_func);
+  luaL_register(L, "gsm", gsm_map);
   #endif
 
-  luaL_register(L, "gsm", gsm_map);
+  luaL_register(L, "sms", sms_map);
   return 1;
 }

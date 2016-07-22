@@ -37,7 +37,7 @@
 #include "vmbearer.h"
 
 #define MAX_BUFFER_SIZE     1024
-#define MAX_MQTT_TOPICS		3
+#define MAX_MQTT_TOPICS		5
 #define MAX_MQTT_TOPIC_LEN	32
 
 

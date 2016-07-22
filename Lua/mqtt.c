@@ -18,7 +18,7 @@
 #define LUA_MQTT   "mqtt"
 
 /* Configuration */
-#define MAX_MQTT_CLIENTS        3
+//#define MAX_MQTT_CLIENTS        3
 #define DEFAULT_MAX_BUFFER      1024
 #define DEFAULT_MAX_PACKET      (int)(DEFAULT_MAX_BUFFER + sizeof(MqttPacket) + XSTRLEN(DEFAULT_TOPIC_NAME) + MQTT_DATA_LEN_SIZE)
 #define DEFAULT_HASH_TYPE       WC_HASH_TYPE_SHA256
@@ -291,8 +291,11 @@ static int mqtt_connect(lua_State *L)
 	mqtt_info_t *p = ((mqtt_info_t *)luaL_checkudata(L, 1, LUA_MQTT));
 
     int rc = -9;
-    int tmrint = luaL_checkinteger(L, 2);
-    int kaint = luaL_checkinteger(L, 3);
+    int tmrint = 30;
+    int kaint = 60;
+
+    if (lua_isnumber(L, 2)) tmrint = luaL_checkinteger(L, 2);
+    if (lua_isnumber(L, 3)) kaint = luaL_checkinteger(L, 3);
 
    	if (kaint < 30) tmrint = 30;
    	if (kaint > 600) tmrint = 600;
@@ -449,7 +452,11 @@ static int mqtt_addtopic(lua_State *L)
     if ((len <= 0) || (len >= MAX_MQTT_TOPIC_LEN)) {
 		return luaL_error( L, "topic name error" );
     }
-	int qos = luaL_checkinteger(L, 3);
+	int qos = p->qos;
+	if (lua_isnumber(L, 3)) {
+		qos = luaL_checkinteger(L, 3);
+	    if ((qos < 0) || (qos > 2)) qos = p->qos;
+	}
 
 	int ntopics = 0;
 	for (int i=0; i<MAX_MQTT_TOPICS;i++) {
