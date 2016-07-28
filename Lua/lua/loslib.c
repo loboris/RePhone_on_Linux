@@ -196,6 +196,43 @@ static int os_clock (lua_State *L) {
 	return g_shell_result;
 }
 
+//===================================
+static int _sys_tick (lua_State *L) {
+  lua_pushinteger(L, vm_time_ust_get_count());
+  g_shell_result = 1;
+  vm_signal_post(g_shell_signal);
+  return 1;
+}
+
+
+//==================================
+static int sys_tick (lua_State *L) {
+	remote_CCall(&_sys_tick);
+	return g_shell_result;
+}
+
+//======================================
+static int _sys_elapsed (lua_State *L) {
+  int tmstart = luaL_checkinteger(L, 1);
+  VM_TIME_UST_COUNT tmend = vm_time_ust_get_count();
+  VMUINT32 dur;
+  if (tmend > tmstart) dur = tmend - tmstart;
+  else dur = tmend + (0xFFFFFFFF - tmstart);
+
+  lua_pushinteger(L, dur);
+  g_shell_result = 1;
+  vm_signal_post(g_shell_signal);
+  return 1;
+}
+
+
+//=====================================
+static int sys_elapsed (lua_State *L) {
+	int tmstart = luaL_checkinteger(L, 1);
+	remote_CCall(&_sys_elapsed);
+	return g_shell_result;
+}
+
 /*
 ** {======================================================
 ** Time/Date operations
@@ -1179,6 +1216,35 @@ static int get_params(lua_State *L)
 	return 1;
 }
 
+//===================================
+static int sys_random( lua_State* L )
+{
+    int randn, minn, maxn;
+    uint16_t i;
+    uint8_t sd = 0;
+
+    maxn = RAND_MAX; //0x7FFFFFFE;
+    minn = 0;
+    if (lua_gettop(L) >= 1) maxn = luaL_checkinteger( L, 1 );
+    if (lua_gettop(L) >= 2) minn = luaL_checkinteger( L, 2 );
+    if (lua_gettop(L) >= 3) sd = luaL_checkinteger( L, 3 );
+    if (maxn < minn) maxn = minn+1;
+    if (maxn <= 0) maxn = 1;
+
+    i = 0;
+    do {
+      randn = rand();
+      if (randn > maxn) randn = randn % (maxn+1);
+      i++;
+    } while ((i < 10000) && (randn < minn));
+
+    if (randn < minn) randn = minn;
+
+    lua_pushinteger(L,randn);
+    return 1;
+}
+
+
 
 #if defined USE_YMODEM
 
@@ -1367,6 +1433,9 @@ const LUA_REG_TYPE sys_map[] = {
 		  {LSTRKEY("read_params"),	LFUNCVAL(read_params) },
 		  {LSTRKEY("save_params"),	LFUNCVAL(save_params) },
 		  {LSTRKEY("get_params"),	LFUNCVAL(get_params) },
+		  {LSTRKEY("random"),		LFUNCVAL(sys_random) },
+		  {LSTRKEY("tick"),			LFUNCVAL(sys_tick) },
+		  {LSTRKEY("elapsed"),		LFUNCVAL(sys_elapsed) },
 		  {LNILKEY, LNILVAL }
 };
 
@@ -1396,6 +1465,11 @@ LUALIB_API int luaopen_sys(lua_State* L)
 #if LUA_OPTIMIZE_MEMORY > 0
     return 0;
 #else  // #if LUA_OPTIMIZE_MEMORY > 0
+    // random number init
+    VMUINT rtct;
+	vm_time_get_unix_time(&rtct);
+	srand(rtct);
+
     luaL_register(L, "sys", sys_map);
 
     return 1;

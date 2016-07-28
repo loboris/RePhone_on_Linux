@@ -30,7 +30,7 @@
 //#include "ts_wdt_sw.h"
 
 
-//#define USE_SCREEN_MODULE
+#define USE_SCREEN_MODULE
 
 // used external functions
 extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
@@ -57,6 +57,7 @@ extern int luaopen_bit(lua_State *L);
 extern int luaopen_mqtt(lua_State *L);
 extern int luaopen_email(lua_State *L);
 extern int luaopen_ftp(lua_State *L);
+extern int luaopen_lcd(lua_State *L);
 #if defined USE_SCREEN_MODULE
 extern int luaopen_screen(lua_State *L);
 #endif
@@ -65,6 +66,7 @@ extern int uart_tmo[2];
 extern void _uart_cb(int id);
 extern int btspp_tmo;
 extern void _btspp_recv_cb(void);
+extern int _LcdSpiTransfer(uint8_t *buf, int len);
 
 
 #define SYS_TIMER_INTERVAL   22		// HISR timer interval in ticks, 22 -> 0.10153 seconds
@@ -354,6 +356,7 @@ static void lua_setup()
     luaopen_mqtt(shellL);
     luaopen_email(shellL);
     luaopen_ftp(shellL);
+    luaopen_lcd(shellL);
 
     lua_register(shellL, "msleep", msleep_c);
 
@@ -398,6 +401,11 @@ static void handle_sysevt(VMINT message, VMINT param)
 			//shell_docall(shellL);
 			res = g_CCfunc(shellL);
 			break;
+
+		case CCALL_MESSAGE_LCDWR:
+			res = _LcdSpiTransfer(params->cpar1, params->ipar1);
+			vm_signal_post(g_shell_signal);
+            break;
 
 		case CCALL_MESSAGE_FOPEN: {
 			    VMWCHAR ucs_name[64];

@@ -363,7 +363,7 @@ typedef struct {
     VMCHAR mux[VM_DCL_PIN_MODE_MAX];
 } VM_DCL_PIN_MUX;
 
-#define VM_DCL_PIN_TABLE_SIZE 23
+#define VM_DCL_PIN_TABLE_SIZE 25
 
 static const VM_DCL_PIN_MUX pinTable[VM_DCL_PIN_TABLE_SIZE] = {
     { VM_PIN_P0, 0, 12, VM_DCL_PWM_4, { VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_ADC, 0, VM_DCL_PIN_MODE_PWM, 0, 0, 0, 0, 0 } },	//GPIO3   PWM1 ADC12
@@ -377,7 +377,7 @@ static const VM_DCL_PIN_MUX pinTable[VM_DCL_PIN_TABLE_SIZE] = {
     { VM_PIN_P8, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_UART, 0, 0, 0, 0, 0, 0, 0, 0 } },									//GPIO11  UART1_TX
     { VM_PIN_P9, 1, 13, 0, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_EINT, VM_DCL_PIN_MODE_ADC, VM_DCL_PIN_MODE_UART, 0, 0, 0, 0, 0, 0 } },	//GPIO1   EINT1  ADC13  UART3_TX
     { VM_PIN_P10, 2, 11, VM_DCL_PWM_1, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_EINT, VM_DCL_PIN_MODE_ADC, 0, VM_DCL_PIN_MODE_PWM, 0, 0, 0, 0, 0 } },	//GPIO2   EINT2  ADC11
-    { VM_PIN_P11, 15, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, VM_DCL_PIN_MODE_EINT, 0, 0, 0, 0, 0 } },								//GPIO25  EINT15
+    //{ VM_PIN_P11, 15, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, VM_DCL_PIN_MODE_EINT, 0, 0, 0, 0, 0 } },								//GPIO25  EINT15
     { VM_PIN_P12, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO17  RED_LED
     { VM_PIN_P13, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO15  GREEN_LED
     { VM_PIN_P14, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO12  BLUE_LED
@@ -388,7 +388,10 @@ static const VM_DCL_PIN_MUX pinTable[VM_DCL_PIN_TABLE_SIZE] = {
     { VM_PIN_P19, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO49
     { VM_PIN_P20, 22, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, 0, 0, 0, 0, 0, 0, 0 } },								//GPIO50  EINT22
     { VM_PIN_P21, 20, 0, 0, {VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, 0 , 0, 0, 0, 0, 0, 0} },								//GPIO46  EINT20
-    { VM_PIN_P22, 16, 0, 0, {VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, 0 , 0, 0, 0, 0, 0, 0} }									//GPIO30  EINT16
+    { VM_PIN_P22, 16, 0, 0, {VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, 0 , 0, 0, 0, 0, 0, 0} },								//GPIO30  EINT16
+    { VM_PIN_P23, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO38
+    { VM_PIN_P24, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO39
+    { VM_PIN_P25, 23, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, 0, 0, 0, 0, 0, 0, 0 } }								//GPIO52  EINT23
 };
 
 //--------------------------------------------------------------------
