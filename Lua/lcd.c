@@ -5,6 +5,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h> 
+#include "tjpgd.h"
 
 //#include "vmdcl_gpio.h"
 #include "vmdcl.h"
@@ -175,6 +176,7 @@
 #define LASTY	-2
 #define CENTER	-3
 #define RIGHT	-4
+#define BOTTOM	-4
 
 #define SMALL_FONT  0
 #define BIG_FONT    1
@@ -197,8 +199,8 @@ extern uint8_t DejaVuSans24[];
 extern VM_DCL_HANDLE g_spi_handle;
 extern VM_DCL_HANDLE g_spi_cs_handle;
 extern VM_DCL_HANDLE g_spi_dc_handle;
+extern int _LcdSpiTransfer(uint8_t *buf, int len);
 
-uint8_t TFT_pinDC  = 255;
 static uint8_t TFT_type   = 0;
 
 static uint16_t _width = ST7735_WIDTH;
@@ -257,7 +259,7 @@ static uint8_t _forceFixed = 0;
 static uint16_t _fg = TFT_GREEN;
 static uint16_t _bg = TFT_BLACK;
 
-#define CCBUF_SIZE 1024  // set the size 16 * n
+#define CCBUF_SIZE 578  // set the size 16 * n
 static uint8_t ccbuf[CCBUF_SIZE];
 static uint16_t ccbufPtr = 0;
 
@@ -359,7 +361,6 @@ static void ccbufFlash( uint8_t n ) {
   if (ccbufPtr > (CCBUF_SIZE-n)) {
     // write buffer
     ccbuf[ccbufPtr] = 0;
-    //_LcdSpiTransfer( &ccbuf[0], ccbufPtr);
 
     g_fcall_message.message_id = CCALL_MESSAGE_LCDWR;
     g_CCparams.cpar1 = ccbuf;
@@ -2054,14 +2055,14 @@ static int lcd_image( lua_State* L )
   fname = luaL_checklstring( L, 5, &len );
   
   if ((len > 63) || (len < 1)) {
-	    l_message(NULL, "[FTP fil] Bad file name or file not found!\r\n");
+	    l_message(NULL, "Bad file name or file not found!");
 	    return 0;
   }
   VMWCHAR ucs_name[128];
   vm_chset_ascii_to_ucs2(ucs_name, 128, fname);
   fhndl = vm_fs_open(ucs_name, VM_FS_MODE_READ, VM_TRUE);
   if (fhndl < 0) {
-	    l_message(NULL, "[FTP fil] Bad file name or file not found!\r\n");
+	    l_message(NULL, "Bad file name or file not found!");
 	    return 0;
   }
 
@@ -2107,6 +2108,248 @@ static int lcd_image( lua_State* L )
   return 0;
 }
 
+// User defined device identifier
+typedef struct {
+    int fhndl;		// File handler for input function
+    VMUINT16 x;		// image top left point X position
+    VMUINT16 y;		// image top left point Y position
+} JPGIODEV;
+
+// User defined call-back function to input JPEG data
+//---------------------
+static UINT tjd_input (
+	JDEC* jd,		// Decompression object
+	BYTE* buff,		// Pointer to the read buffer (NULL:skip)
+	UINT nd			// Number of bytes to read/skip from input stream
+)
+{
+	int rb = 0;
+	// Device identifier for the session (5th argument of jd_prepare function)
+	JPGIODEV *dev = (JPGIODEV*)jd->device;
+
+	if (buff) {	// Read nd bytes from the input strem
+		vm_fs_read(dev->fhndl, buff, nd, &rb);
+		return rb;	// Returns actual number of bytes read
+	}
+	else {	// Remove nd bytes from the input stream
+		if (vm_fs_seek(dev->fhndl, nd, VM_FS_BASE_CURRENT) >= 0) return nd;
+		else return 0;
+	}
+}
+
+// User defined call-back function to output RGB bitmap
+//----------------------
+static UINT tjd_output (
+	JDEC* jd,		// Decompression object of current session
+	void* bitmap,	// Bitmap data to be output
+	JRECT* rect		// Rectangular region to output
+)
+{
+	// Device identifier for the session (5th argument of jd_prepare function)
+	JPGIODEV *dev = (JPGIODEV*)jd->device;
+
+	// ** Put the rectangular into the display device **
+	VMUINT16 x;
+	VMUINT16 y;
+	VMUINT16 c;
+	VMUINT16 lenPtr;
+	BYTE *src = (BYTE*)bitmap;
+	VMUINT16 left = rect->left + dev->x;
+	VMUINT16 top = rect->top + dev->y;
+	VMUINT16 right = rect->right + dev->x;
+	VMUINT16 bottom = rect->bottom + dev->y;
+
+	if ((left >= _width) || (top >= _height)) return 1;	// out of screen area, return
+
+	int len = ((right-left+1) * (bottom-top+1))*2;		// calculate length of data
+
+	if ((len > 0) && (len <= (CCBUF_SIZE-32))) {
+		initccbuf();
+		x = right;
+		y = bottom;
+		if (x >= _width) x = _width-1;
+		if (y >= _height) y = _height-1;
+
+		_TFT_pushAddrWindow(left, top, x, y);	// display rectangle to fill
+		//printf("rect: %d,%d,%d,%d",left, top, x, y);
+		ccbufPushByte(TFT_RAMWR);				// write RAM command
+		lenPtr = ccbufPtr;						// save pointer to length
+		ccbufPushUint16(0);						// we don't know the length yet
+		ccbufPushLong(1);						// repeat once
+		len = ccbufPtr;							// save buffer pointer for length calculation
+
+	    for (y = top; y <= bottom; y++) {
+		    for (x = left; x <= right; x++) {
+		    	// Clip to display area
+		    	if ((x < _width) && (y < _height)) {
+		    		ccbuf[ccbufPtr++] = *src++;
+		    		ccbuf[ccbufPtr++] = *src++;
+		    	}
+		    	else src += 2;
+		    }
+	    }
+	    // set length
+	    ccbuf[lenPtr++] = (uint8_t)((ccbufPtr-len) >> 8);
+	    ccbuf[lenPtr] = (uint8_t)((ccbufPtr-len) & 0x00FF);
+	    //printf(", len: %d\n", ccbufPtr-len);
+		ccbuf[ccbufPtr] = 0;
+		len = _LcdSpiTransfer(ccbuf, ccbufPtr);			// send data to display
+		if (len < 0) {
+			vm_log_error("error sending data to display: %d", len);
+			return 0;  // stop decompression
+		}
+	}
+	else {
+		vm_log_error("max data size exceded: %d (%d,%d,%d,%d)", len, left,top,right,bottom);
+		return 0;  // stop decompression
+	}
+
+	return 1;	// Continue to decompression
+}
+
+//=======================================
+static int _lcd_jpg_image( lua_State* L )
+{
+	const char *fname;
+	int fhndl = 0;
+	size_t len;
+	JPGIODEV dev;
+
+	int x = luaL_checkinteger( L, 1 );
+	int y = luaL_checkinteger( L, 2 );
+	int maxscale = luaL_checkinteger( L, 3 );
+	if ((maxscale < 0) || (maxscale > 3)) maxscale = 3;
+
+	fname = luaL_checklstring( L, 4, &len );
+
+	if ((len > 63) || (len < 1)) {
+		vm_log_error("Bad file name or file not found!");
+		vm_signal_post(g_shell_signal);
+		return 0;
+	}
+
+	VMWCHAR ucs_name[128];
+	vm_chset_ascii_to_ucs2(ucs_name, 128, fname);
+	dev.fhndl = vm_fs_open(ucs_name, VM_FS_MODE_READ, VM_TRUE);
+	if (dev.fhndl < 0) {
+		vm_log_error("Bad file name or file not found!");
+		vm_signal_post(g_shell_signal);
+		return 0;
+	}
+
+	char *work;				// Pointer to the working buffer (must be 4-byte aligned)
+	UINT sz_work = 3100;	// Size of the working buffer (must be power of 2)
+	JDEC jd;				// Decompression object (70 bytes)
+	JRESULT rc;
+	BYTE scale = 0;
+	VMUINT8 radj = 0;
+	VMUINT8 badj = 0;
+
+	if ((x < 0) && (x != CENTER) && (x != RIGHT)) x = 0;
+	if ((y < 0) && (y != CENTER) && (y != BOTTOM)) y = 0;
+	if (x > (_width-5)) x = _width - 5;
+	if (y > (_height-5)) y = _height - 5;
+
+	work = vm_malloc(sz_work);
+	if (work != NULL) {
+		rc = jd_prepare(&jd, tjd_input, (void *)work, sz_work, &dev);
+		if (rc == JDR_OK) {
+			if (x == CENTER) {
+				x = _width - (jd.width >> scale);
+				if (x < 0) {
+					if (maxscale) {
+						for (scale = 0; scale <= maxscale; scale++) {
+							if (((jd.width >> scale) <= (_width)) && ((jd.height >> scale) <= (_height))) break;
+							if (scale == maxscale) break;
+						}
+						x = _width - (jd.width >> scale);
+						if (x < 0) x = 0;
+						else x >>= 1;
+						maxscale = 0;
+					}
+					else x = 0;
+				}
+				else x >>= 1;
+			}
+			if (y == CENTER) {
+				y = _height - (jd.height >> scale);
+				if (y < 0) {
+					if (maxscale) {
+						for (scale = 0; scale <= maxscale; scale++) {
+							if (((jd.width >> scale) <= (_width)) && ((jd.height >> scale) <= (_height))) break;
+							if (scale == maxscale) break;
+						}
+						y = _height - (jd.height >> scale);
+						if (y < 0) y = 0;
+						else y >>= 1;
+						maxscale = 0;
+					}
+					else y = 0;
+				}
+				else y >>= 1;
+			}
+			if (x == RIGHT) {
+				x = 0;
+				radj = 1;
+			}
+			if (y == BOTTOM) {
+				y = 0;
+				badj = 1;
+			}
+			// Determine scale factor
+			if (maxscale) {
+				for (scale = 0; scale <= maxscale; scale++) {
+					if (((jd.width >> scale) <= (_width-x)) && ((jd.height >> scale) <= (_height-y))) break;
+					if (scale == maxscale) break;
+				}
+			}
+			vm_log_debug("Image dimensions: %dx%d, scale: %d, bytes used: %d", jd.width, jd.height, scale, jd.sz_pool);
+
+			if (radj) {
+				x = _width - (jd.width >> scale);
+				if (x < 0) x = 0;
+			}
+			if (badj) {
+				y = _height - (jd.height >> scale);
+				if (y < 0) y = 0;
+			}
+			dev.x = x;
+			dev.y = y;
+			// Start to decompress the JPEG file
+			rc = jd_decomp(&jd, tjd_output, scale);
+			if (rc != JDR_OK) {
+				vm_log_error("jpg decompression error %d", rc);
+			}
+		}
+		else {
+			vm_log_error("jpg prepare error %d", rc);
+		}
+
+		vm_free(work);  // free work buffer
+	}
+	else {
+		vm_log_error("work buffer allocation error");
+	}
+
+	vm_fs_close(dev.fhndl);  // close input file
+
+	vm_signal_post(g_shell_signal);
+	return 0;
+}
+
+//======================================
+static int lcd_jpg_image( lua_State* L )
+{
+	size_t len;
+
+	int x = luaL_checkinteger( L, 1 );
+	int y = luaL_checkinteger( L, 2 );
+	const char *fname = luaL_checklstring( L, 3, &len );
+
+	remote_CCall(&_lcd_jpg_image);
+
+    return 0;
+}
 
 
 #undef MIN_OPT_LEVEL
@@ -2143,6 +2386,7 @@ const LUA_REG_TYPE lcd_map[] =
   { LSTRKEY( "triangle" ), LFUNCVAL( lcd_triangle )},
   { LSTRKEY( "write" ), LFUNCVAL( lcd_write )},
   { LSTRKEY( "image" ), LFUNCVAL( lcd_image )},
+  { LSTRKEY( "jpgimage" ), LFUNCVAL( lcd_jpg_image )},
   { LSTRKEY( "hsb2rgb" ), LFUNCVAL( lcd_HSBtoRGB )},
   
 #if LUA_OPTIMIZE_MEMORY > 0
@@ -2201,6 +2445,7 @@ LUALIB_API int luaopen_lcd(lua_State *L)
   MOD_REG_NUMBER( L, "LANDSCAPE_FLIP",  LANDSCAPE_FLIP);
   MOD_REG_NUMBER( L, "CENTER",			CENTER);
   MOD_REG_NUMBER( L, "RIGHT",	        RIGHT);
+  MOD_REG_NUMBER( L, "BOTTOM",	        BOTTOM);
   MOD_REG_NUMBER( L, "LASTX",	        LASTY);
   MOD_REG_NUMBER( L, "LASTY",	        LASTX);
   MOD_REG_NUMBER( L, "BLACK",           TFT_BLACK);

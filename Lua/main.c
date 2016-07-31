@@ -30,7 +30,7 @@
 //#include "ts_wdt_sw.h"
 
 
-#define USE_SCREEN_MODULE
+//#define USE_SCREEN_MODULE
 
 // used external functions
 extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);

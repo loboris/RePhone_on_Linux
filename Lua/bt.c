@@ -74,14 +74,15 @@ void _btspp_recv_cb(void)
 }
 
 // SPP service callback handler
-//------------------------------------------------------------------------------------
-void app_btspp_cb(VM_BT_SPP_EVENT evt, vm_bt_spp_event_cntx_t* param, void* user_data)
+//-------------------------------------------------------------------------------------------
+static void app_btspp_cb(VM_BT_SPP_EVENT evt, vm_bt_spp_event_cntx_t* param, void* user_data)
 {
     vm_bt_spp_event_cntx_t *cntx = (vm_bt_spp_event_cntx_t*)param;
     vm_bt_cm_bt_address_t g_btspp_addr;	// Store BT mac address of BT_NAME device
     VMINT ret;
     int i;
 
+	//vm_log_debug("[BTSPP] Event %d", evt);
 	memset(&g_btspp_addr, 0, sizeof(g_btspp_addr));
 	ret = vm_bt_spp_get_device_address(cntx->connection_id, &g_btspp_addr);
     switch (evt) {
@@ -407,34 +408,29 @@ static int _bt_spp_start(lua_State *L)
         VM_BT_SPP_EVENT_DISCONNECT			|
         VM_BT_SPP_EVENT_SCO_DISCONNECT;
 
-	g_btspp_hdl = vm_bt_spp_open(evt_mask, app_btspp_cb, NULL);
-    if (g_btspp_hdl < 0) {
-        vm_log_debug("[BTSPP] SPP Init error: %d", g_btspp_hdl);
-        g_shell_result = -1;
-    	goto exit;
-    }
-
-    g_shell_result = vm_bt_spp_set_security_level(g_btspp_hdl, VM_BT_SPP_SECURITY_NONE);
-
     int min_buf_size = vm_bt_spp_get_min_buffer_size();
-
-    if (bt_cb_params.buflen < min_buf_size) {
-        vm_log_debug("[BTSPP] Minimum buffer size = %d", min_buf_size);
-    	bt_cb_params.buflen = min_buf_size;
-    }
+	bt_cb_params.buflen = min_buf_size;
 
     bt_cb_params.recvbuf = vm_calloc(bt_cb_params.buflen);
     if (bt_cb_params.recvbuf == NULL) {
-		vm_bt_spp_close(g_btspp_hdl);
+		//vm_bt_spp_close(g_btspp_hdl);
         g_shell_result = -1;
     	vm_log_error("Error allocating spp buffers");
 		goto exit;
     }
     bt_cb_params.buflen /= 2;
-    vm_log_debug("[BTSPP] Tx&Rx buffer size = %d", bt_cb_params.buflen);
+    //vm_log_debug("[BTSPP] Tx&Rx buffer size = %d", bt_cb_params.buflen);
+
+	g_btspp_hdl = vm_bt_spp_open(evt_mask, app_btspp_cb, NULL);
+    if (g_btspp_hdl < 0) {
+        vm_log_debug("[BTSPP] SPP Init error: %d", g_btspp_hdl);
+        g_shell_result = -2;
+    	goto exit;
+    }
+
+    int res = vm_bt_spp_set_security_level(g_btspp_hdl, VM_BT_SPP_SECURITY_NONE);
 
     g_shell_result = vm_bt_spp_bind(g_btspp_hdl, UUID);
-    return 0;
 
 exit:
 	vm_signal_post(g_shell_signal);
@@ -457,18 +453,15 @@ static int bt_spp_start(lua_State *L)
     	return 1;
     }
 
-    int bufsize = luaL_checkinteger(L, 1);
-    if (bufsize < 512) bufsize = 512;
-
-    bt_cb_params.buflen = bufsize;
+    bt_cb_params.buflen = 11880;
     bt_cb_params.bufptr = 0;
 
     if (bt_cb_params.recv_ref != LUA_NOREF) {
     	luaL_unref(L, LUA_REGISTRYINDEX, bt_cb_params.recv_ref);
     	bt_cb_params.recv_ref = LUA_NOREF;
     }
-    if ((lua_type(L, 2) == LUA_TFUNCTION) || (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
-		lua_pushvalue(L, 2);
+    if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
+		lua_pushvalue(L, 1);
 		bt_cb_params.recv_ref = luaL_ref(L, LUA_REGISTRYINDEX);
     }
 
@@ -476,10 +469,10 @@ static int bt_spp_start(lua_State *L)
 	CCwait = 2000;
 	remote_CCall(&_bt_spp_start);
 	if (g_shell_result < 0) { // no response or error
-		g_shell_result = 1;
 		vm_free(bt_cb_params.recvbuf);
 		bt_cb_params.recvbuf = NULL;
-        lua_pushinteger(L, -1);
+        lua_pushinteger(L, g_shell_result);
+		g_shell_result = 1;
 	}
 	else {
 		g_shell_result = 1;
@@ -495,6 +488,8 @@ static int _bt_off(lua_State *L)
     if (vm_bt_cm_get_power_status() == VM_BT_CM_POWER_ON) {
     	vm_bt_cm_switch_off();
     }
+	g_shell_result = 0;
+	vm_signal_post(g_shell_signal);
 	return 0;
 }
 
@@ -518,12 +513,11 @@ static int _bt_spp_disconnect(lua_State *L)
 	if ((g_btspp_hdl >= 0) && (bt_cb_params.connected) && (bt_cb_params.id >= 0)) {
 		vm_bt_spp_disconnect(bt_cb_params.id);
 	}
-	else {
-		bt_cb_params.connected = 0;
-		bt_cb_params.id = -1;
-		g_shell_result = 0;
-		vm_signal_post(g_shell_signal);
-	}
+	bt_cb_params.connected = 0;
+	bt_cb_params.id = -1;
+	g_shell_result = 0;
+
+	vm_signal_post(g_shell_signal);
 	return 0;
 }
 
