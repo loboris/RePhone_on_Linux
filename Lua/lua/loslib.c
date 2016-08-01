@@ -712,7 +712,7 @@ static int os_retarget (lua_State *L) {
 }
 
 //====================================
-static int os_getchar (lua_State *L) {
+static int _os_getchar (lua_State *L) {
 	int tmo = luaL_checkinteger(L,1);
 
 	unsigned char c;
@@ -720,11 +720,22 @@ static int os_getchar (lua_State *L) {
 	if (res < 0) lua_pushnil(L);
 	else lua_pushinteger(L, c);
 
+	g_shell_result = 0;
+	vm_signal_post(g_shell_signal);
 	return 1;
 }
 
-//======================================
-static int os_getstring (lua_State *L) {
+//====================================
+static int os_getchar (lua_State *L) {
+	int tmo = luaL_checkinteger(L,1);
+
+	CCwait = tmo + 100;
+	remote_CCall(&_os_getchar);
+	return 1;
+}
+
+//=======================================
+static int _os_getstring (lua_State *L) {
 	int count = luaL_checkinteger(L,1);
 	int tmo = luaL_checkinteger(L,2);
 
@@ -737,6 +748,18 @@ static int os_getstring (lua_State *L) {
 	if (res < 0) lua_pushnil(L);
 	else lua_pushstring(L, buf);
 
+	g_shell_result = 0;
+	vm_signal_post(g_shell_signal);
+	return 1;
+}
+
+//======================================
+static int os_getstring (lua_State *L) {
+	int count = luaL_checkinteger(L,1);
+	int tmo = luaL_checkinteger(L,2);
+
+	CCwait = tmo + 100;
+	remote_CCall(&_os_getstring);
 	return 1;
 }
 

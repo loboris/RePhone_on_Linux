@@ -33,6 +33,7 @@ int g_memory_size_b = 0;                  // adjusted heap for C usage
 static void* g_base_address = NULL;       // base address of the lua heap
 
 extern void vm_main();
+extern int retarget_getc();
 
 int __g_errno = 0;
 
@@ -216,17 +217,63 @@ __attribute__((weak)) int retarget_getc()
 extern int _read(int file, char* ptr, int len)
 {
     if(file < 3) {
-        int i;
-        for(i = 0; i < len; i++) {
-            *ptr = retarget_getc();
-            ptr++;
+        int i, ch;
+        //printf("requested: %d\n", len);
+        i = 0;
+        while (i < len) {
+            ch = retarget_getc(stdin);
+            if (ch >= 0) {
+                //printf("Read: %d\n", *ptr);
+                /* backspace key */
+                if (ch == 0x7f || ch == 0x08) {
+                    if (i > 0) {
+                        fputs("\x08 \x08", stdout);
+                        fflush(stdout);
+                        i--;
+                        ptr--;
+                    }
+                    continue;
+                }
+                // EOF(ctrl+d)
+                else if (ch == 0x04) break;
+                // end of line
+                if (ch == '\r') ch = '\n';
+                if (ch == '\n') {
+                	*ptr++ = ch;
+                	i++;
+                	break;
+                }
+                // other control character or not an acsii character
+                if (ch < 0x20 || ch >= 0x80) continue;
+
+                // echo
+    			fputc(ch, stdout);
+    			fflush(stdout);
+            	*ptr++ = ch;
+            	i++;
+            }
+            /*
+            g_fcall_message.message_id = CCALL_MESSAGE_GETCHAR;
+            g_CCparams.cpar1 = ptr;
+            g_CCparams.ipar1 = 0;
+            vm_thread_send_message(g_main_handle, &g_fcall_message);
+            // wait for call to finish...
+            vm_signal_wait(g_shell_signal);
+            if (g_CCparams.ipar1 >= 0) {
+                printf("Read: %d\n", *ptr);
+            	i++;
+            	if ((*ptr == '\n') || (*ptr == '\r')) break;
+            	ptr++;
+            }
+            */
         }
-        return len;
-    } else {
-        /*int read_bytes = len;
-        int bytes;
-        bytes = vm_fs_read(file, ptr, len, &read_bytes);
-        return bytes;*/
+        for (int j=0; j<i; j++) {
+            fputs("\x08 \x08", stdout);
+        }
+        fflush(stdout);
+        return i;
+    }
+    else {
         g_fcall_message.message_id = CCALL_MESSAGE_FREAD;
         g_CCparams.ipar1 = file;
         g_CCparams.ipar2 = len;

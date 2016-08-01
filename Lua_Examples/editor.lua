@@ -82,7 +82,6 @@ function ShowHelp()
 end
 
 
-
 function ModifyLine(linenum, cmd)
   if (cmd:sub(1,1) == string.sub('?',1,1)) then
     term.clrscr()
@@ -121,14 +120,12 @@ function ModifyLine(linenum, cmd)
 end
 
 
-
 function ShowErrorAndWait(errmsg)
   MoveToLineAndPrint(LINE_ERROR_DISPLAY, errmsg)
   repeat
     c = term.getchar(term.WAIT)
   until (c == term.KC_ENTER)
 end
-
 
 
 function ShowStatus(statusmsg)
@@ -139,7 +136,6 @@ function ShowStatus(statusmsg)
     prevstatusmsg = statusmsg
   end
 end
-
 
 
 function LoadFile(filepath)
@@ -196,22 +192,11 @@ function DisplayFile(firstline)
 end
 
 
-
-
 function MoveToLineAndPrint(linenum, str)
   term.moveto(1, linenum)
   term.clreol()
   term.print(str)
 end
-
-
-
-
-
-
-
-
-
 
 
 function GetCmd()
@@ -252,11 +237,15 @@ function GetCmd()
 
       elseif (c == CMD_GOTO) then
       MoveToLineAndPrint(LINE_CMD, "Line: ")
-      firstline = io.read("*n")
-      if (firstline > #lines - (LINES_IN_DISPLAY+1)) then
-        firstline = #lines - LINES_IN_DISPLAY + 1
+      firstline = tonumber(io.read("*l"))
+      if firstline ~= nil then
+        if (firstline > #lines - (LINES_IN_DISPLAY+1)) then
+            firstline = #lines - LINES_IN_DISPLAY + 1
+        end
+        if (firstline < 1) then firstline = 1 end
+      else
+          firstline = 1
       end
-      if (firstline < 1) then firstline = 1 end
       DisplayFile(firstline)
       
     elseif (c == CMD_INSERT) then
@@ -299,8 +288,10 @@ function GetCmd()
       if (#lines == 0) then
         ShowErrorAndWait("File is empty!")
       else
-        MoveToLineAndPrint(LINE_CMD, "Lines (start stop): ")
-        start, stop = io.read("*number", "*number")
+        MoveToLineAndPrint(LINE_CMD, "Lines start: ")
+        start = tonumber(io.read("*l"))
+        MoveToLineAndPrint(LINE_CMD, "Lines stop: ")
+        stop = tonumber(io.read("*l"))
         if (start ~= nil) then
           if (stop == nil) then
             stop = start
@@ -398,8 +389,10 @@ function GetCmd()
       if (#lines == 0) then
         ShowErrorAndWait("File is empty!")
       else
-        MoveToLineAndPrint(LINE_CMD, "Lines (start stop): ")
-        start, stop = io.read("*number", "*number")
+        MoveToLineAndPrint(LINE_CMD, "Lines start: ")
+        start = tonumber(io.read("*l"))
+        MoveToLineAndPrint(LINE_CMD, "Lines stop: ")
+        stop = tonumber(io.read("*l"))
         if (start ~= nil) then
           if (stop == nil) then
             stop = start
@@ -521,12 +514,14 @@ function GetCmd()
   until (done == 1)
 end
 
-done = 0
-if (#arg >= 1) then
-  LoadFile(arg[1])
-  filepath = arg[1]
+
+function Edit(fname)
+    LoadFile(fname)
+    filepath = ""
+    DisplayFile(1)
+    GetCmd()
 end
-DisplayFile(1)
-GetCmd()
+
+done = 0
 print()
 

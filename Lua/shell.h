@@ -39,6 +39,7 @@
 #define CCALL_MESSAGE_FWRITE    342
 #define CCALL_MESSAGE_FCHECK    344
 #define CCALL_MESSAGE_LCDWR     346
+#define CCALL_MESSAGE_GETCHAR   348
 #define CB_MESSAGE_ID		    400
 
 typedef struct {
