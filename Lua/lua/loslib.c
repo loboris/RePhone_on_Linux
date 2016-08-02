@@ -36,7 +36,7 @@
 #include "vmtimer.h"
 #include "vmusb.h"
 
-//#define USE_YMODEM
+#define USE_YMODEM
 
 #if defined USE_YMODEM
 #include "ymodem.h"
@@ -50,9 +50,9 @@
 
 #define MAX_SYSTEM_PARAMS_SIZE	1020
 
+extern int use_term_input;
 extern void retarget_putc(char ch);
-extern int retarget_waitc(unsigned char *c, int timeout);
-extern int retarget_waitchars(unsigned char *buf, int *count, int timeout);
+extern int retarget_getc(int tmo);
 extern void _scheduled_startup(void);
 
 extern int retarget_target;
@@ -712,55 +712,35 @@ static int os_retarget (lua_State *L) {
 }
 
 //====================================
-static int _os_getchar (lua_State *L) {
-	int tmo = luaL_checkinteger(L,1);
-
-	unsigned char c;
-	int res = retarget_waitc(&c, tmo);
-	if (res < 0) lua_pushnil(L);
-	else lua_pushinteger(L, c);
-
-	g_shell_result = 0;
-	vm_signal_post(g_shell_signal);
-	return 1;
-}
-
-//====================================
 static int os_getchar (lua_State *L) {
+	int ch;
 	int tmo = luaL_checkinteger(L,1);
+	if (tmo < 0) tmo =1;
 
-	CCwait = tmo + 100;
-	remote_CCall(&_os_getchar);
-	return 1;
-}
+	ch = retarget_getc(tmo);
+	if (ch < 0) lua_pushnil(L);
+	else lua_pushinteger(L, ch);
 
-//=======================================
-static int _os_getstring (lua_State *L) {
-	int count = luaL_checkinteger(L,1);
-	int tmo = luaL_checkinteger(L,2);
-
-	if (count > 256) count = 256;
-	if (count < 1) count = 1;
-
-	unsigned char buf[256] = {0};
-
-	int res = retarget_waitchars(buf, &count, tmo);
-	if (res < 0) lua_pushnil(L);
-	else lua_pushstring(L, buf);
-
-	g_shell_result = 0;
-	vm_signal_post(g_shell_signal);
 	return 1;
 }
 
 //======================================
 static int os_getstring (lua_State *L) {
+    luaL_Buffer b;
+    int i, ch;
 	int count = luaL_checkinteger(L,1);
 	int tmo = luaL_checkinteger(L,2);
+	if (count < 1) count = 1;
 
-	CCwait = tmo + 100;
-	remote_CCall(&_os_getstring);
-	return 1;
+	luaL_buffinit(L, &b);
+	for (i=0; i<count; i++) {
+		ch = retarget_getc(tmo);
+		if (ch < 0) break;
+		luaL_addchar(&b, ch);
+	}
+    luaL_pushresult(&b);
+
+    return 1;
 }
 
 //====================================
@@ -1239,6 +1219,14 @@ static int get_params(lua_State *L)
 	return 1;
 }
 
+//=====================================
+static int set_term_input(lua_State *L)
+{
+	use_term_input = luaL_checkinteger(L, 1) & 0x01;
+
+	return 0;
+}
+
 //===================================
 static int sys_random( lua_State* L )
 {
@@ -1271,13 +1259,23 @@ static int sys_random( lua_State* L )
 
 #if defined USE_YMODEM
 
-//===================================
-static int _file_recv( lua_State* L )
+//-------------------------------
+int _fs_free_space( lua_State* L)
+{
+	g_shell_result = vm_fs_get_disk_free_space(vm_fs_get_internal_drive_letter())-(1024*10);
+	vm_signal_post(g_shell_signal);
+	return 0;
+}
+
+//==================================
+static int file_recv( lua_State* L )
 {
   int fsize = 0;
   unsigned char c, gnm;
   char fnm[64];
-  unsigned int max_len = vm_fs_get_disk_free_space(vm_fs_get_internal_drive_letter())-(1024*10);
+
+  remote_CCall(&_fs_free_space);
+  unsigned int max_len = g_shell_result-(1024*10);
 
   gnm = 0;
   if (lua_gettop(L) == 1 && lua_type( L, 1 ) == LUA_TSTRING) {
@@ -1289,21 +1287,21 @@ static int _file_recv( lua_State* L )
   }
   if (gnm == 0) memset(fnm, 0x00, 64);
 
-  lua_log_printf(0, NULL, 0, "Start Ymodem file transfer, max size: %d", max_len);
+  while (retarget_getc(0) >= 0) {};
 
-  while (retarget_waitc(&c, 10) == 0) {};
+  vm_log_info("Start Ymodem file transfer, max size: %d", max_len);
 
   fsize = Ymodem_Receive(fnm, max_len, gnm);
 
-  while (retarget_waitc(&c, 10) == 0) {};
+  while (retarget_getc(0) >= 0) {};
 
-  if (fsize > 0) printf("\r\nReceived successfully, %d\r\n",fsize);
-  else if (fsize == -1) printf("\r\nFile write error!\r\n");
-  else if (fsize == -2) printf("\r\nFile open error!\r\n");
-  else if (fsize == -3) printf("\r\nAborted.\r\n");
-  else if (fsize == -4) printf("\r\nFile size too big, aborted.\r\n");
-  else if (fsize == -5) printf("\r\nWrong file name or file exists!\r\n");
-  else printf("\r\nReceive failed!\r\n");
+  if (fsize > 0) printf("\nReceived successfully, %d\n",fsize);
+  else if (fsize == -1) printf("\nFile write error!\n");
+  else if (fsize == -2) printf("\nFile open error!\n");
+  else if (fsize == -3) printf("\nAborted.\n");
+  else if (fsize == -4) printf("\nFile size too big, aborted.\n");
+  else if (fsize == -5) printf("\nWrong file name or file exists!\n");
+  else printf("\nReceive failed!\n");
 
   g_shell_result = 0;
   vm_signal_post(g_shell_signal);
@@ -1311,13 +1309,7 @@ static int _file_recv( lua_State* L )
 }
 
 //==================================
-static int file_recv( lua_State* L )
-	remote_CCall(&_file_recv);
-	return g_shell_result;
-}
-
-//===================================
-static int _file_send( lua_State* L )
+static int file_send( lua_State* L )
 {
   char res = 0;
   char newname = 0;
@@ -1344,40 +1336,45 @@ static int _file_send( lua_State* L )
   }
 
   // Get file size
-  if (vm_fs_get_size(ffd, &fsize) < 0) {
-    vm_fs_close(ffd);
+  fsize = file_size(ffd);
+  if (fsize < 0) {
+    file_close(ffd);
     l_message(NULL,"Error opening file.");
     goto exit;
   }
 
+  printf("Sending '%s' (%d bytes)", fname, fsize);
   if (newname == 1) {
-    printf("Sending '%s' as '%s'\r\n", fname, newfname);
+    printf(" as '%s'\n", newfname);
     strcpy(filename, newfname);
   }
-  else strcpy(filename, fname);
+  else {
+	  printf("\n");
+	  strcpy(filename, fname);
+  }
 
   l_message(NULL,"Start Ymodem file transfer...");
 
-  while (retarget_waitc(&c, 10) == 0) {};
+  while (retarget_getc(0) >= 0) {};
 
   res = Ymodem_Transmit(filename, fsize, ffd);
 
   vm_thread_sleep(500);
-  while (retarget_waitc(&c, 10) == 0) {};
+  while (retarget_getc(0) >= 0) {};
 
-  vm_fs_close(ffd);
+  file_close(ffd);
 
   if (res == 0) {
-    l_message(NULL,"\r\nFile sent successfuly.");
+    l_message(NULL,"\nFile sent successfuly.");
   }
   else if (res == 99) {
-    l_message(NULL,"\r\nNo response.");
+    l_message(NULL,"\nNo response.");
   }
   else if (res == 98) {
-    l_message(NULL,"\r\nAborted.");
+    l_message(NULL,"\nAborted.");
   }
   else {
-    l_message(NULL,"\r\nError sending file.");
+    l_message(NULL,"\nError sending file.");
   }
 
 exit:
@@ -1386,11 +1383,6 @@ exit:
   return 0;
 }
 
-//==================================
-static int file_send( lua_State* L )
-	remote_CCall(&_file_send);
-	return g_shell_result;
-}
 
 #endif
 
@@ -1419,6 +1411,7 @@ const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("rmdir"),    	LFUNCVAL(os_rmdir)},
   {LSTRKEY("list"),     	LFUNCVAL(os_listfiles)},
   {LSTRKEY("compile"),		LFUNCVAL(os_compile)},
+  {LSTRKEY("terminput"),	LFUNCVAL(set_term_input)},
 #if defined USE_YMODEM
   {LSTRKEY("yrecv"),    	LFUNCVAL(file_recv)},
   {LSTRKEY("ysend"),    	LFUNCVAL(file_send)},

@@ -11,8 +11,8 @@
 // Terminal input mode (parameter of term_in and term_getch())
 #define TERM_INPUT_DONT_WAIT	0
 #define TERM_INPUT_WAIT			1
-#define TERM_TIMEOUT			60000
-#define TERM_TIMEOUT_NOWAIT		120000
+#define TERM_TIMEOUT			120
+#define TERM_TIMEOUT_NOWAIT		0
 
 // Maximum size on an ANSI sequence
 #define TERM_MAX_ANSI_SIZE        14
@@ -20,6 +20,8 @@
 // ****************************************************************************
 // Exported functions
 
+unsigned term_num_lines;
+unsigned term_num_cols;
 
 // Terminal output functions
 void term_clrscr(void);
@@ -57,6 +59,7 @@ unsigned term_get_cy(void);
   _D( KC_CTRL_U ),\
   _D( KC_CTRL_K ),\
   _D( KC_DEL ),\
+  _D( KC_INS ),\
   _D( KC_UNKNOWN )
   
 // Terminal input functions

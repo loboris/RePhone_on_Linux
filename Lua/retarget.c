@@ -26,9 +26,9 @@ VM_SIGNAL_ID retarget_rx_signal_id;
 
 extern int sys_wdt_rst_time;
 extern int no_activity_time;
-extern void _reset_wdg(void);
 extern cb_func_param_bt_t bt_cb_params;
 extern int g_usb_status;			// status of the USB cable connection
+
 int uart_tmo[2] = {-1, -1};
 
 VMUINT8 uart_has_userdata[2] = {0,0};
@@ -61,25 +61,36 @@ void retarget_write(const char *str, unsigned int len)
     else if ((bt_cb_params.connected) && (retarget_target == -1000)) vm_bt_spp_write(bt_cb_params.id, (char *)str, len);
 }
 
-// !!this runs from lua tty thread!!
-//---------------------
-int retarget_getc(void)
+// !!this may run from lua tty thread!!
+// wait for character while timeout expires
+//------------------------
+int retarget_getc(int tmo)
 {
+	int n = 0;
 	vm_mutex_lock(&retarget_rx_mutex);
 	while (retarget_rx_buffer_head == retarget_rx_buffer_tail) {
 		vm_mutex_unlock(&retarget_rx_mutex);
-		// wait 1 second for character
+		if (tmo == 0) return -1;
+
+		// wait 1 seconds for character
 		vm_signal_timed_wait(retarget_rx_signal_id, 1000);
 		vm_mutex_lock(&retarget_rx_mutex);
 
 		if (retarget_rx_buffer_head == retarget_rx_buffer_tail) {
+			// no char
+			n++;
 			sys_wdt_rst_time = 0;	// wdg reset
 			no_activity_time++;		// increase no activity counter
+			if (n >= tmo) {
+				vm_mutex_unlock(&retarget_rx_mutex);
+				return -1;
+			}
 		}
-		else break;
+		else break; // got char
 	}
 
-    char ch = retarget_rx_buffer[retarget_rx_buffer_tail % SERIAL_BUFFER_SIZE];
+	// get one char from buffer
+    unsigned char ch = retarget_rx_buffer[retarget_rx_buffer_tail % SERIAL_BUFFER_SIZE];
 	retarget_rx_buffer_tail++;
 
 	vm_mutex_unlock(&retarget_rx_mutex);
@@ -88,6 +99,7 @@ int retarget_getc(void)
 	return ch;
 }
 
+/*
 // wait for multiple character on serial port
 //-----------------------------------------------------------------
 int retarget_waitchars(unsigned char *buf, int *count, int timeout)
@@ -126,7 +138,7 @@ int retarget_waitc(unsigned char *c, int timeout)
 	int count = 1;
 	return retarget_waitchars(c, &count, timeout);
 }
-
+*/
 //-------------------
 void _uart_cb(int id)
 {

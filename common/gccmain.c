@@ -33,7 +33,7 @@ int g_memory_size_b = 0;                  // adjusted heap for C usage
 static void* g_base_address = NULL;       // base address of the lua heap
 
 extern void vm_main();
-extern int retarget_getc();
+extern int retarget_getc(int tmo);
 
 int __g_errno = 0;
 
@@ -107,9 +107,7 @@ extern int link(char* old_name, char* new_name)
 //----------------------------------------------
 int _open(const char* file, int flags, int mode)
 {
-    //int result;
     VMUINT fs_mode;
-    //VMWCHAR wfile_name[64];
     char file_name[64];
     char* ptr;
 
@@ -132,8 +130,6 @@ int _open(const char* file, int flags, int mode)
         fs_mode |= VM_FS_MODE_APPEND;
     }
 
-    //vm_chset_ascii_to_ucs2(wfile_name, 64, ptr);
-    //result = vm_fs_open(wfile_name, fs_mode, 0);
     g_fcall_message.message_id = CCALL_MESSAGE_FOPEN;
     g_CCparams.cpar1 = ptr;
     g_CCparams.ipar1 = fs_mode;
@@ -207,8 +203,8 @@ extern int _lseek(int file, int offset, int whence)
     return g_shell_result;
 }
 
-//---------------------------------------
-__attribute__((weak)) int retarget_getc()
+//----------------------------------------------
+__attribute__((weak)) int retarget_getc(int tmo)
 {
     return 0;
 }
@@ -218,13 +214,11 @@ extern int _read(int file, char* ptr, int len)
 {
     if(file < 3) {
         int i, ch;
-        //printf("requested: %d\n", len);
         i = 0;
         while (i < len) {
-            ch = retarget_getc(stdin);
+            ch = retarget_getc(0);
             if (ch >= 0) {
-                //printf("Read: %d\n", *ptr);
-                /* backspace key */
+                // backspace key
                 if (ch == 0x7f || ch == 0x08) {
                     if (i > 0) {
                         fputs("\x08 \x08", stdout);
@@ -252,20 +246,7 @@ extern int _read(int file, char* ptr, int len)
             	*ptr++ = ch;
             	i++;
             }
-            /*
-            g_fcall_message.message_id = CCALL_MESSAGE_GETCHAR;
-            g_CCparams.cpar1 = ptr;
-            g_CCparams.ipar1 = 0;
-            vm_thread_send_message(g_main_handle, &g_fcall_message);
-            // wait for call to finish...
-            vm_signal_wait(g_shell_signal);
-            if (g_CCparams.ipar1 >= 0) {
-                printf("Read: %d\n", *ptr);
-            	i++;
-            	if ((*ptr == '\n') || (*ptr == '\r')) break;
-            	ptr++;
-            }
-            */
+            else vm_thread_sleep(10);
         }
         for (int j=0; j<i; j++) {
             fputs("\x08 \x08", stdout);

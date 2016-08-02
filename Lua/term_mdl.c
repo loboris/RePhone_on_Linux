@@ -86,6 +86,25 @@ static int luaterm_getcols( lua_State* L )
   return 1;
 }
 
+// Lua: lines = setlines()
+static int luaterm_setlines( lua_State* L )
+{
+  int nlin = luaL_checkinteger(L, 1);
+  if ((nlin > 0) && (nlin < 128)) term_num_lines = nlin;
+
+  lua_pushinteger( L, term_get_lines() );
+  return 1;
+}
+
+// Lua: columns = setcols()
+static int luaterm_setcols( lua_State* L )
+{
+  int ncol = luaL_checkinteger(L, 1);
+  if ((ncol > 0) && (ncol < LUA_MAXINPUT)) term_num_cols = ncol;
+  lua_pushinteger( L, term_get_cols() );
+  return 1;
+}
+
 // Lua: print( string1, string2, ... )
 // or print( x, y, string1, string2, ... )
 static int luaterm_print( lua_State* L )
@@ -129,29 +148,22 @@ static int luaterm_getcy( lua_State* L )
 
 // Lua: key = getchar( [ mode ] )
 //========================================
-static int _luaterm_getchar( lua_State* L )
-{
-  int temp = TERM_INPUT_WAIT;
-
-  if ( lua_isnumber( L, 1 ) ) temp = lua_tointeger( L, 1 );
-
-  lua_pushinteger( L, term_getch( temp ) );
-
-  g_shell_result = 0;
-  vm_signal_post(g_shell_signal);
-  return 1;
-}
-
-//========================================
 static int luaterm_getchar( lua_State* L )
 {
   int temp = TERM_INPUT_WAIT;
-  if ( lua_isnumber( L, 1 ) ) temp = lua_tointeger( L, 1 );
-  
-  if (temp == TERM_INPUT_WAIT) CCwait = TERM_TIMEOUT_NOWAIT;
-  remote_CCall(&_luaterm_getchar);
+
+  if ( lua_isnumber( L, 1 ) ) {
+	  temp = lua_tointeger( L, 1 );
+	  if (temp == 0) temp = TERM_INPUT_DONT_WAIT;
+  }
+
+  lua_pushinteger( L, term_getch( temp ) );
+
+  //g_shell_result = 0;
+  //vm_signal_post(g_shell_signal);
   return 1;
 }
+
 
 // Key codes by name
 #undef _D
@@ -193,6 +205,8 @@ const LUA_REG_TYPE term_map[] =
   { LSTRKEY( "moveright" ), LFUNCVAL( luaterm_moveright ) },
   { LSTRKEY( "getlines" ), LFUNCVAL( luaterm_getlines ) },
   { LSTRKEY( "getcols" ), LFUNCVAL( luaterm_getcols ) },
+  { LSTRKEY( "setlines" ), LFUNCVAL( luaterm_setlines ) },
+  { LSTRKEY( "setcols" ), LFUNCVAL( luaterm_setcols ) },
   { LSTRKEY( "print" ), LFUNCVAL( luaterm_print ) },
   { LSTRKEY( "getcx" ), LFUNCVAL( luaterm_getcx ) },
   { LSTRKEY( "getcy" ), LFUNCVAL( luaterm_getcy ) },

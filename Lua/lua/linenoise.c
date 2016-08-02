@@ -71,29 +71,30 @@
  * 
  */
 
-#include <stdio.h>
-
 #include "linenoise.h"
-
-#ifdef BUILD_LINENOISE
-
+#include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
 #include <string.h>
 #include <ctype.h>
+
 #include "term.h"
-#include "platform_conf.h"
 
 #define LINENOISE_CTRL_C                    ( -2 )
 #define LINENOISE_PUSH_EMPTY                1
 #define LINENOISE_DONT_PUSH_EMPTY           0
+#define TERM_INPUT_DONT_WAIT	0
+#define TERM_INPUT_WAIT			1
 
+int use_term_input = 0;
+
+#ifdef LINENOISE_HISTORY
 static const int history_max_lengths[ LINENOISE_TOTAL_COMPONENTS ] = { LINENOISE_HISTORY_SIZE_LUA, LINENOISE_HISTORY_SIZE_SHELL };
 static int history_lengths[ LINENOISE_TOTAL_COMPONENTS ];
 static char **histories[ LINENOISE_TOTAL_COMPONENTS ];
 
 static int linenoise_internal_addhistory( int id, const char *line, int force_empty );
 
+//------------------------------
 void linenoise_cleanup( int id ) 
 {
   int j;
@@ -116,13 +117,17 @@ void linenoise_cleanup( int id )
   }
   history_lengths[ id ] = 0;   
 }
+#endif
 
 #define MAX_SEQ_LEN           16
-static void refreshLine(const char *prompt, char *buf, size_t len, size_t pos, size_t cols) {
+
+//-----------------------------------------------------------------------------------------
+static void refreshLine(const char *prompt, char *buf, size_t len, size_t pos, size_t cols)
+{
     char seq[MAX_SEQ_LEN];
     size_t plen = strlen(prompt);
     
-    while((plen+pos) >= cols) {
+    while ((plen+pos) >= cols) {
         buf++;
         len--;
         pos--;
@@ -145,39 +150,45 @@ static void refreshLine(const char *prompt, char *buf, size_t len, size_t pos, s
     term_putstr( seq, strlen( seq ) );
 }
 
-static int linenoisePrompt(int id, char *buf, size_t buflen, const char *prompt) {
+//--------------------------------------------------------------------
+int linenoisePrompt(int id, char *buf, int buflen, const char *prompt)
+{
     size_t plen = strlen(prompt);
     size_t pos = 0;
     size_t len = 0;
-    size_t cols = TERM_COLS;
+    size_t cols = term_num_cols;
     int history_index = 0;
+    int c;
     
     buf[0] = '\0';
     buflen--; /* Make sure there is always space for the nulterm */
 
+#ifdef LINENOISE_HISTORY
     /* The latest history entry is always our current buffer, that
      * initially is just an empty string. */
     linenoise_internal_addhistory( id, "", LINENOISE_PUSH_EMPTY );
+#endif
     
     term_putstr( prompt, plen );
     while(1) {
-        int c;
 
-        c = term_getch( TERM_INPUT_WAIT );
+        c = term_getch(TERM_INPUT_DONT_WAIT);
+        if (c < 0) continue;
         
         switch(c) 
         {
           case KC_ENTER:
           case KC_CTRL_C:
           case KC_CTRL_Z:
+#ifdef LINENOISE_HISTORY
             history_lengths[ id ] --;
             free( histories[ id ][history_lengths[ id ]] );
+#endif
             if( c == KC_CTRL_C )
               return LINENOISE_CTRL_C;
             else if( c == KC_CTRL_Z )
               return -1;
             return len;      
-                        
          case KC_BACKSPACE:
             if (pos > 0 && len > 0) 
             {
@@ -221,6 +232,7 @@ static int linenoisePrompt(int id, char *buf, size_t buflen, const char *prompt)
                 
        case KC_UP:
        case KC_DOWN:
+#ifdef LINENOISE_HISTORY
             /* up and down arrow: history */
             if (history_lengths[ id ] > 1) 
             {
@@ -244,8 +256,8 @@ static int linenoisePrompt(int id, char *buf, size_t buflen, const char *prompt)
               len = pos = strlen(buf);
               refreshLine(prompt,buf,len,pos,cols);
             }
+#endif
             break;
-                
         case KC_DEL:           
             /* delete */
             if (len > 0 && pos < len) 
@@ -316,7 +328,9 @@ static int linenoisePrompt(int id, char *buf, size_t buflen, const char *prompt)
     return len;
 }
 
-int linenoise_getline( int id, char* buffer, int maxinput, const char* prompt )
+#ifdef LINENOISE_HISTORY
+//------------------------------------------------------------------------------
+int _linenoise_getline( int id, char* buffer, int maxinput, const char* prompt )
 {
   int count;
   
@@ -409,84 +423,7 @@ int linenoise_savehistory( int id, const char *filename )
   fclose( fp );
   return 0;
 }
-
-#else // #ifdef BUILD_LINENOISE
-
-#include <stdio.h>
-#include <string.h>
-
-extern int retarget_getc();
-
-// !!this runs from lua thread!!
-//--------------------------------------------------------------------------------
-int linenoise_getline( int id, char* buffer, int buffer_size, const char* prompt )
-{
-    int ch = 0;
-    int line_position = 0;
-
-start:
-    /* show prompt */
-	fputs(prompt, stdout);
-	fflush(stdout);
-
-	while (1) {
-        ch = retarget_getc(stdin);
-        if (ch >= 0) {
-            /* backspace key */
-            if (ch == 0x7f || ch == 0x08) {
-                if (line_position > 0) {
-                    fputs("\x08 \x08", stdout);
-                    fflush(stdout);
-                    line_position--;
-                }
-                buffer[line_position] = 0;
-                continue;
-            }
-            /* EOF(ctrl+d) */
-            else if (ch == 0x04) {
-                if (line_position == 0)
-                    /* No input which makes lua interpreter close */
-                    return 0;
-                else
-                    continue;
-            }
-
-            /* end of line */
-            if (ch == '\r' || ch == '\n') {
-                buffer[line_position] = 0;
-
-				fputc('\n', stdout);
-				fflush(stdout);
-				if (line_position == 0)	{
-					/* Get a empty line, then go to get a new line */
-					goto start;
-				}
-				else {
-					return line_position;
-				}
-            }
-
-            /* other control character or not an acsii character */
-            if (ch < 0x20 || ch >= 0x80) continue;
-
-            /* echo */
-			fputc(ch, stdout);
-			fflush(stdout);
-
-			buffer[line_position] = ch;
-            ch = 1;
-            line_position++;
-            buffer[line_position] = '\0';
-
-            /* it's a large line, discard it */
-            if (line_position >= buffer_size) {
-            	line_position = 0;
-                memset(buffer, 0, buffer_size);
-            }
-       }
-    }
-}
-
+#else
 int linenoise_addhistory( int id, const char *line )
 {
   return 0;
@@ -500,5 +437,83 @@ int linenoise_savehistory( int id, const char *filename )
 {
   return -1;
 }
+#endif
 
-#endif // #ifdef BUILD_LINENOISE
+
+extern int retarget_getc(int tmo);
+
+// !!this runs from lua thread!!
+//--------------------------------------------------------------------------------
+int linenoise_getline( int id, char* buffer, int buffer_size, const char* prompt )
+{
+	if (use_term_input) {
+		return linenoisePrompt(id, buffer, buffer_size, prompt);
+	}
+
+    int ch = 0;
+    int line_position = 0;
+
+start:
+    /* show prompt */
+	fputs(prompt, stdout);
+	fflush(stdout);
+
+	while (1) {
+        ch = retarget_getc(10);
+        if (ch < 0) continue;
+
+		/* backspace key */
+		if (ch == 0x7f || ch == 0x08) {
+			if (line_position > 0) {
+				fputs("\x08 \x08", stdout);
+				fflush(stdout);
+				line_position--;
+			}
+			buffer[line_position] = 0;
+			continue;
+		}
+		/* EOF(ctrl+d) */
+		else if (ch == 0x04) {
+			if (line_position == 0)
+				/* No input which makes lua interpreter close */
+				return 0;
+			else
+				continue;
+		}
+
+		/* end of line */
+		if (ch == '\r' || ch == '\n') {
+			buffer[line_position] = 0;
+
+			fputc('\n', stdout);
+			fflush(stdout);
+			if (line_position == 0)	{
+				/* Get a empty line, then go to get a new line */
+				goto start;
+			}
+			else {
+				return line_position;
+			}
+		}
+
+		/* other control character or not an acsii character */
+		if (ch < 0x20 || ch >= 0x80) continue;
+
+		/* echo */
+		fputc(ch, stdout);
+		fflush(stdout);
+
+		buffer[line_position] = ch;
+		ch = 1;
+		line_position++;
+		buffer[line_position] = '\0';
+
+		/* it's a large line, discard it */
+		if (line_position >= buffer_size) {
+			line_position = 0;
+			memset(buffer, 0, buffer_size);
+		}
+    }
+}
+
+//#endif // #ifdef BUILD_LINENOISE

@@ -38,11 +38,14 @@
 #define LINENOISE_HISTORY_NOT_ENABLED ( -2 ) 
 #define LINENOISE_HISTORY_EMPTY       ( -3 )
 
-// Components that use linenoise in eLua
-#define LINENOISE_ID_LUA            0
-#define LINENOISE_ID_SHELL          1  
-#define LINENOISE_TOTAL_COMPONENTS  2
+// Components that use linenoise in Lua
+#define LINENOISE_ID_LUA				0
+#define LINENOISE_ID_SHELL				1
+#define LINENOISE_TOTAL_COMPONENTS		2
+#define LINENOISE_HISTORY_SIZE_LUA		20
+#define LINENOISE_HISTORY_SIZE_SHELL	20
 
+int linenoisePrompt(int id, char *buf, int buflen, const char *prompt);
 int linenoise_getline( int id, char* buffer, int maxinput, const char* prompt );
 int linenoise_addhistory( int id, const char *line );
 void linenoise_cleanup( int id );

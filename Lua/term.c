@@ -7,12 +7,13 @@
 #include <ctype.h>
 
 extern void retarget_putc(char ch);
-extern int retarget_waitc(unsigned char *c, int timeout);
 extern void retarget_write(const char *str, unsigned int len);
+extern int retarget_getc(int tmo);
+
+unsigned term_num_lines = 25;
+unsigned term_num_cols = 80;
 
 // Local variables
-static unsigned term_num_lines = 25;
-static unsigned term_num_cols = 80;
 static unsigned term_cx = 0;
 static unsigned term_cy = 0;
 static unsigned int skip_0A = 0;
@@ -26,113 +27,6 @@ static void term_out( unsigned char data )
 	retarget_putc(data);
 }
 
-/*
-//----------------------------
-static int term_in( int mode )
-{
-  unsigned char c;
-  int res;
-  do {
-    if ( mode == TERM_INPUT_DONT_WAIT ) res = retarget_waitc(&c, 1);
-    else res = retarget_waitc(&c, 600000);
-
-    // CR/LF sequence, skip the second char (LF) if applicable
-    if ( skip_0A > 0 ) {
-      skip_0A = 0;
-      if ( c == 0x0A )
-        continue;
-    }
-    break;
-  } while( TRUE );
-  if (res >= 0) res = c;
-  return res;
-}
-
-//------------------------------------
-static int term_translate( int data )
-{
-  unsigned char c, c2;
-  int res;
-
-  if ( isprint( data ) ) return data;
-
-  else if( data == 0x1B ) // escape sequence
-  {
-    // If we don't get a second char, we got a simple "ESC", so return KC_ESC
-    // If we get a second char it must be '[', the next one is relevant for us
-    if ( retarget_waitc(&c, TERM_TIMEOUT) == -1 )
-      return KC_ESC;
-
-    if ( ( retarget_waitc(&c, TERM_TIMEOUT) ) == -1 ) return KC_UNKNOWN;
-
-    if ( c >= 0x41 && c <= 0x44 )
-      switch( c )
-      {
-        case 0x41:
-          return KC_UP;
-        case 0x42:
-          return KC_DOWN;
-        case 0x43:
-          return KC_RIGHT;
-        case 0x44:
-          return KC_LEFT;
-      }
-    else if( c > 48 && c < 55 )
-    {
-      // Extended sequence: read another byte
-      res = retarget_waitc(&c2, TERM_TIMEOUT);
-      if ((res < 0) || (c != 126)) return KC_UNKNOWN;
-      switch( c )
-      {
-        case 49:
-          return KC_HOME;
-        case 52:
-          return KC_END;
-        case 53:
-          return KC_PAGEUP;
-        case 54:
-          return KC_PAGEDOWN;
-      }
-    }
-  }
-  else if( data == 0x0D )
-  {
-    skip_0A=1;
-    return KC_ENTER;
-  }
-  else if( data == 0x0A )
-  {
-    return KC_ENTER;
-  }
-  else
-  {
-    switch( data )
-    {
-      case 0x09:
-        return KC_TAB;
-      case 0x7F:
-//        return KC_DEL; // bogdanm: some terminal emulators (for example screen) return 0x7F for BACKSPACE :(
-      case 0x08:
-        return KC_BACKSPACE;
-      case 26:
-        return KC_CTRL_Z;
-      case 1:
-        return KC_CTRL_A;
-      case 5:
-        return KC_CTRL_E;
-      case 3:
-        return KC_CTRL_C;
-      case 20:
-        return KC_CTRL_T;
-      case 21:
-        return KC_CTRL_U;
-      case 11:
-        return KC_CTRL_K;
-    }
-  }
-  return KC_UNKNOWN;
-}
-*/
 
 // Helper function: send the requested string to the terminal
 
@@ -247,6 +141,7 @@ unsigned term_get_cy()
   return term_cy;
 }
 
+
 // Return a char read from the terminal
 // If "mode" is TERM_INPUT_DONT_WAIT, return the char only if it is available,
 // otherwise return -1
@@ -254,41 +149,44 @@ unsigned term_get_cy()
 // to logical key codes (defined in the term.h header)
 int term_getch( int mode )
 {
-  int ch, res;
-  unsigned char c, c2;
+  int ch, ch1;
 
-  // term_in()
+  // === term_in ===
   do {
-    if ( mode == TERM_INPUT_DONT_WAIT ) ch = retarget_waitc(&c, 1);
-    else ch = retarget_waitc(&c, TERM_TIMEOUT_NOWAIT);
+    if ( mode == TERM_INPUT_DONT_WAIT ) ch = retarget_getc(TERM_TIMEOUT_NOWAIT);
+    else ch = retarget_getc(TERM_TIMEOUT);
+    if ( ch < 0 ) return -1;
 
     // CR/LF sequence, skip the second char (LF) if applicable
     if ( skip_0A > 0 ) {
       skip_0A = 0;
-      if ( c == 0x0A )
-        continue;
+      if ( ch == 0x0A ) continue;
     }
     break;
   } while( TRUE );
-  
-  if (ch >= 0) ch = c;
-  else return -1;
 
-  // term_translate()
+  // === term_translate ===
   if ( isprint( ch ) ) return ch;
 
-  else if( ch == 0x1B ) // escape sequence
-  {
+  else if( ch == 0x1B ) {
+	// ** escape sequence **
     // If we don't get a second char, we got a simple "ESC", so return KC_ESC
     // If we get a second char it must be '[', the next one is relevant for us
-    if ( retarget_waitc(&c, TERM_TIMEOUT) == -1 )
-      return KC_ESC;
+	vm_thread_sleep(5);
+  	ch = retarget_getc(TERM_TIMEOUT_NOWAIT);  // get 2nd char
+    if ( ch < 0 ) return KC_ESC;
 
-    if ( ( retarget_waitc(&c, TERM_TIMEOUT) ) == -1 ) return KC_UNKNOWN;
+    if ( ch != 91 ) return KC_UNKNOWN;
 
-    if ( c >= 0x41 && c <= 0x44 )
-      switch( c )
+	vm_thread_sleep(5);
+  	ch = retarget_getc(TERM_TIMEOUT_NOWAIT);  // get next char
+    if ( ch < 0 ) return KC_UNKNOWN;
+
+    if ( (ch >= 0x40) && (ch <= 0x56) )
+      switch( ch )
       {
+      	case 0x40:
+      	  return KC_INS;
         case 0x41:
           return KC_UP;
         case 0x42:
@@ -297,16 +195,33 @@ int term_getch( int mode )
           return KC_RIGHT;
         case 0x44:
           return KC_LEFT;
+        case 0x48:
+          return KC_HOME;
+        case 0x4F: // <esc>OF
+          vm_thread_sleep(5);
+          ch = retarget_getc(TERM_TIMEOUT_NOWAIT);  // get next char
+          if ( ch < 0 ) return KC_UNKNOWN;
+          if (ch == 0x46) return KC_END;
+          else return KC_UNKNOWN;
+        case 0x55:
+          return KC_PAGEDOWN;
+        case 0x56:
+          return KC_PAGEUP;
       }
-    else if( c > 48 && c < 55 )
+    else if( ch > 48 && ch < 55 )
     {
-      // Extended sequence: read another byte
-      res = retarget_waitc(&c2, TERM_TIMEOUT);
-      if ((res < 0) || (c != 126)) return KC_UNKNOWN;
-      switch( c )
+      // Extended sequence: read another byte (<esc>[n~)
+      vm_thread_sleep(5);
+      ch1 = retarget_getc(TERM_TIMEOUT_NOWAIT);
+      if ((ch1 < 0) || (ch1 != 126)) return KC_UNKNOWN;
+      switch( ch )
       {
         case 49:
           return KC_HOME;
+        case 50:
+          return KC_INS;
+        case 51:
+          return KC_DEL;
         case 52:
           return KC_END;
         case 53:
@@ -316,23 +231,20 @@ int term_getch( int mode )
       }
     }
   }
-  else if( ch == 0x0D )
-  {
-    skip_0A=1;
+  else if( ch == 0x0D ) {
+    skip_0A = 1;
     return KC_ENTER;
   }
-  else if( ch == 0x0A )
-  {
+  else if( ch == 0x0A ) {
     return KC_ENTER;
   }
-  else
-  {
+  else {
     switch( ch )
     {
       case 0x09:
         return KC_TAB;
       case 0x7F:
-//        return KC_DEL; // bogdanm: some terminal emulators (for example screen) return 0x7F for BACKSPACE :(
+        return KC_DEL; // bogdanm: some terminal emulators (for example screen) return 0x7F for BACKSPACE :(
       case 0x08:
         return KC_BACKSPACE;
       case 26:

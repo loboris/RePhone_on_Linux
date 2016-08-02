@@ -68,8 +68,6 @@ extern void _uart_cb(int id);
 extern int btspp_tmo;
 extern void _btspp_recv_cb(void);
 extern int _LcdSpiTransfer(uint8_t *buf, int len);
-extern int retarget_waitc(unsigned char *c, int timeout);
-//extern int retarget_waitchars(unsigned char *buf, int *count, int timeout);
 
 
 #define SYS_TIMER_INTERVAL   22		// HISR timer interval in ticks, 22 -> 0.10153 seconds
@@ -412,15 +410,6 @@ static void handle_sysevt(VMINT message, VMINT param)
 			vm_signal_post(g_shell_signal);
             break;
 
-		case CCALL_MESSAGE_GETCHAR: {
-				char c;
-				if (retarget_waitc(&c, 100) >= 0) *params->cpar1 = c;
-				else params->ipar1 = -1;
-				g_shell_result = 0;
-				vm_signal_post(g_shell_signal);
-			}
-			break;
-
 		case CCALL_MESSAGE_FOPEN: {
 			    VMWCHAR ucs_name[64];
 				vm_chset_ascii_to_ucs2(ucs_name, 64, params->cpar1);
@@ -431,6 +420,11 @@ static void handle_sysevt(VMINT message, VMINT param)
 
 		case CCALL_MESSAGE_FCLOSE:
 			g_shell_result = vm_fs_close(params->ipar1);
+			vm_signal_post(g_shell_signal);
+            break;
+
+		case CCALL_MESSAGE_FFLUSH:
+			g_shell_result = vm_fs_flush(params->ipar1);
 			vm_signal_post(g_shell_signal);
             break;
 

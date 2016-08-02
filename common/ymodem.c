@@ -1,5 +1,6 @@
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <fcntl.h>
 
 #include "ymodem.h"
@@ -16,16 +17,13 @@
 
 
 extern void retarget_putc(char ch);
-extern int retarget_waitc(unsigned char *c, int timeout);
-extern int retarget_waitchars(unsigned char *buf, int *count, int timeout);
+extern int retarget_getc(int tmo);
 extern void retarget_write(const char *str, unsigned int len);
 
 //----------------------------------------
 int file_open(const char* file, int flags)
 {
-    int result;
     VMUINT fs_mode;
-    VMWCHAR wfile_name[64];
     char file_name[64];
     char* ptr;
 
@@ -35,8 +33,6 @@ int file_open(const char* file, int flags)
     } else {
         ptr = (char *)file;
     }
-
-    vm_chset_ascii_to_ucs2(wfile_name, 64, ptr);
 
     if(flags & O_CREAT) {
         fs_mode = VM_FS_MODE_CREATE_ALWAYS_WRITE;
@@ -50,8 +46,78 @@ int file_open(const char* file, int flags)
         fs_mode |= VM_FS_MODE_APPEND;
     }
 
-    result = vm_fs_open(wfile_name, fs_mode, VM_TRUE);
-    return result;
+    g_fcall_message.message_id = CCALL_MESSAGE_FOPEN;
+    g_CCparams.cpar1 = ptr;
+    g_CCparams.ipar1 = fs_mode;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+//----------------------
+int file_close(int file)
+{
+    g_fcall_message.message_id = CCALL_MESSAGE_FCLOSE;
+    g_CCparams.ipar1 = file;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+//----------------------
+int file_flush(int file)
+{
+    g_fcall_message.message_id = CCALL_MESSAGE_FFLUSH;
+    g_CCparams.ipar1 = file;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+//---------------------
+int file_size(int file)
+{
+    g_fcall_message.message_id = CCALL_MESSAGE_FSIZE;
+    g_CCparams.ipar1 = file;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+//-----------------------------------------
+int file_read(int file, char* ptr, int len)
+{
+    g_fcall_message.message_id = CCALL_MESSAGE_FREAD;
+    g_CCparams.ipar1 = file;
+    g_CCparams.ipar2 = len;
+    g_CCparams.cpar1 = ptr;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+//------------------------------------------
+int file_write(int file, char* ptr, int len)
+{
+    g_fcall_message.message_id = CCALL_MESSAGE_FWRITE;
+    g_CCparams.ipar1 = file;
+    g_CCparams.ipar2 = len;
+    g_CCparams.cpar1 = ptr;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
 }
 
 
@@ -87,7 +153,10 @@ static unsigned short crc16(const unsigned char *buf, unsigned long count)
 //--------------------------------------------------------------
 static int32_t Receive_Byte (unsigned char *c, uint32_t timeout)
 {
-  return retarget_waitc(c, timeout);
+  int ch = retarget_getc(timeout/1000);
+  if (ch < 0) return -1;
+  *c = (unsigned char)ch;
+  return 0;
 }
 
 //-----------------------------------
@@ -122,13 +191,14 @@ static void send_CA ( void ) {
 //--------------------------------------------------------------------------
 static int32_t Receive_Packet (uint8_t *data, int *length, uint32_t timeout)
 {
-  int count, packet_size;
-  uint8_t c;
+  int count, packet_size, i, ch;
   *length = 0;
   
-  if (Receive_Byte(&c, timeout) != 0) return -1;
+  // receive 1st byte
+  ch = retarget_getc(timeout/1000);
+  if (ch < 0) return -1;
 
-  switch (c) {
+  switch (ch) {
     case SOH:
       packet_size = PACKET_SIZE;
       break;
@@ -138,7 +208,9 @@ static int32_t Receive_Packet (uint8_t *data, int *length, uint32_t timeout)
     case EOT:
       return 0;
     case CA:
-      if ((Receive_Byte(&c, timeout) == 0) && (c == CA)) {
+   	  ch = retarget_getc(timeout/1000);
+   	  if (ch < 0) return -1;
+      if (ch == CA) {
         *length = -1;
         return 0;
       }
@@ -150,9 +222,15 @@ static int32_t Receive_Packet (uint8_t *data, int *length, uint32_t timeout)
       return -1;
   }
 
-  *data = c;
+  *data = (uint8_t)ch;
+  uint8_t *dptr = data+1;
   count = packet_size + PACKET_OVERHEAD-1;
-  if (retarget_waitchars(data+1, &count, timeout) != 0) return -1;
+
+  for (i=0; i<count; i++) {
+   	  ch = retarget_getc(1);
+   	  if (ch < 0) return -1;
+	  *dptr++ = (uint8_t)ch;;
+  }
 
   if (data[PACKET_SEQNO_INDEX] != ((data[PACKET_SEQNO_COMP_INDEX] ^ 0xff) & 0xff)) return -1;
   if (crc16(&data[PACKET_HEADER], packet_size + PACKET_TRAILER) != 0) return -1;
@@ -219,7 +297,7 @@ int Ymodem_Receive ( char* FileName, unsigned int maxsize, unsigned char getname
                     }
                     file_size[i++] = '\0';
                     //Str2Int(file_size, &size);
-                    size = vm_str_strtoi(file_size);
+                    size = strtol(file_size, NULL, 10);
 
                     // Test the size of the file
                     if ((size < 1) || (size > maxsize)) {
@@ -261,15 +339,14 @@ int Ymodem_Receive ( char* FileName, unsigned int maxsize, unsigned char getname
                       size = -2;
                       goto exit;
                     }
-                    VMUINT written_bytes;
-                    vm_fs_write(ffd, (char*)(packet_data + PACKET_HEADER), write_len, &written_bytes);
+                    VMUINT written_bytes = file_write(ffd, (char*)(packet_data + PACKET_HEADER), write_len);
                     if (written_bytes != write_len) { //failed
                       /* End session */
                       send_CA();
                       size = 1;
                       goto exit;
                     }
-                    if (vm_fs_flush(ffd) < 0) {
+                    if (file_flush(ffd) < 0) {
 					  /* End session */
 					  send_CA();
 					  size = 1;
@@ -303,7 +380,7 @@ int Ymodem_Receive ( char* FileName, unsigned int maxsize, unsigned char getname
     if (session_done != 0) break;
   }
 exit:
-  if (ffd >= 0) vm_fs_close(ffd);
+  if (ffd >= 0) file_close(ffd);
   return size;
 }
 
@@ -371,13 +448,12 @@ static void Ymodem_PreparePacket(uint8_t *data, uint8_t pktNo, uint32_t sizeBlk,
   size = sizeBlk < PACKET_1K_SIZE ? sizeBlk :PACKET_1K_SIZE;
   // Read block from file
   if (size > 0) {
-	  int read_bytes = size;
-	  int bytes = vm_fs_read(ffd, data + PACKET_HEADER, size, &read_bytes);
+	  int bytes = file_read(ffd, data + PACKET_HEADER, size);
   }
 
   if ( size  <= PACKET_1K_SIZE) {
     for (i = size + PACKET_HEADER; i < PACKET_1K_SIZE + PACKET_HEADER; i++) {
-      data[i] = 0x1A; // EOF (0x1A) or 0x00
+      data[i] = 0x1a; // EOF (0x1A) or 0x00
     }
   }
   tempCRC = Cal_CRC16(&data[PACKET_HEADER], PACKET_1K_SIZE);
@@ -429,7 +505,7 @@ char Ymodem_Transmit (const char* sendFileName, unsigned int sizeFile, int ffd)
     filename[i] = sendFileName[i];
   }
     
-  while (retarget_waitc(&receivedC[0], 10) == 0) {};
+  while (retarget_getc(0) >= 0) {};
 
   // Wait for response from receiver
   err = 0;
