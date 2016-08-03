@@ -48,6 +48,16 @@ static void term_ansi( const char* fmt, ... )
   term_putstr( seq, strlen( seq ) );
 }
 
+// set cursor type
+void term_curs(int ctype)
+{
+  /*
+  char cs[2] = {0,0};
+  cs[0] = (char)(ctype&7)+0x30;
+  term_ansi( "%s q", cs);
+  */
+}
+
 // Clear the screen
 void term_clrscr()
 {
@@ -176,6 +186,13 @@ int term_getch( int mode )
   	ch = retarget_getc(TERM_TIMEOUT_NOWAIT);  // get 2nd char
     if ( ch < 0 ) return KC_ESC;
 
+    if ( ch == 79) { // '<esc>OF'
+        vm_thread_sleep(5);
+        ch = retarget_getc(TERM_TIMEOUT_NOWAIT);  // get next char
+        if ( ch < 0 ) return KC_UNKNOWN;
+        if (ch == 0x46) return KC_END;
+        else return KC_UNKNOWN;
+    }
     if ( ch != 91 ) return KC_UNKNOWN;
 
 	vm_thread_sleep(5);
@@ -197,12 +214,6 @@ int term_getch( int mode )
           return KC_LEFT;
         case 0x48:
           return KC_HOME;
-        case 0x4F: // <esc>OF
-          vm_thread_sleep(5);
-          ch = retarget_getc(TERM_TIMEOUT_NOWAIT);  // get next char
-          if ( ch < 0 ) return KC_UNKNOWN;
-          if (ch == 0x46) return KC_END;
-          else return KC_UNKNOWN;
         case 0x55:
           return KC_PAGEDOWN;
         case 0x56:
@@ -261,6 +272,8 @@ int term_getch( int mode )
         return KC_CTRL_U;
       case 11:
         return KC_CTRL_K;
+      case 4:
+        return KC_CTRL_D;
     }
   }
   return KC_UNKNOWN;

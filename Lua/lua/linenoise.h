@@ -43,7 +43,7 @@
 #define LINENOISE_ID_SHELL				1
 #define LINENOISE_TOTAL_COMPONENTS		2
 #define LINENOISE_HISTORY_SIZE_LUA		20
-#define LINENOISE_HISTORY_SIZE_SHELL	20
+#define LINENOISE_HISTORY_SIZE_SHELL	10
 
 int linenoisePrompt(int id, char *buf, int buflen, const char *prompt);
 int linenoise_getline( int id, char* buffer, int maxinput, const char* prompt );

@@ -146,6 +146,15 @@ static int luaterm_getcy( lua_State* L )
   return 1;
 }
 
+// Lua: cursory = getcy()
+static int luaterm_setctype( lua_State* L )
+{
+  int ct = luaL_checkinteger(L, 1);
+  //if (ct) ct = 4;
+  term_curs(ct);
+  return 0;
+}
+
 // Lua: key = getchar( [ mode ] )
 //========================================
 static int luaterm_getchar( lua_State* L )
@@ -211,6 +220,7 @@ const LUA_REG_TYPE term_map[] =
   { LSTRKEY( "getcx" ), LFUNCVAL( luaterm_getcx ) },
   { LSTRKEY( "getcy" ), LFUNCVAL( luaterm_getcy ) },
   { LSTRKEY( "getchar" ), LFUNCVAL( luaterm_getchar ) },
+  { LSTRKEY( "setctype" ), LFUNCVAL( luaterm_setctype ) },
 #if LUA_OPTIMIZE_MEMORY > 0
   { LSTRKEY( "__metatable" ), LROVAL( term_map ) },
   { LSTRKEY( "NOWAIT" ), LNUMVAL( TERM_INPUT_DONT_WAIT ) },
@@ -237,7 +247,53 @@ LUALIB_API int luaopen_term( lua_State* L )
   lua_setfield( L, -2, "NOWAIT" );  
   lua_pushnumber( L, TERM_INPUT_WAIT );
   lua_setfield( L, -2, "WAIT" );  
-  
+
+  // Register term keycodes
+  lua_pushnumber( L, KC_UP );
+  lua_setfield( L, -2, "UP" );
+  lua_pushnumber( L, KC_DOWN );
+  lua_setfield( L, -2, "DOWN" );
+  lua_pushnumber( L, KC_LEFT );
+  lua_setfield( L, -2, "LEFT" );
+  lua_pushnumber( L, KC_RIGHT );
+  lua_setfield( L, -2, "RIGHT" );
+  lua_pushnumber( L, KC_HOME );
+  lua_setfield( L, -2, "HOME" );
+  lua_pushnumber( L, KC_END );
+  lua_setfield( L, -2, "END" );
+  lua_pushnumber( L, KC_PAGEUP );
+  lua_setfield( L, -2, "PAGEUP" );
+  lua_pushnumber( L, KC_PAGEDOWN );
+  lua_setfield( L, -2, "PAGEDOWN" );
+  lua_pushnumber( L, KC_ENTER );
+  lua_setfield( L, -2, "ENTER" );
+  lua_pushnumber( L, KC_TAB );
+  lua_setfield( L, -2, "TAB" );
+  lua_pushnumber( L, KC_BACKSPACE );
+  lua_setfield( L, -2, "BACKSPACE" );
+  lua_pushnumber( L, KC_ESC );
+  lua_setfield( L, -2, "ESC" );
+  lua_pushnumber( L, KC_CTRL_Z );
+  lua_setfield( L, -2, "CTRL_Z" );
+  lua_pushnumber( L, KC_CTRL_A );
+  lua_setfield( L, -2, "CTRL_A" );
+  lua_pushnumber( L, KC_CTRL_E );
+  lua_setfield( L, -2, "CTRL_E" );
+  lua_pushnumber( L, KC_CTRL_C );
+  lua_setfield( L, -2, "CTRL_C" );
+  lua_pushnumber( L, KC_CTRL_T );
+  lua_setfield( L, -2, "CTRL_T" );
+  lua_pushnumber( L, KC_CTRL_U );
+  lua_setfield( L, -2, "CTRL_U" );
+  lua_pushnumber( L, KC_CTRL_K );
+  lua_setfield( L, -2, "CTRL_K" );
+  lua_pushnumber( L, KC_DEL );
+  lua_setfield( L, -2, "DEL" );
+  lua_pushnumber( L, KC_INS );
+  lua_setfield( L, -2, "INS" );
+  lua_pushnumber( L, KC_UNKNOWN );
+  lua_setfield( L, -2, "UNKNOWN" );
+
   return 1;
 #endif // # if LUA_OPTIMIZE_MEMORY > 0
 }

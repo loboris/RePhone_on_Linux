@@ -24,6 +24,7 @@ unsigned term_num_lines;
 unsigned term_num_cols;
 
 // Terminal output functions
+void term_curs(int ctype);
 void term_clrscr(void);
 void term_clreol(void);
 void term_gotoxy( unsigned x, unsigned y );
@@ -58,6 +59,7 @@ unsigned term_get_cy(void);
   _D( KC_CTRL_T ),\
   _D( KC_CTRL_U ),\
   _D( KC_CTRL_K ),\
+  _D( KC_CTRL_D ),\
   _D( KC_DEL ),\
   _D( KC_INS ),\
   _D( KC_UNKNOWN )

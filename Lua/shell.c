@@ -159,8 +159,7 @@ static int pushline (lua_State *L, int firstline) {
   size_t l;
   const char *prmt = get_prompt(L, firstline);
 
-  if (lua_readline(L, b, prmt))
-		  return 0;  /* no input */
+  if (lua_readline(L, b, prmt)) return 0;	// !!no input!!
 
   l = strlen(b);
   if (l > 0 && b[l-1] == '\n')				// line ends with newline?
