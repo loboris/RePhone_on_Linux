@@ -686,7 +686,6 @@ static int luaterm_edit( lua_State* L )
 {
 	const char *fname;
 	size_t len;
-	int rd = 0;
 	int isnew = 0;
 	char buf[128];
 	fname = luaL_checklstring( L, 1, &len );
@@ -727,60 +726,68 @@ static int luaterm_edit( lua_State* L )
 
 	// read file to buffer
 	int was_cr = 0;
+	int rd = 0;
 	do {
 		rd = file_read(ffd, buf, 128);
 		if (rd > 0) {
 			int i;
 			for (i=0; i<rd; i++) {
-				if ((was_cr) && (buf[i] != 10)) {
-					rd = -101;
-					break;
-				}
-				else {
+				if (buf[i] == 13) {
 					editor->buf[editor->ptr] = buf[i];
 					editor->ptr++;
-					was_cr = 0;
-					editor->linend = 2; // EOL = '\r\n'
+					was_cr = 1;
+					editor->linend = 2;
 					continue;
 				}
 
-				if (buf[i] == 9) {
-					memset(editor->buf + editor->ptr, ' ', 4);
-					editor->ptr += 3;
-				}
-				else if (buf[i] == 10) {
-					if (editor->linend == 2) {
-						rd = -102;
-						break;
+				if (buf[i] == 10) {
+					if (was_cr) was_cr = 0;
+					else if (editor->linend == 2) {
+						rd = -101;
+						goto endread;
 					}
 					editor->buf[editor->ptr] = buf[i];
+					editor->ptr++;
+					continue;
 				}
-				else if (buf[i] == 13) {
+
+				was_cr = 0;
+
+				if (buf[i] == 9) {
+					memset(editor->buf + editor->ptr, ' ', 4);
+					editor->ptr += 4;
+					continue;
+				}
+
+				if ((buf[i] >= 32) && (buf[i] < 127)) {
 					editor->buf[editor->ptr] = buf[i];
-					was_cr = 1;
+					editor->ptr++;
+					continue;
 				}
-				else if ((buf[i] >= 32) && (buf[i] < 127)) editor->buf[editor->ptr] = buf[i];
-				else {
-					rd = -103;
-					break;
-				}
-				editor->ptr++;
+
+				rd = -102;
+				goto endread;
 			}
-			if (rd < 128) break;
+
+			if (rd < 128) goto endread;
+
 			if ((editor->ptr + 4) >= editor->buf_size) {
-				rd = -104;
-				break;
+				rd = -103;
+				goto endread;
 			}
 		}
 	} while (rd > 0);
+
+endread:
 	editor->buf[editor->ptr] = '\0';
 
 	file_close(ffd);
 
 	if (rd < 0) {
 		free(editor->buf);
-		sprintf(buf, "Error reading file: %d", rd);
-		return luaL_error(L, buf);
+		if (rd == -101) return luaL_error(L, "EOL format error, not text file");
+		else if (rd == -102) return luaL_error(L, "Non printable characters, binary file");
+		else return luaL_error(L, "Error reading file");
 	}
 
 	editor->size = editor->ptr;
