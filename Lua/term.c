@@ -12,20 +12,14 @@ extern int retarget_getc(int tmo);
 
 unsigned term_num_lines = 25;
 unsigned term_num_cols = 80;
+unsigned term_cx = 0;
+unsigned term_cy = 0;
 
 // Local variables
-static unsigned term_cx = 0;
-static unsigned term_cy = 0;
 static unsigned int skip_0A = 0;
 
 // *****************************************************************************
 // Terminal functions
-
-//-----------------------------------------
-static void term_out( unsigned char data )
-{
-	retarget_putc(data);
-}
 
 
 // Helper function: send the requested string to the terminal
@@ -45,7 +39,9 @@ static void term_ansi( const char* fmt, ... )
   va_start( ap, fmt );
   vsnprintf( seq + 2, TERM_MAX_ANSI_SIZE - 2, fmt, ap );
   va_end( ap );
-  term_putstr( seq, strlen( seq ) );
+
+  //term_putstr( seq, strlen( seq ) );
+  retarget_write(seq, strlen(seq));
 }
 
 // set cursor type
@@ -62,7 +58,7 @@ void term_curs(int ctype)
 void term_clrscr()
 {
   term_ansi( "2J" );
-  term_cx = term_cy = 0;
+  term_cx = term_cy = 1;
 }
 
 // Clear to end of line
@@ -97,14 +93,14 @@ void term_down( unsigned delta )
 void term_right( unsigned delta )
 {
   term_ansi( "%uC", delta );  
-  term_cx -= delta;
+  term_cx += delta;
 }
 
 // Move cursor left "delta" chars
 void term_left( unsigned delta )
 {
   term_ansi( "%uD", delta );  
-  term_cx += delta;
+  term_cx -= delta;
 }
 
 // Return the number of terminal lines
@@ -120,25 +116,31 @@ unsigned term_get_cols()
 }
 
 // Write a character to the terminal
+//---------------------------
 void term_putch( uint8_t ch )
 {
-  if( ch == '\n' )
-  {
-    if( term_cy < term_num_lines )
-      term_cy ++;
-    term_cx = 0;
+  if ( ch == '\n' ) {
+    if ( term_cy < term_num_lines ) term_cy ++;
+    term_cx = 1;
   }
-  term_out( ch );
+
+  retarget_putc(ch);
+  term_cx++;
+
+  if (ch == '\r') term_cx = 1;
 }
 
 // Write a string to the terminal
+//------------------------------------------------
 void term_putstr( const char* str, unsigned size )
 {
-  retarget_write(str, size);
+  //retarget_write(str, size);
+  //term_cx += size;
+  for (int i=0; i<size; i++) {
+	  term_putch(str[i]);
+  }
 }
 
-// Write a string of 
- 
 // Return the cursor "x" position
 unsigned term_get_cx()
 {
@@ -272,9 +274,86 @@ int term_getch( int mode )
         return KC_CTRL_U;
       case 11:
         return KC_CTRL_K;
+      case 12:
+        return KC_CTRL_L;
       case 4:
         return KC_CTRL_D;
     }
   }
   return KC_UNKNOWN;
 }
+
+//------------------------------------
+int term_getstr(char *buf, int maxlen)
+{
+	int c;
+	int len = strlen(buf);
+	int x = len+1;
+	int startx = term_cx;
+
+    while(1) {
+        term_gotoxy( startx, term_cy );
+        term_clreol();
+        term_putstr(buf, strlen(buf));
+        term_gotoxy( startx+x-1, term_cy );
+
+        c = term_getch(TERM_INPUT_WAIT);
+        if (c < 0) continue;
+
+        switch(c) {
+        	case KC_ENTER:
+        		return 0;
+        		break;
+
+        	case KC_CTRL_C:
+        		return -1;
+        		break;
+
+        	case KC_BACKSPACE:
+        		if (x > 1) {
+        			x--;
+        			memmove(buf+x-1, buf+x, len-x);
+        			len--;
+        			buf[len] = '\0';
+        		}
+        		break;
+
+        	case KC_DEL:
+        		if (x <= len) {
+        			memmove(buf+x-1, buf+x, len-x);
+        			len--;
+        			buf[len] = '\0';
+        		}
+        		break;
+
+        	case KC_LEFT:
+        		if (x > 1) x--;
+        		break;
+
+        	case KC_RIGHT:
+        		if (x <= len) x++;
+        		break;
+
+        	case KC_HOME:
+        		x = 1;
+        		break;
+
+        	case KC_END:
+        		x = len+1;
+        		break;
+
+        	default:
+                if ((c >= 32) && (c < 127)) {
+                	if (len < maxlen) {
+						if (x <= len) memmove(buf+x, buf+x-1, len-x+1);
+						len++;
+						buf[x-1] = c;
+						buf[len] = '\0';
+						x++;
+                	}
+                }
+        		break;
+        }
+    }
+}
+

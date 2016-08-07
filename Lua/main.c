@@ -519,7 +519,8 @@ void vm_main(void)
     uint32_t wdgtmo = *reg;
     int rtc_wdgok = 0;
     if ((wdgtmo & 0xF000) == 0xA000) {
-    	wdgtmo &= 0x0FFF;
+    	wdgtmo &= 0x01FF;
+    	wdgtmo *= 10;
     	if ((wdgtmo >= 10) && (wdgtmo <= 3600)) {
 			sys_wdt_tmo = (wdgtmo * 216685) / 1000;	// set watchdog timeout
 			sys_wdt_rst = sys_wdt_tmo - 1083;		// reset wdg 5 sec before expires

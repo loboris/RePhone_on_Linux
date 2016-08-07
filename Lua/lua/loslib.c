@@ -36,12 +36,6 @@
 #include "vmtimer.h"
 #include "vmusb.h"
 
-#define USE_YMODEM
-
-#if defined USE_YMODEM
-#include "ymodem.h"
-#endif
-
 #define SHOW_LOG_FATAL		0x01
 #define SHOW_LOG_ERROR		0x02
 #define SHOW_LOG_WARNING	0x03
@@ -72,6 +66,7 @@ extern int key_cb;					// Lua callback function called on key up/down
 extern VMUINT8 alarm_flag;
 extern cb_func_param_bt_t bt_cb_params;
 extern int g_memory_size_b;
+extern int g_reserved_heap;
 
 int show_log = 0x1F;
 
@@ -794,6 +789,8 @@ static int os_wdg_timeout (lua_State *L) {
 	if (lua_gettop(L) >= 1) {
 		int wdgtmo = luaL_checkinteger(L,1);	// watchdog timeout in seconds
 
+		int hsz = ((g_reserved_heap / 32768) - 1) << 9;
+
 		if (wdgtmo < 10) wdgtmo = 10;
 		if (wdgtmo > 3600) wdgtmo = 3600;
 		sys_wdt_tmo = (wdgtmo * 216685) / 1000;	// set watchdog timeout
@@ -801,11 +798,39 @@ static int os_wdg_timeout (lua_State *L) {
         sys_wdt_rst_usec = (sys_wdt_tmo * 4615 / 1000) - 2000;
 		// save to RTC_SPAR0 register
 		volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + 0x0710060);
-	    *reg = wdgtmo | 0xA000;
+		wdgtmo /= 10;
+	    *reg = (wdgtmo | hsz) | 0xA000;
 	    _writertc(0x586A);
 	    _writertc(0x9136);
 	}
 	lua_pushnumber(L, (float)sys_wdt_tmo / 216.685);
+	return 1;
+}
+
+// set C heap size
+//=======================================
+static int os_cheap_size (lua_State *L) {
+	if (lua_gettop(L) >= 1) {
+		int hsz = luaL_checkinteger(L,1);	// cheap size in 32K increments
+
+		int wdgtmo = (sys_wdt_tmo * 1000) / 216685;
+		if ((sys_wdt_tmo * 1000) % 216685 >= 5) wdgtmo++;
+		wdgtmo &= 0x1FFF;
+
+		if (hsz < 1) hsz = 1;
+		if (hsz > 8) hsz = 8;
+		// save to RTC_SPAR0 register
+		volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + 0x0710060);
+		hsz--;
+		hsz <<= 9;
+		*reg = (hsz | wdgtmo) | 0xA000;
+		_writertc(0x586A);
+		_writertc(0x9136);
+
+		lua_pushinteger(L, ((hsz >> 9)+1) * 32768);
+		vm_log_info("C heap size set to %dK, REBOOT to take effect", ((hsz >> 9)+1) * 32);
+	}
+	else lua_pushinteger(L, g_reserved_heap);
 	return 1;
 }
 
@@ -975,11 +1000,12 @@ static int os_compile( lua_State* L )
   return 0;
 }
 
-
+//----------------------------
 void check(int depth, int prn)
 {
-	char c;
-	if ((prn) || (depth == 0)) printf("stack at %p\n", &c);
+	// every run groves the stack by 16 bytes
+	char c = 100;
+	if ((prn) || (depth == 0)) printf("stack adr: %p [%d]\n", &c, c);
 	if (depth <= 0) return;
 	check(depth-1, 0);
 }
@@ -989,6 +1015,44 @@ static int os_teststack( lua_State* L )
 {
 	int n = luaL_checkinteger(L, 1);
 	check(n, 1);
+	return 0;
+}
+
+//====================================
+static int os_testheap( lua_State* L )
+{
+	uint32_t n = luaL_checkinteger(L, 1) & 0xFFFFFF00;
+	char *buf = NULL;
+	buf = malloc(n);
+	while (buf == NULL) {
+		n -= 256;
+		buf = malloc(n);
+	}
+	printf("block adr: %p, size: %d\n", buf, n);
+	free(buf);
+	return 0;
+}
+
+//======================================
+static int _os_testcheap( lua_State* L )
+{
+	uint32_t n = luaL_checkinteger(L, 1) & 0xFFFFFF00;
+	char *buf = NULL;
+	buf = vm_malloc(n);
+	while (buf == NULL) {
+		n -= 256;
+		buf = vm_malloc(n);
+	}
+	printf("cblock adr: %p, size: %d\n", buf, n);
+	vm_free(buf);
+	vm_signal_post(g_shell_signal);
+	return 0;
+}
+
+//=====================================
+static int os_testcheap( lua_State* L )
+{
+	remote_CCall(&_os_testcheap);
 	return 0;
 }
 
@@ -1222,9 +1286,12 @@ static int get_params(lua_State *L)
 //=====================================
 static int set_term_input(lua_State *L)
 {
-	use_term_input = luaL_checkinteger(L, 1) & 0x01;
+	if (lua_isnumber(L, 1)) {
+		use_term_input = luaL_checkinteger(L, 1) & 0x01;
+	}
+	lua_pushinteger(L, use_term_input);
 
-	return 0;
+	return 1;
 }
 
 //===================================
@@ -1257,135 +1324,6 @@ static int sys_random( lua_State* L )
 
 
 
-#if defined USE_YMODEM
-
-//-------------------------------
-int _fs_free_space( lua_State* L)
-{
-	g_shell_result = vm_fs_get_disk_free_space(vm_fs_get_internal_drive_letter())-(1024*10);
-	vm_signal_post(g_shell_signal);
-	return 0;
-}
-
-//==================================
-static int file_recv( lua_State* L )
-{
-  int fsize = 0;
-  unsigned char c, gnm;
-  char fnm[64];
-
-  remote_CCall(&_fs_free_space);
-  unsigned int max_len = g_shell_result-(1024*10);
-
-  gnm = 0;
-  if (lua_gettop(L) == 1 && lua_type( L, 1 ) == LUA_TSTRING) {
-    // file name is given
-    size_t len;
-    const char *fname = luaL_checklstring( L, 1, &len );
-    strcpy(fnm, fname);
-    gnm = 1; // file name ok
-  }
-  if (gnm == 0) memset(fnm, 0x00, 64);
-
-  while (retarget_getc(0) >= 0) {};
-
-  vm_log_info("Start Ymodem file transfer, max size: %d", max_len);
-
-  fsize = Ymodem_Receive(fnm, max_len, gnm);
-
-  while (retarget_getc(0) >= 0) {};
-
-  if (fsize > 0) printf("\nReceived successfully, %d\n",fsize);
-  else if (fsize == -1) printf("\nFile write error!\n");
-  else if (fsize == -2) printf("\nFile open error!\n");
-  else if (fsize == -3) printf("\nAborted.\n");
-  else if (fsize == -4) printf("\nFile size too big, aborted.\n");
-  else if (fsize == -5) printf("\nWrong file name or file exists!\n");
-  else printf("\nReceive failed!\n");
-
-  g_shell_result = 0;
-  vm_signal_post(g_shell_signal);
-  return 0;
-}
-
-//==================================
-static int file_send( lua_State* L )
-{
-  char res = 0;
-  char newname = 0;
-  unsigned char c;
-  const char *fname;
-  size_t len;
-  int fsize = 0;
-
-  fname = luaL_checklstring( L, 1, &len );
-  char filename[64] = {0};
-  const char * newfname;
-
-  if (lua_gettop(L) >= 2 && lua_type( L, 2 ) == LUA_TSTRING) {
-    size_t len;
-    newfname = luaL_checklstring( L, 2, &len );
-    newname = 1;
-  }
-
-  // Open the file
-  int ffd = file_open(fname, 0);
-  if (ffd < 0) {
-    l_message(NULL,"Error opening file.");
-    goto exit;
-  }
-
-  // Get file size
-  fsize = file_size(ffd);
-  if (fsize < 0) {
-    file_close(ffd);
-    l_message(NULL,"Error opening file.");
-    goto exit;
-  }
-
-  printf("Sending '%s' (%d bytes)", fname, fsize);
-  if (newname == 1) {
-    printf(" as '%s'\n", newfname);
-    strcpy(filename, newfname);
-  }
-  else {
-	  printf("\n");
-	  strcpy(filename, fname);
-  }
-
-  l_message(NULL,"Start Ymodem file transfer...");
-
-  while (retarget_getc(0) >= 0) {};
-
-  res = Ymodem_Transmit(filename, fsize, ffd);
-
-  vm_thread_sleep(500);
-  while (retarget_getc(0) >= 0) {};
-
-  file_close(ffd);
-
-  if (res == 0) {
-    l_message(NULL,"\nFile sent successfuly.");
-  }
-  else if (res == 99) {
-    l_message(NULL,"\nNo response.");
-  }
-  else if (res == 98) {
-    l_message(NULL,"\nAborted.");
-  }
-  else {
-    l_message(NULL,"\nError sending file.");
-  }
-
-exit:
-  g_shell_result = 0;
-  vm_signal_post(g_shell_signal);
-  return 0;
-}
-
-
-#endif
-
 extern int luaB_dofile (lua_State *L);
 
 
@@ -1411,11 +1349,7 @@ const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("rmdir"),    	LFUNCVAL(os_rmdir)},
   {LSTRKEY("list"),     	LFUNCVAL(os_listfiles)},
   {LSTRKEY("compile"),		LFUNCVAL(os_compile)},
-  {LSTRKEY("terminput"),	LFUNCVAL(set_term_input)},
-#if defined USE_YMODEM
-  {LSTRKEY("yrecv"),    	LFUNCVAL(file_recv)},
-  {LSTRKEY("ysend"),    	LFUNCVAL(file_send)},
-#endif
+  {LSTRKEY("shell_linetype"),LFUNCVAL(set_term_input)},
   {LNILKEY, LNILVAL}
 };
 
@@ -1446,12 +1380,15 @@ const LUA_REG_TYPE sys_map[] = {
 		  {LSTRKEY("writereg"), 	LFUNCVAL(os_writereg) },
 		  {LSTRKEY("writertcreg"),	LFUNCVAL(os_writertcreg) },
 		  {LSTRKEY("teststack"),	LFUNCVAL(os_teststack) },
+		  {LSTRKEY("testheap"),		LFUNCVAL(os_testheap) },
+		  {LSTRKEY("testcheap"),	LFUNCVAL(os_testcheap) },
 		  {LSTRKEY("read_params"),	LFUNCVAL(read_params) },
 		  {LSTRKEY("save_params"),	LFUNCVAL(save_params) },
 		  {LSTRKEY("get_params"),	LFUNCVAL(get_params) },
 		  {LSTRKEY("random"),		LFUNCVAL(sys_random) },
 		  {LSTRKEY("tick"),			LFUNCVAL(sys_tick) },
 		  {LSTRKEY("elapsed"),		LFUNCVAL(sys_elapsed) },
+		  {LSTRKEY("setcheapsize"),	LFUNCVAL(os_cheap_size) },
 		  {LNILKEY, LNILVAL }
 };
 

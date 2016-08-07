@@ -448,7 +448,7 @@ static void Ymodem_PreparePacket(uint8_t *data, uint8_t pktNo, uint32_t sizeBlk,
   size = sizeBlk < PACKET_1K_SIZE ? sizeBlk :PACKET_1K_SIZE;
   // Read block from file
   if (size > 0) {
-	  int bytes = file_read(ffd, data + PACKET_HEADER, size);
+	  size = file_read(ffd, data + PACKET_HEADER, size);
   }
 
   if ( size  <= PACKET_1K_SIZE) {

@@ -22,6 +22,8 @@
 
 unsigned term_num_lines;
 unsigned term_num_cols;
+unsigned term_cx;
+unsigned term_cy;
 
 // Terminal output functions
 void term_curs(int ctype);
@@ -38,6 +40,7 @@ void term_putch( uint8_t ch );
 void term_putstr( const char* str, unsigned size );
 unsigned term_get_cx(void);
 unsigned term_get_cy(void);
+int term_getstr(char *buf, int maxlen);
 
 #define TERM_KEYCODES\
   _D( KC_UP ),\
@@ -60,6 +63,7 @@ unsigned term_get_cy(void);
   _D( KC_CTRL_U ),\
   _D( KC_CTRL_K ),\
   _D( KC_CTRL_D ),\
+  _D( KC_CTRL_L ),\
   _D( KC_DEL ),\
   _D( KC_INS ),\
   _D( KC_UNKNOWN )

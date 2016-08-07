@@ -26,11 +26,12 @@
 typedef VMINT (*vm_get_sym_entry_t)(char* symbol);
 vm_get_sym_entry_t vm_get_sym_entry;
 
-#define RESERVED_HEAP 1024*64             // heap reserved for C usage
+#define RESERVED_HEAP 1024*32				// initial size of heap reserved for C usage
 
-unsigned int g_memory_size = 1024 * 800;  // heap for lua usage, will be adjusted
-int g_memory_size_b = 0;                  // adjusted heap for C usage
-static void* g_base_address = NULL;       // base address of the lua heap
+unsigned int g_memory_size = 1024 * 800;	// heap for lua usage, ** will be adjusted **
+int g_memory_size_b = 0;					// adjusted heap for C usage
+static void* g_base_address = NULL;			// base address of the lua heap
+int g_reserved_heap = RESERVED_HEAP;
 
 extern void vm_main();
 extern int retarget_getc(int tmo);
@@ -75,8 +76,8 @@ extern caddr_t _sbrk(int incr)
 
     prev_heap = heap;
 
-    if (heap + incr > g_base_address + g_memory_size) {
-        vm_log_fatal("Not enough memory");
+    if ((heap + incr) > (g_base_address + g_memory_size)) {
+        vm_log_fatal("Not enough memory, requested %d bytes from %p", incr, heap);
     }
     else {
     	heap += incr;
@@ -344,23 +345,39 @@ void gcc_entry(unsigned int entry, unsigned int init_array_start, unsigned int c
     __init_array ptr;
     vm_get_sym_entry = (vm_get_sym_entry_t)entry;
 
+	// get c heap size from RTC_SPAR0 register if possible
+	volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + 0x0710060);
+    uint32_t chpsz = *reg;
+	g_reserved_heap = RESERVED_HEAP;
+    if ((chpsz & 0xF000) == 0xA000) {
+    	chpsz &= 0x0E00;
+    	chpsz >>= 9;	// 0~7
+       	chpsz++;		// 1~8
+   		g_reserved_heap = chpsz * RESERVED_HEAP;
+    }
+
+    // get maximum possible heap size
     while (g_base_address == NULL) {
     	g_base_address = vm_malloc(g_memory_size);
         if (g_base_address == NULL) {
-        	g_memory_size -= 1024;
+        	g_memory_size -= 256;
         }
         else break;
     }
     vm_free(g_base_address);
+
     g_base_address = NULL;
-    g_memory_size_b = RESERVED_HEAP;
-    g_memory_size -= RESERVED_HEAP;
+    g_memory_size_b = g_reserved_heap;
+    g_memory_size -= g_reserved_heap;
+
+    // allocate heap size for Lua
 	g_base_address = vm_malloc(g_memory_size);
 
+	// find maximum C heap size
     while ((g_base_address_b == NULL) && (g_memory_size_b > 0)) {
     	g_base_address_b = vm_malloc(g_memory_size_b);
         if (g_base_address_b == NULL) {
-        	g_memory_size_b -= 1024;
+        	g_memory_size_b -= 256;
         }
         else break;
     }

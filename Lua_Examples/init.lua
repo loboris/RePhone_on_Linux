@@ -21,8 +21,8 @@ to allow the module to attach to network and be ready
 for sms operations
 --]]
 function sntp_cb(stat)
-    print()
-    print("==================================================")
+	print()
+	print("==================================================")
     if stat ~= 0 then
         print("SNTP error\nCheck if your APN is set")
     else
