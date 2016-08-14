@@ -727,6 +727,7 @@ static int luaterm_edit( lua_State* L )
 	// read file to buffer
 	int was_cr = 0;
 	int rd = 0;
+	int tabsize = 0;
 	do {
 		rd = file_read(ffd, buf, 128);
 		if (rd > 0) {
@@ -756,6 +757,7 @@ static int luaterm_edit( lua_State* L )
 				if (buf[i] == 9) {
 					memset(editor->buf + editor->ptr, ' ', 4);
 					editor->ptr += 4;
+					tabsize += 3;
 					continue;
 				}
 
@@ -771,9 +773,15 @@ static int luaterm_edit( lua_State* L )
 
 			if (rd < 128) goto endread;
 
+			// in the next pass we need max 4 characters
 			if ((editor->ptr + 4) >= editor->buf_size) {
-				rd = -103;
-				goto endread;
+				// need more space
+				char *newb = realloc(editor->buf, editor->buf_size + 1024);
+				if (newb == NULL) {
+					rd = -103;
+					goto endread;
+				}
+				editor->buf = newb;
 			}
 		}
 	} while (rd > 0);
@@ -787,10 +795,13 @@ endread:
 		free(editor->buf);
 		if (rd == -101) return luaL_error(L, "EOL format error, not text file");
 		else if (rd == -102) return luaL_error(L, "Non printable characters, binary file");
+		else if (rd == -103) return luaL_error(L, "Error reallocating edit buffer");
 		else return luaL_error(L, "Error reading file");
 	}
 
 	editor->size = editor->ptr;
+	int read_size = editor->ptr;
+
 	if (editor->size > 0) editor->numlines = get_numlines();
 	else {
 		sprintf(editor->buf, "\n");
@@ -843,8 +854,13 @@ endread:
     	if (res < 0) term_putstr("File not saved\n", 15);
     	else term_putstr("File saved\n", 11);
 	}
+	else {
+		if ((editor->changed == 0) && (read_size != editor->fsize) && (read_size != (editor->fsize+tabsize))) {
+			printf("Warning: file size (%d) <> read size (%d) [%d]\n", editor->fsize, read_size, read_size+tabsize);
+		}
+	}
 
-	// free buffer
+	// free editor buffer
 	free(editor->buf);
 
 	return 0;

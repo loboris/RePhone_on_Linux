@@ -14,7 +14,8 @@
 
 const VMUINT8 gpio_ctp_reset_pin = 19;
 const VMUINT8 gpio_ctp_i2c_scl_pin = 1;
-const VMUINT8 gpio_ctp_i2c_sda_pin = 2;
+const VMUINT8 gpio_ctp_i2c_sda_pin = 2;		// Software I2C
+//const VMUINT8 gpio_ctp_i2c_sda_pin = 0xFF;	// Hardware I2C
 const VMUINT8 gpio_ctp_eint_pin = 52;
 
 VM_DCL_HANDLE gpio_ctp_eint_handle;
@@ -233,7 +234,7 @@ static VM_DRV_TP_BOOL ctp_goodix_gt9xx_init(void)
 
     ack = ctp_goodix_gt9xx_set_configuration();
     if(ack == VM_DRV_TP_FALSE) {
-        vm_log_info("ctp_goodix_gt9xx_set_configuration fail!!!");
+        vm_log_error("ctp_goodix_gt9xx_set_configuration fail!!!");
         return VM_DRV_TP_FALSE;
     }
     vm_log_info("ctp_goodix_gt9xx_set_configuration OK!!!");
@@ -241,7 +242,7 @@ static VM_DRV_TP_BOOL ctp_goodix_gt9xx_init(void)
     ack = ctp_goodix_gt9xx_get_information(&ctp_info);
 
     if(ack == VM_DRV_TP_FALSE) {
-        vm_log_info("read information fail");
+        vm_log_error("read information fail");
         return VM_DRV_TP_FALSE;
     }
 
@@ -454,16 +455,15 @@ static vm_drv_tp_function_list_t ctp_custom_func = { ctp_goodix_gt9xx_init,     
                                                      ctp_goodix_gt9xx_hisr,       ctp_goodix_gt9xx_get_data,
                                                      ctp_goodix_gt9xx_parameters, ctp_goodix_gt9xx_power,
                                                      ctp_goodix_gt9xx_command };
-
-void tp_gt9xx_init(void)
+//----------------------
+int tp_gt9xx_init(void)
 {
-
     gpio_ctp_eint_handle = vm_dcl_open(VM_DCL_EINT, 3);
 
     if(VM_DCL_HANDLE_INVALID == gpio_ctp_eint_handle) {
-        vm_log_info("open EINT error");
-        return;
+        vm_log_error("open EINT error");
+        return -1;
     }
 
-    vm_drv_tp_setup_driver(&ctp_custom_func);
+    return vm_drv_tp_setup_driver(&ctp_custom_func);
 }

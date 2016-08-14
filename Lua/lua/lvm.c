@@ -424,10 +424,11 @@ static void Arith (lua_State *L, StkId ra, const TValue *rb,
           Protect(Arith(L, ra, rb, rc, tm)); \
       }
 
-
+//--------------------------
 extern int sys_wdt_rst_time;
-extern void _reset_wdg(void);
+//--------------------------
 
+//------------------------------------------------
 void luaV_execute (lua_State *L, int nexeccalls) {
   LClosure *cl;
   StkId base;
@@ -443,7 +444,6 @@ void luaV_execute (lua_State *L, int nexeccalls) {
   for (;;) {
 	// --- wdg reset ----
 	sys_wdt_rst_time = 0;
-	_reset_wdg();
 	// ------------------
 
 	const Instruction i = *pc++;

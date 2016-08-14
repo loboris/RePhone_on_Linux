@@ -24,6 +24,7 @@ unsigned term_num_lines;
 unsigned term_num_cols;
 unsigned term_cx;
 unsigned term_cy;
+int use_term_input;
 
 // Terminal output functions
 void term_curs(int ctype);

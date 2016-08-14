@@ -28,12 +28,6 @@
 #define NAK_TIMEOUT             (1000)
 #define MAX_ERRORS              (45)
 
-int file_open(const char* file, int flags);
-int file_close(int file);
-int file_size(int file);
-int file_flush(int file);
-int file_read(int file, char* ptr, int len);
-int file_write(int file, char* ptr, int len);
 int Ymodem_Receive ( char* FileName, unsigned int maxsize, unsigned char getname );
 char Ymodem_Transmit (const char* sendFileName, unsigned int sizeFile, int ffd);
 

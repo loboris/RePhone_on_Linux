@@ -40,16 +40,33 @@
 #define CCALL_MESSAGE_FCHECK    344
 #define CCALL_MESSAGE_FFLUSH    346
 #define CCALL_MESSAGE_LCDWR     348
+#define CCALL_MESSAGE_SIT_LCDWR	350
+#define CCALL_MESSAGE_MALLOC	352
+#define CCALL_MESSAGE_REALLOC	354
+#define CCALL_MESSAGE_FREE		355
 #define CB_MESSAGE_ID		    400
+
+typedef struct {
+    int			wdgtmo;
+    int			cheapsize;
+    int			res1;
+    int			res2;
+    int			res3;
+    int			res4;
+    int			res5;
+    VMUINT16	res6;
+    VMUINT16	crc;
+} sysvar_t;
 
 typedef struct {
     VM_TIMER_ID_PRECISE timer_id;
     int					cb_ref;
+    VMUINT32			interval;
     VMUINT32			runs;
     VMUINT32			pruns;
     VMUINT32			failed;
     VMUINT8				busy;
-    VMUINT8				paused;
+    VMUINT8				state;
 } timer_info_t;
 
 typedef struct {
@@ -92,7 +109,8 @@ typedef enum
 	CB_FUNC_MQTT_DISCONNECT,
 	CB_FUNC_UART_RECV,
 	CB_FUNC_NET,
-	CB_FUNC_EINT
+	CB_FUNC_EINT,
+	CB_FUNC_TOUCH
 } CB_FUNC_TYPE;
 
 
@@ -131,6 +149,14 @@ typedef struct {
 	int		event;
 	int		busy;
 } cb_func_param_net_t;
+
+typedef struct {
+	int		cb_ref;
+	int		event;
+	int		x;
+	int		y;
+	int		busy;
+} cb_func_param_touch_t;
 
 typedef struct {
 	int		cb_ref;
@@ -218,6 +244,8 @@ VM_DCL_HANDLE retarget_usb_handle;
 VM_DCL_HANDLE retarget_uart1_handle;
 int retarget_target;
 
+int g_rtc_poweroff;
+
 vm_mutex_t retarget_rx_mutex;
 
 VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data);
@@ -227,6 +255,14 @@ void l_message (const char *pname, const char *msg);
 int remote_CCall(lua_CFunction func);
 void remote_lua_call(VMUINT16 type, void *params);
 int file_exists(const char *filename);
+void full_fname(char *fname, VMWCHAR *ucs_name, int size);
+int file_open(const char* file, int flags);
+int file_close(int file);
+int file_size(int file);
+int file_flush(int file);
+int file_read(int file, char* ptr, int len);
+int file_write(int file, char* ptr, int len);
+int file_seek(int file, int offset, int whence);
 
 //void _mutex_lock(void);
 //void _mutex_unlock(void);

@@ -21,12 +21,15 @@
 #include <string.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <fcntl.h>
 
 #include <lua.h>
 #include <lauxlib.h>
 
 #include "vmfs.h"
 #include "vmchset.h"
+
+#include "shell.h"
 
 #include "md5.h"
 
@@ -307,29 +310,24 @@ static int l_hashes_md5_file(lua_State *L)
 {
     size_t len;
 	int fsize = 0;
-	VMWCHAR wfile_name[64];
-	char file_name[64];
 
 	const char *fname = luaL_checklstring( L, 1, &len );
 
-	snprintf(file_name, sizeof(file_name), "C:\\%s", fname);
-	vm_chset_ascii_to_ucs2(wfile_name, 64, file_name);
-	int fh = vm_fs_open(wfile_name, VM_FS_MODE_READ, 1);
+	int fh = file_open(fname, O_RDONLY);
 
 	if (fh >= 0) {
 		MD5_CTX ctx;
 		uint8_t sum[MD5_DIGEST_LENGTH];
 		uint8_t buf[256];
-		int read_bytes = 0;
 
 		MD5Init(&ctx);
 
-		int bytes = vm_fs_read(fh, buf, 256, &read_bytes);
-		while ((bytes > 0) && (read_bytes > 0)) {
-			MD5Update(&ctx, (const uint8_t *)&buf, read_bytes);
-			bytes = vm_fs_read(fh, buf, 256, &read_bytes);
+		int bytes = file_read(fh, buf, 256);
+		while (bytes > 0) {
+			MD5Update(&ctx, (const uint8_t *)&buf, bytes);
+			bytes = file_read(fh, buf, 256);
 		}
-		vm_fs_close(fh);
+		file_close(fh);
 
 		MD5Final(sum, &ctx);
 

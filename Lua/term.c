@@ -14,6 +14,7 @@ unsigned term_num_lines = 25;
 unsigned term_num_cols = 80;
 unsigned term_cx = 0;
 unsigned term_cy = 0;
+int use_term_input = 0;
 
 // Local variables
 static unsigned int skip_0A = 0;

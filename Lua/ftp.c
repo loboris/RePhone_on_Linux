@@ -657,7 +657,7 @@ int _ftp_list(lua_State* L)
 		else {
 			ftp->totable = 0;
 			VMWCHAR ucs_name[128];
-			vm_chset_ascii_to_ucs2(ucs_name, 128, filename);
+		    full_fname((char *)filename, ucs_name, 128);
 			int res = vm_fs_open(ucs_name, VM_FS_MODE_CREATE_ALWAYS_WRITE, VM_TRUE);
 			if (res < 0) {
 				vm_log_error("error creating local file: %d", res);
@@ -745,7 +745,7 @@ int _ftp_recv(lua_State* L)
 
 	if (tofile) {
 		VMWCHAR ucs_name[128];
-		vm_chset_ascii_to_ucs2(ucs_name, 128, lfilename);
+	    full_fname(lfilename, ucs_name, 128);
 		int res = vm_fs_open(ucs_name, VM_FS_MODE_CREATE_ALWAYS_WRITE, VM_TRUE);
 		if (res < 0) {
 	    	vm_log_error("error creating local file: %d", res);
@@ -884,7 +884,7 @@ int _ftp_send(lua_State* L)
 	const char *source = luaL_checklstring(L, 1, &slen);
 	if ((slen < 64) && (slen > 0)) {
 		VMWCHAR ucs_name[128];
-		vm_chset_ascii_to_ucs2(ucs_name, 128, source);
+	    full_fname((char *)source, ucs_name, 128);
 		fhndl = vm_fs_open(ucs_name, VM_FS_MODE_READ, VM_TRUE);
 		if (fhndl >= 0) fromfile = 1;
 	}

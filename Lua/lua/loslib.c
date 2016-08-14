@@ -5,6 +5,8 @@
 */
 
 
+#include "vmstdlib.h"
+
 #include <errno.h>
 #include <locale.h>
 #include <stdlib.h>
@@ -21,6 +23,8 @@
 #include "lualib.h"
 #include "lrotable.h"
 #include "lundump.h"
+#include "term.h"
+#include "CheckSumUtils.h"
 
 #include "vmdatetime.h"
 #include "vmpwr.h"
@@ -28,13 +32,13 @@
 #include "vmfirmware.h"
 #include "vmfs.h"
 #include "vmchset.h"
-#include "vmstdlib.h"
 #include "vmwdt.h"
 #include "vmsystem.h"
 #include "vmdcl.h"
 #include "vmlog.h"
 #include "vmtimer.h"
 #include "vmusb.h"
+
 
 #define SHOW_LOG_FATAL		0x01
 #define SHOW_LOG_ERROR		0x02
@@ -43,8 +47,8 @@
 #define SHOW_LOG_DEBUG		0x10
 
 #define MAX_SYSTEM_PARAMS_SIZE	1020
+#define SYSVAR_SIZE 20
 
-extern int use_term_input;
 extern void retarget_putc(char ch);
 extern int retarget_getc(int tmo);
 extern void _scheduled_startup(void);
@@ -55,7 +59,6 @@ extern VM_DCL_HANDLE retarget_uart1_handle;
 extern int no_activity_time;		// no activity counter
 extern int sys_wdt_tmo;				// HW WDT timeout in ticks: 13001 -> 59.999615 seconds
 extern int sys_wdt_rst;				// time at which hw wdt is reset in ticks: 10834 -> 50 seconds, must be < 'sys_wdt_tmo'
-extern int sys_wdt_rst_usec;
 extern int max_no_activity_time;	// time with no activity before shut down in seconds
 extern int wakeup_interval;			// regular wake up interval in seconds
 extern int led_blink;				// led blink during session
@@ -67,8 +70,9 @@ extern VMUINT8 alarm_flag;
 extern cb_func_param_bt_t bt_cb_params;
 extern int g_memory_size_b;
 extern int g_reserved_heap;
+extern int g_max_heap_inc;
 
-int show_log = 0x1F;
+int show_log = 0;
 
 //-----------------------------------------------------------------------------
 void _log_printf(int type, const char *file, int line, const char *msg, ...)
@@ -98,8 +102,8 @@ void _log_printf(int type, const char *file, int line, const char *msg, ...)
   else if (type == 0) printf("%s\n", message);
 }
 
-//---------------------------------
-static void _writertc(uint32_t val)
+//--------------------------
+void _writertc(uint32_t val)
 {
     volatile uint32_t *regprot = (uint32_t *)(REG_BASE_ADDRESS + 0x710068);
     volatile uint32_t *regwrtgr = (uint32_t *)(REG_BASE_ADDRESS + 0x710074);
@@ -131,30 +135,20 @@ static int os_remove (lua_State *L) {
 	return g_shell_result;
 }
 
-//====================================
-static int _os_rename (lua_State *L) {
-  VMWCHAR ucs_oldname[VM_FS_MAX_PATH_LENGTH+1];
-  VMWCHAR ucs_newname[VM_FS_MAX_PATH_LENGTH+1];
-
-  const char *fromname = luaL_checkstring(L, 1);
-  const char *toname = luaL_checkstring(L, 2);
-
-  vm_chset_ascii_to_ucs2(ucs_oldname, VM_FS_MAX_PATH_LENGTH, fromname);
-  vm_chset_ascii_to_ucs2(ucs_newname, VM_FS_MAX_PATH_LENGTH, toname);
-
-  lua_pushinteger(L, vm_fs_rename(ucs_oldname, ucs_newname));
-
-  g_shell_result = 1;
-  vm_signal_post(g_shell_signal);
-  return 1;
-}
-
 //===================================
 static int os_rename (lua_State *L) {
 	const char *fromname = luaL_checkstring(L, 1);
 	const char *toname = luaL_checkstring(L, 2);
-	remote_CCall(&_os_rename);
-	return g_shell_result;
+
+    g_fcall_message.message_id = CCALL_MESSAGE_FRENAME;
+    g_CCparams.cpar1 = (char *)fromname;
+    g_CCparams.cpar2 = (char *)toname;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    lua_pushinteger(L, g_shell_result);
+	return 1;
 }
 
 //====================================
@@ -523,8 +517,8 @@ int os_getmem(lua_State* L) {
 	lua_pushinteger(L, g->memlimit );
 	//lua_pushinteger(L, vm_str_strtoi(value)*1024);
 	lua_pushinteger(L, g_memory_size_b );
-
-    return 3;
+	lua_pushinteger(L, g_max_heap_inc );
+    return 4;
 }
 
 //===================================
@@ -783,57 +777,6 @@ static int os_noact_time (lua_State *L) {
 	return 1;
 }
 
-// set watchdog timeout
-//========================================
-static int os_wdg_timeout (lua_State *L) {
-	if (lua_gettop(L) >= 1) {
-		int wdgtmo = luaL_checkinteger(L,1);	// watchdog timeout in seconds
-
-		int hsz = ((g_reserved_heap / 32768) - 1) << 9;
-
-		if (wdgtmo < 10) wdgtmo = 10;
-		if (wdgtmo > 3600) wdgtmo = 3600;
-		sys_wdt_tmo = (wdgtmo * 216685) / 1000;	// set watchdog timeout
-		sys_wdt_rst = sys_wdt_tmo - 1083;		// reset wdg 5 sec before expires
-        sys_wdt_rst_usec = (sys_wdt_tmo * 4615 / 1000) - 2000;
-		// save to RTC_SPAR0 register
-		volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + 0x0710060);
-		wdgtmo /= 10;
-	    *reg = (wdgtmo | hsz) | 0xA000;
-	    _writertc(0x586A);
-	    _writertc(0x9136);
-	}
-	lua_pushnumber(L, (float)sys_wdt_tmo / 216.685);
-	return 1;
-}
-
-// set C heap size
-//=======================================
-static int os_cheap_size (lua_State *L) {
-	if (lua_gettop(L) >= 1) {
-		int hsz = luaL_checkinteger(L,1);	// cheap size in 32K increments
-
-		int wdgtmo = (sys_wdt_tmo * 1000) / 216685;
-		if ((sys_wdt_tmo * 1000) % 216685 >= 5) wdgtmo++;
-		wdgtmo &= 0x1FFF;
-
-		if (hsz < 1) hsz = 1;
-		if (hsz > 8) hsz = 8;
-		// save to RTC_SPAR0 register
-		volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + 0x0710060);
-		hsz--;
-		hsz <<= 9;
-		*reg = (hsz | wdgtmo) | 0xA000;
-		_writertc(0x586A);
-		_writertc(0x9136);
-
-		lua_pushinteger(L, ((hsz >> 9)+1) * 32768);
-		vm_log_info("C heap size set to %dK, REBOOT to take effect", ((hsz >> 9)+1) * 32);
-	}
-	else lua_pushinteger(L, g_reserved_heap);
-	return 1;
-}
-
 //=================================
 static int _os_usb (lua_State *L) {
 	lua_pushinteger(L, vm_usb_get_cable_status());
@@ -932,11 +875,13 @@ static int os_writertcreg(lua_State* L)
     unsigned int adr = luaL_checkinteger(L, 1);
     uint32_t val = luaL_checkinteger(L, 2);
 
-    volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + adr);
-    *reg = val;
+    if ((adr >= 0x710000) && (adr <= 0x710078)) {
+		volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + adr);
+		*reg = val;
 
-    _writertc(0x586A);
-    _writertc(0x9136);
+		_writertc(0x586A);
+		_writertc(0x9136);
+    }
 
 	return 0;
 }
@@ -1056,66 +1001,295 @@ static int os_testcheap( lua_State* L )
 	return 0;
 }
 
-//----------------------------
-int _read_params(lua_State *L)
+//-----------------------------------------------------------------
+int _get_paramstr(char **param_buf, char **par_end, char **var_ptr)
 {
-	int psize;
+	int psize, err = 0;
 
 	psize = vm_fs_app_data_get_free_space();
 	if (psize > MAX_SYSTEM_PARAMS_SIZE) {
 		// no parameters
-    	vm_log_debug("no parameters");
-		g_shell_result = -1;
-		goto exit;
+    	vm_log_debug("parameters not found");
+		return -1;
 	}
 
-	char* param_buf = vm_calloc(MAX_SYSTEM_PARAMS_SIZE+1);
-	if (param_buf == NULL) {
+	char *parambuf = vm_calloc(MAX_SYSTEM_PARAMS_SIZE+1);
+	if (parambuf == NULL) {
     	vm_log_error("error allocating buffer");
-		g_shell_result = -2;
-		goto exit1;
+		return -2;
 	}
 
 	VM_FS_HANDLE phandle = vm_fs_app_data_open(VM_FS_MODE_READ, VM_FALSE);
 	if (phandle < VM_FS_SUCCESS) {
     	vm_log_error("error opening params");
-		g_shell_result = phandle;
+		return -3;
+	}
+
+	if (vm_fs_app_data_read(phandle, parambuf, MAX_SYSTEM_PARAMS_SIZE, &psize) < 0) {
+    	vm_log_error("error reading params");
+    	vm_fs_app_data_close(phandle);
+		return -4;
+	}
+
+	vm_fs_app_data_close(phandle);
+
+	parambuf[psize] = '\0';
+
+	// === Check crc ===
+	char *parend = strstr(parambuf, "\n__SYSVAR=\"");	// end of __SYSPAR table
+	if (parend == NULL) {
+		err = -5;
 		goto exit;
 	}
 
-	g_shell_result = vm_fs_app_data_read(phandle, param_buf, MAX_SYSTEM_PARAMS_SIZE, &psize);
-	if (g_shell_result > 0) {
-		param_buf[g_shell_result] = '\0';
-		vm_fs_app_data_close(phandle);
-		g_shell_result = luaL_loadbuffer(L, param_buf, strlen(param_buf), "param");
-		if (g_shell_result) {
-			lua_pop(L, 1);  // pop error message from the stack
-	    	vm_log_error("error in parameters");
-	    	g_shell_result = -3;
-		}
-		else {
-			vm_log_debug("%s", param_buf);
-	    	g_shell_result = psize;
-		}
+	char *varptr = parend + 11;					// start of __SSVAR
+	char *varend = strstr(varptr, "\"");	// end of __SYSVAR
+	if (varend == NULL){
+		err = -6;
+		goto exit;
+	}
+	if ((varend - varptr) != SYSVAR_SIZE) {
+		err = -7;
+		goto exit;
+	}
+
+	// calculate crc
+	CRC16_Context contex;
+	uint16_t parcrc;
+	CRC16_Init( &contex );
+	CRC16_Update( &contex, parambuf, (varptr - parambuf) + SYSVAR_SIZE - 4);
+	CRC16_Final( &contex, &parcrc );
+	// compare
+	char crcstr[5] = {'\0'};
+	memcpy(crcstr, varptr + SYSVAR_SIZE - 4, 4);
+	uint16_t crc = (uint16_t)strtol(crcstr, NULL, 16);
+	if (crc != parcrc) {
+		err = -8;
 	}
 	else {
-    	vm_log_error("error reading params");
+		*param_buf = parambuf;
+		*par_end = parend;
+		*var_ptr = varptr;
+		return 0;
 	}
 
 exit:
-	vm_free(param_buf);
-	param_buf = NULL;
-exit1:
+	vm_log_error("SYSPAR wrong format");
+	return err;
+}
+
+//----------------------------
+int _read_params(lua_State *L)
+{
+	char *param_buf = NULL;
+	char *parend = NULL;
+	char *sysvar = NULL;
+
+	g_shell_result = _get_paramstr(&param_buf, &parend, &sysvar);
+	if (g_shell_result >= 0) {
+		*parend = '\0';
+		g_shell_result = luaL_loadbuffer(L, param_buf, strlen(param_buf), "param");
+		if (g_shell_result) {
+			lua_pop(L, 1);  // pop error message from the stack
+			vm_log_error("error executing parameters");
+			g_shell_result = -10;
+		}
+		else {
+			vm_log_debug("%s", param_buf);
+			g_shell_result = 1;
+		}
+	}
+
+	if (param_buf != NULL) vm_free(param_buf);
+
 	vm_signal_post(g_shell_signal);
 	return 0;
 }
 
+//----------------------------------
+static int _get_params(lua_State *L)
+{
+	char *param_buf = NULL;
+	char *parend = NULL;
+	char *sysvar = NULL;
+
+	g_shell_result = _get_paramstr(&param_buf, &parend, &sysvar);
+
+	if (g_shell_result < 0) lua_pushinteger(L, g_shell_result);
+	else lua_pushstring(L, param_buf);
+
+	if (param_buf != NULL) vm_free(param_buf);
+
+	vm_signal_post(g_shell_signal);
+	return 0;
+}
+
+//-------------------------------------------------------
+void _get_sys_vars(int doset, void *heapsz, void *wdgtmo)
+{
+    // get system variables
+	char *param_buf = NULL;
+	char *parend = NULL;
+	char *sysvar = NULL;
+
+	int res = _get_paramstr(&param_buf, &parend, &sysvar);
+	if (res >= 0) {
+		// get c heap size & wdg timeout
+		char hexstr[9] = {'\0'};
+		memcpy(hexstr, sysvar, 8);
+		int val = (int)strtol(hexstr, NULL, 16);
+		if (doset) {
+			if ((val >= (32*1024)) && (val <= (256*1024))) g_reserved_heap = val;
+		}
+		else {
+			*(int *)heapsz = val;
+		}
+
+		// get watchdog timeout
+		memcpy(hexstr, sysvar+8, 8);
+		val = (int)strtol(hexstr, NULL, 16);
+		if (doset) {
+			if ((val >= 10) && (val <= 3600)) {
+				sys_wdt_tmo = (val * 216685) / 1000;	// set watchdog timeout
+				sys_wdt_rst = sys_wdt_tmo - 1083;		// reset wdg 5 sec before expires
+			}
+		}
+		else {
+			*(int *)wdgtmo = val;
+		}
+	}
+
+	if (param_buf != NULL) vm_free(param_buf);
+}
+
+//-----------------------------------
+static int _get_sysvars(lua_State *L)
+{
+	int cheapsz = -1;
+	int wdgtmo = -1;
+
+	_get_sys_vars(0, &cheapsz, &wdgtmo);
+
+	lua_pushinteger(L, cheapsz);
+	lua_pushinteger(L, wdgtmo);
+
+	vm_signal_post(g_shell_signal);
+	return 0;
+}
+
+//-----------------------------------------------------------------------------------------
+static int _table_tostring(lua_State *L, char *buf, int *idx, int top, int list, int level)
+{
+    int klen = 0;
+    int vlen = 0;
+    int val_type;
+    int num_key;
+    int items = 0;
+    int doadd = 0;
+    char sep[2] = {0};
+    char quot[2] = {0};
+    const char* key;
+    const char* value;
+    char strkey[64];
+
+    lua_pushnil(L);  // first key
+    while (lua_next(L, top) != 0) {
+    	// Pops a key from the stack, and pushes a key-value pair from the table
+    	// 'key' (at index -2) and 'value' (at index -1)
+		val_type = lua_type(L, -2);  // get key type
+		if (val_type == LUA_TNUMBER) {
+			num_key = lua_tonumber(L, -2);
+			klen = sprintf(strkey,"[%d]", num_key);
+		}
+		else {
+			key = lua_tolstring(L, -2, &klen);
+			klen = sprintf(strkey,"%s", key);
+		}
+		doadd = 0;
+		val_type = lua_type(L, -1);  // get value type
+		switch (val_type) {
+			case LUA_TBOOLEAN:
+			case LUA_TNUMBER:
+				quot[0] = '\0';
+				value = lua_tolstring(L, -1, &vlen);
+				if ((*idx + klen + vlen + 2) <= MAX_SYSTEM_PARAMS_SIZE) doadd = 1;
+				break;
+			case LUA_TSTRING:
+				quot[0] = '"';
+				doadd = 1;
+				value = lua_tolstring(L, -1, &vlen);
+				if ((*idx + klen + vlen + 4) <= MAX_SYSTEM_PARAMS_SIZE) doadd = 1;
+				break;
+			case LUA_TTABLE:
+				if ((*idx + klen + 4) <= MAX_SYSTEM_PARAMS_SIZE) {
+					*idx += sprintf(buf + *idx, "%s%s={", sep, strkey);
+					if (list) printf("%*s%s%s={\n", level, " ", sep, strkey);
+					items += _table_tostring(L, buf, idx, lua_gettop(L), list, level*2);
+					*idx += sprintf(buf + *idx, "}");
+					if (list) printf("%*s}\n", level, " ");
+				}
+				break;
+		    case LUA_TFUNCTION:
+				if (list) printf("%*s%s%s=<FUNCTION>\n", level, " ", sep, strkey);
+		    	break;
+		    case LUA_TUSERDATA:
+				if (list) printf("%*s%s%s=<USERDATA>\n", level, " ", sep, strkey);
+		    	break;
+		    case LUA_TNIL:
+				if (list) printf("%*s%s%s=<NIL>\n", level, " ", sep, strkey);
+		    	break;
+		    default:
+				if (list) printf("%*s%s%s=<UNKNOWN TYPE: %d>\n", level, " ", sep, strkey, val_type);
+		}
+		if (doadd) {
+			*idx += sprintf(buf + *idx, "%s%s=%s%s%s", sep, strkey, quot, value, quot);
+			if (list) printf("%*s%s%s=%s%s%s\n", level, " ", sep, strkey, quot, value, quot);
+			items++;
+		}
+		if (items > 0) sep[0] = ',';
+	    lua_pop(L, 1);  // removes 'value'; keeps 'key' for next iteration
+    }
+	return items;
+}
+
+//======================================
+static int table_to_string(lua_State *L)
+{
+	if (!lua_istable(L, -1)) return luaL_error(L, "table argument expected");
+
+	int list = 0;
+	if (lua_isnumber(L, 1)) list = luaL_checkinteger(L, 1) & 1;
+
+	char *buf = calloc(MAX_SYSTEM_PARAMS_SIZE+1, 1);
+	if (buf == NULL) return luaL_error(L, "error allocating buffer");
+
+	int idx;
+    int items = 0;
+
+    idx = sprintf(buf, "{");
+	if (list) printf("{\n");
+
+    items = _table_tostring(L, buf, &idx, lua_gettop(L), list, 2);
+
+	idx += sprintf(buf+idx, "}");
+	if (list) printf("}\n");
+
+	if (!list) {
+		lua_pushinteger(L, items);
+		lua_pushstring(L, buf);
+		free(buf);
+		return 2;
+	}
+	else {
+		free(buf);
+		return 0;
+	}
+}
 
 //-----------------------------------
 static int _save_params(lua_State *L)
 {
 	int err = 0;
-	int psize;
 
 	char* param_buf = vm_calloc(MAX_SYSTEM_PARAMS_SIZE+1);
 	if (param_buf == NULL) {
@@ -1123,14 +1297,6 @@ static int _save_params(lua_State *L)
     	err = -1;
     	goto exit1;
 	}
-
-    size_t klen = 0;
-    size_t vlen = 0;
-    int idx = 0;
-    int items = 0;
-    char sep[2] = {0};
-    const char* key;
-    const char* value;
 
     lua_getglobal(L, "__SYSPAR");
 	if (!lua_istable(L, -1)) {
@@ -1140,40 +1306,24 @@ static int _save_params(lua_State *L)
     	goto exit;
 	}
 
-	idx = sprintf(param_buf, "__SYSPAR={");
+    int idx = 0;
+    int items = 0;
 
-    lua_pushnil(L);  // first key
-    while (lua_next(L, 1) != 0) {
-      // Pops a key from the stack, and pushes a key-value pair from the table
-      // 'key' (at index -2) and 'value' (at index -1)
-      if (lua_isstring(L, -2)) {
-    	  key = lua_tolstring(L, -2, &klen);
-          if (lua_isnumber(L, -1)) {
-        	  value = lua_tolstring(L, -1, &vlen);
-        	  if ((idx+klen+vlen+2) <= MAX_SYSTEM_PARAMS_SIZE) {
-        		  idx += sprintf(param_buf+idx, "%s%s=%s", sep, key, value);
-        		  items++;
-        	  }
-          }
-          else if (lua_isstring(L, -1)) {
-        	  value = lua_tolstring(L, -1, &vlen);
-        	  if ((idx+klen+vlen+4) <= MAX_SYSTEM_PARAMS_SIZE) {
-        		  idx += sprintf(param_buf+idx, "%s%s=\"%s\"", sep, key, value);
-        		  items++;
-        	  }
-          }
-		  if (items > 0) sep[0] = ',';
-      }
-      lua_pop(L, 1);  // removes 'value'; keeps 'key' for next iteration
-    }
+    idx = sprintf(param_buf, "__SYSPAR={");
+
+    items = _table_tostring(L, param_buf, &idx, lua_gettop(L), 0, 0);
+
+	idx += sprintf(param_buf+idx, "}\n__SYSVAR=\"%08X%08X", sys_wdt_tmo, g_reserved_heap);
+
 	lua_pop(L, 1);  // removes '__SYSPAR' table
-	idx = sprintf(param_buf+idx, "}");
 
-    if (items == 0) {
-    	vm_log_debug("no params found");
-    	err = -3;
-    	goto exit1;
-    }
+	// calculate crc
+	CRC16_Context contex;
+	uint16_t parcrc = 0;
+	CRC16_Init( &contex );
+	CRC16_Update( &contex, param_buf, idx );
+	CRC16_Final( &contex, &parcrc );
+	idx += sprintf(param_buf+idx, "%04X\"", parcrc);
 
 	err = items;
 	VM_FS_HANDLE phandle = vm_fs_app_data_open(VM_FS_MODE_CREATE_ALWAYS_WRITE, VM_FALSE);
@@ -1183,7 +1333,8 @@ static int _save_params(lua_State *L)
 		goto exit;
 	}
 
-	err = vm_fs_app_data_write(phandle, param_buf, strlen(param_buf), &psize);
+	int psize;
+	err = vm_fs_app_data_write(phandle, param_buf, idx, &psize);
 	if (err < 0) {
     	vm_log_error("error writing params");
 	}
@@ -1219,6 +1370,22 @@ static int read_params(lua_State *L)
 }
 
 //=================================
+static int get_params(lua_State *L)
+{
+	remote_CCall(&_get_params);
+
+	return 1;
+}
+
+//=================================
+static int get_sysvars(lua_State *L)
+{
+	remote_CCall(&_get_sysvars);
+
+	return 2;
+}
+
+//=================================
 static int save_params(lua_State *L)
 {
 	remote_CCall(&_save_params);
@@ -1228,59 +1395,52 @@ static int save_params(lua_State *L)
 	return 1;
 }
 
-//==================================
-static int _get_params(lua_State *L)
+// set watchdog timeout
+//======================================
+static int os_wdg_timeout (lua_State *L)
 {
-	char* param_buf = vm_calloc(MAX_SYSTEM_PARAMS_SIZE+1);
-	if (param_buf == NULL) {
-    	lua_pushnil(L);
-    	return 1;
+	g_shell_result = 0;
+	if (lua_gettop(L) >= 1) {
+		int wdgtmo = luaL_checkinteger(L,1);	// watchdog timeout in seconds
+
+		if (wdgtmo < 10) wdgtmo = 10;
+		if (wdgtmo > 3600) wdgtmo = 3600;
+		sys_wdt_tmo = (wdgtmo * 216685) / 1000;	// set watchdog timeout
+		sys_wdt_rst = sys_wdt_tmo - 1083;		// reset wdg 5 sec before expires
+
+		remote_CCall(&_save_params);
+
+		lua_pushinteger(L, (sys_wdt_tmo * 1000) / 216685);
+		lua_pushinteger(L, g_shell_result);
+		return 2;
 	}
-	int idx = 0;
-
-	lua_getglobal(L, "__SYSPAR");
-	if (lua_istable(L, 1)) {
-		size_t klen = 0;
-		size_t vlen = 0;
-		const char* key;
-		const char* value;
-
-		lua_pushnil(L);  // first key
-		while (lua_next(L, 1) != 0) {
-		  // Pops a key from the stack, and pushes a key-value pair from the table
-		  // 'key' (at index -2) and 'value' (at index -1)
-		  if (lua_isstring(L, -2)) {
-			  key = lua_tolstring(L, -2, &klen);
-			  if (lua_isnumber(L, -1)) {
-				  value = lua_tolstring(L, -1, &vlen);
-				  if ((idx+klen+vlen+2) <= MAX_SYSTEM_PARAMS_SIZE) {
-					  idx += sprintf(param_buf+idx, "%s=%s\n", key, value);
-				  }
-			  }
-			  else if (lua_isstring(L, -1)) {
-				  value = lua_tolstring(L, -1, &vlen);
-				  if ((idx+klen+vlen+4) <= MAX_SYSTEM_PARAMS_SIZE) {
-					  idx += sprintf(param_buf+idx, "%s=\"%s\"\n", key, value);
-				  }
-			  }
-		  }
-		  lua_pop(L, 1);  // removes 'value'; keeps 'key' for next iteration
-		}
+	else {
+		lua_pushinteger(L, (sys_wdt_tmo * 1000) / 216685);
+		return 1;
 	}
-	lua_pop(L, 1);  // removes '__SYSPAR' table
-
-	lua_pushstring(L, param_buf);
-	vm_free(param_buf);
-	vm_signal_post(g_shell_signal);
-	return 0;
 }
 
-//=================================
-static int get_params(lua_State *L)
+// set C heap size
+//=====================================
+static int os_cheap_size (lua_State *L)
 {
-	remote_CCall(&_get_params);
+	g_shell_result = 0;
+	if (lua_gettop(L) >= 1) {
+		int hsz = luaL_checkinteger(L,1);	// cheap size in 32K increments
+		if (hsz < (32*1024)) hsz = (32*1024);
+		if (hsz > (8*32*1024)) hsz = (8*32*1024);
+		hsz &= 0x0FF8000;
+		g_reserved_heap = hsz;
 
-	return 1;
+		remote_CCall(&_save_params);
+		lua_pushinteger(L, g_reserved_heap);
+		lua_pushinteger(L, g_shell_result);
+		return 2;
+	}
+	else {
+		lua_pushinteger(L, g_reserved_heap);
+		return 1;
+	}
 }
 
 //=====================================
@@ -1350,6 +1510,7 @@ const LUA_REG_TYPE syslib[] = {
   {LSTRKEY("list"),     	LFUNCVAL(os_listfiles)},
   {LSTRKEY("compile"),		LFUNCVAL(os_compile)},
   {LSTRKEY("shell_linetype"),LFUNCVAL(set_term_input)},
+  {LSTRKEY("table2str"),	LFUNCVAL(table_to_string)},
   {LNILKEY, LNILVAL}
 };
 
@@ -1385,10 +1546,11 @@ const LUA_REG_TYPE sys_map[] = {
 		  {LSTRKEY("read_params"),	LFUNCVAL(read_params) },
 		  {LSTRKEY("save_params"),	LFUNCVAL(save_params) },
 		  {LSTRKEY("get_params"),	LFUNCVAL(get_params) },
+		  {LSTRKEY("get_sysvars"),	LFUNCVAL(get_sysvars) },
 		  {LSTRKEY("random"),		LFUNCVAL(sys_random) },
 		  {LSTRKEY("tick"),			LFUNCVAL(sys_tick) },
 		  {LSTRKEY("elapsed"),		LFUNCVAL(sys_elapsed) },
-		  {LSTRKEY("setcheapsize"),	LFUNCVAL(os_cheap_size) },
+		  {LSTRKEY("c_heapsize"),	LFUNCVAL(os_cheap_size) },
 		  {LNILKEY, LNILVAL }
 };
 

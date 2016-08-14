@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 
 #include "vmsystem.h"
 #include "vmwdt.h"
@@ -21,6 +22,9 @@
 #include "lualib.h"
 #include "llimits.h"
 #include "shell.h"
+#include "sntp.h"
+#include "legc.h"
+#include "term.h"
 
 
 lua_State *shellL = NULL;			// Lua state
@@ -39,6 +43,7 @@ VM_DCL_OWNER_ID g_owner_id = 0;  // Module owner of APP
 VM_DCL_HANDLE retarget_usb_handle = -1;
 VM_DCL_HANDLE retarget_uart1_handle = -1;
 int retarget_target = -1;
+int g_rtc_poweroff = 1;
 
 //vm_mutex_t retarget_rx_mutex;
 
@@ -54,9 +59,145 @@ extern VMUINT8 uart_has_userdata[2];
 extern uart_info_t *uart_data[2];
 extern int _read_params(lua_State *L);
 extern int _gsm_readbuf_free(lua_State *L);
+extern unsigned int g_memory_size;
+extern unsigned int g_memory_size_b;
+extern vm_gsm_gprs_apn_info_t apn_info;
+extern VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type;
+extern int lcd_init( lua_State* L );
 
 
-//extern int sys_wdt_rst_usec;
+//-------------------------------------------------------------
+void full_fname(char *fname, VMWCHAR *ucs_name, int size)
+{
+	char file_name[128];
+	const char *ptr;
+	if (fname[1] != ':') {
+		snprintf(file_name, 127, "C:\\%s", fname);
+		ptr = file_name;
+	}
+	else ptr = fname;
+	vm_chset_ascii_to_ucs2(ucs_name, size, ptr);
+}
+
+//----------------------------------------
+int file_open(const char* file, int flags)
+{
+    VMUINT fs_mode;
+
+    if(flags & O_CREAT) {
+        fs_mode = VM_FS_MODE_CREATE_ALWAYS_WRITE;
+    } else if((flags & O_RDWR) || (flags & O_WRONLY)) {
+        fs_mode = VM_FS_MODE_WRITE;
+    } else {
+        fs_mode = VM_FS_MODE_READ;
+    }
+
+    if(flags & O_APPEND) {
+        fs_mode |= VM_FS_MODE_APPEND;
+    }
+
+    g_fcall_message.message_id = CCALL_MESSAGE_FOPEN;
+    g_CCparams.cpar1 = (char *)file;
+    g_CCparams.ipar1 = fs_mode;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+//----------------------
+int file_close(int file)
+{
+    g_fcall_message.message_id = CCALL_MESSAGE_FCLOSE;
+    g_CCparams.ipar1 = file;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+//----------------------
+int file_flush(int file)
+{
+    g_fcall_message.message_id = CCALL_MESSAGE_FFLUSH;
+    g_CCparams.ipar1 = file;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+//---------------------
+int file_size(int file)
+{
+    g_fcall_message.message_id = CCALL_MESSAGE_FSIZE;
+    g_CCparams.ipar1 = file;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+//-----------------------------------------
+int file_read(int file, char* ptr, int len)
+{
+    g_fcall_message.message_id = CCALL_MESSAGE_FREAD;
+    g_CCparams.ipar1 = file;
+    g_CCparams.ipar2 = len;
+    g_CCparams.cpar1 = ptr;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+//------------------------------------------
+int file_write(int file, char* ptr, int len)
+{
+    g_fcall_message.message_id = CCALL_MESSAGE_FWRITE;
+    g_CCparams.ipar1 = file;
+    g_CCparams.ipar2 = len;
+    g_CCparams.cpar1 = ptr;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+//---------------------------------------------
+int file_seek(int file, int offset, int whence)
+{
+    g_fcall_message.message_id = CCALL_MESSAGE_FSEEK;
+    g_CCparams.ipar1 = file;
+    g_CCparams.ipar2 = offset;
+    g_CCparams.ipar3 = whence + 1;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+//-----------------------------------
+int file_exists(const char *filename)
+{
+    g_fcall_message.message_id = CCALL_MESSAGE_FCHECK;
+    g_CCparams.cpar1 = (char *)filename;
+    g_CCparams.ipar1 = VM_FS_MODE_READ;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
+}
+
+
 
 //-----------------------------------------------
 static void lstop (lua_State *L, lua_Debug *ar) {
@@ -280,36 +421,6 @@ static void setboolfield (lua_State *L, const char *key, int value) {
 }
 */
 
-#include "legc.h"
-extern unsigned int g_memory_size;
-extern unsigned int g_memory_size_b;
-
-//-----------------------------------
-int file_exists(const char *filename)
-{
-    char file_name[64];
-    char* ptr;
-
-    if(filename[1] != ':') {
-        snprintf(file_name, sizeof(file_name), "C:\\%s", filename);
-        ptr = file_name;
-    } else {
-        ptr = (char *)filename;
-    }
-
-    g_fcall_message.message_id = CCALL_MESSAGE_FCHECK;
-    g_CCparams.cpar1 = ptr;
-    g_CCparams.ipar1 = VM_FS_MODE_READ;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
-    return g_shell_result;
-}
-
-extern vm_gsm_gprs_apn_info_t apn_info;
-extern VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type;
-
 //--------------------------------------
 static int _set_custom_apn(lua_State *L)
 {
@@ -319,17 +430,25 @@ static int _set_custom_apn(lua_State *L)
     return 0;
 }
 
+//======================================
+static int _get_ntptime (lua_State *L) {
+
+  int tz = luaL_checkinteger( L, -1 );
+  sntp_gettime(tz, 0);
+
+  vm_signal_post(g_shell_signal);
+  return 0;
+}
+
 //-----------------------------------------
 static void setup_from_params(lua_State *L)
 {
-	show_log = 0;
 	remote_CCall(&_read_params);
-	show_log = 0x1F;
 
 	if (g_shell_result < 0) return;
 
 	// execute, set params
-	lua_pcall(L, 0, 0, 0);
+	if (lua_pcall(L, 0, 0, 0) != 0) return;
 
 	lua_getglobal(L, "__SYSPAR");
 	if (!lua_istable(L, -1)) {
@@ -341,24 +460,69 @@ static void setup_from_params(lua_State *L)
     size_t klen = 0;
     size_t vlen = 0;
     const char* key;
-    const char* value;
+    int ntpreq = 0;
+    int lcdinit = -1;
+    int tz = 0;
 
     lua_pushnil(L);  // first key
     while (lua_next(L, 1) != 0) {
       // Pops a key from the stack, and pushes a key-value pair from the table
       // 'key' (at index -2) and 'value' (at index -1)
-      if ((lua_isstring(L, -1)) && (lua_isstring(L, -2))) {
-        key = lua_tolstring(L, -2, &klen);
-        value = lua_tolstring(L, -1, &vlen);
-        if ((klen == 3) && (strstr(key, "apn") == key)) {
-    	    sprintf(apn_info.apn, value);
-        	printf("  'apn' parameter loaded [%s]\n", apn_info.apn);
-    		remote_CCall(&_set_custom_apn);
-        }
-      }
+	  if (lua_type(L, -2) == LUA_TSTRING) {
+		  key = lua_tolstring(L, -2, &klen);
+
+		  if (lua_type(L, -1) == LUA_TSTRING) {
+		    const char* value = lua_tolstring(L, -1, &vlen);
+
+			if ((klen == 3) && (strstr(key, "apn") == key)) {
+				sprintf(apn_info.apn, value);
+				printf("        'apn' = \"%s\"\n", apn_info.apn);
+				remote_CCall(&_set_custom_apn);
+				ntpreq++;
+			}
+		  }
+		  else if (lua_type(L, -1) == LUA_TNUMBER) {
+			int value = lua_tointeger(L, -1);
+
+			if ((klen == 3) && (strstr(key, "ntp") == key)) {
+				if ((value <= 14) && (value >= -12)) {
+					ntpreq++;
+					tz = value;
+				}
+			}
+			else if ((klen == 7) && (strstr(key, "lcdinit") == key)) {
+			    lcdinit = value;
+				printf("    'lcdinit' = %d\n", value);
+			}
+			else if ((klen == 7) && (strstr(key, "termcol") == key)) {
+				term_num_cols = value;
+				printf("    'termcol' = %d\n", value);
+			}
+			else if ((klen == 7) && (strstr(key, "termlin") == key)) {
+				term_num_lines = value;
+				printf("    'termlin' = %d\n", value);
+			}
+			else if ((klen == 9) && (strstr(key, "inputtype") == key)) {
+				use_term_input = value;
+				printf("  'inputtype' = %d\n", value);
+			}
+		  }
+	  }
       lua_pop(L, 1);  // removes 'value'; keeps 'key' for next iteration
     }
     lua_pop(L, 1);  // removes '__SYSPAR' table
+
+    if (lcdinit >= 0) {
+		lua_pushinteger(L, lcdinit);	// push lcd type param
+		lcd_init(L);
+		lua_pop(L, 1);					// pop lcd type param
+    }
+    if (ntpreq > 1) {
+		lua_pushinteger(L, tz);			// push tz param
+		remote_CCall(&_get_ntptime);
+		lua_pop(L, 1);					// pop tz param
+		printf("        'ntp'   time requested, tz=%d\n", tz);
+    }
 }
 
 //===================================================================
@@ -378,11 +542,14 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
 
     printf("\nLua memory: %d bytes, C heap: %d bytes\n", g_memory_size, g_memory_size_b);
 
-    lua_settop(L, 0);  // clear stack
+    lua_settop(L, 0);		// clear stack
 
-    setup_from_params(L);
+	show_log = 0;
+    setup_from_params(L);	// Check system parameters
+	show_log = 0x1F;
 
-    lua_settop(L, 0);  // clear stack
+    lua_settop(L, 0);		// clear stack
+
     // Check startup files
     if (file_exists("init.lc") >= 0) {
         printf("Executing 'init.lc'\n");
@@ -483,6 +650,17 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
 					lua_pushinteger(L, params->count);
 					lua_pushinteger(L, params->time);
 	                lua_pcall(L, 4, 0, 0);
+	                params->busy = 0;
+                }
+                break;
+
+            case CB_FUNC_TOUCH: {
+            		cb_func_param_touch_t *params = (cb_func_param_touch_t*)message.user_data;
+	                lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);
+					lua_pushinteger(L, params->event);
+					lua_pushinteger(L, params->x);
+					lua_pushinteger(L, params->y);
+	                lua_pcall(L, 3, 0, 0);
 	                params->busy = 0;
                 }
                 break;

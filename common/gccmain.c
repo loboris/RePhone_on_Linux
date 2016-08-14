@@ -1,6 +1,7 @@
 
 #include <stdio.h>
 #include <fcntl.h>
+#include <stdlib.h>
 #if defined(__GNUC__) /* GCC CS3 */
 #include <sys/stat.h>
 #endif
@@ -26,15 +27,17 @@
 typedef VMINT (*vm_get_sym_entry_t)(char* symbol);
 vm_get_sym_entry_t vm_get_sym_entry;
 
-#define RESERVED_HEAP 1024*32				// initial size of heap reserved for C usage
+#define RESERVED_HEAP 1024*64				// initial size of heap reserved for C usage
 
 unsigned int g_memory_size = 1024 * 800;	// heap for lua usage, ** will be adjusted **
 int g_memory_size_b = 0;					// adjusted heap for C usage
 static void* g_base_address = NULL;			// base address of the lua heap
 int g_reserved_heap = RESERVED_HEAP;
+int g_max_heap_inc = 0;
 
 extern void vm_main();
 extern int retarget_getc(int tmo);
+extern void _get_sys_vars(int doset);
 
 int __g_errno = 0;
 
@@ -82,6 +85,7 @@ extern caddr_t _sbrk(int incr)
     else {
     	heap += incr;
     }
+    if (incr > g_max_heap_inc) g_max_heap_inc = incr;
 
     return (caddr_t)prev_heap;
 }
@@ -89,12 +93,6 @@ extern caddr_t _sbrk(int incr)
 //---------------------------------------------
 extern int link(char* old_name, char* new_name)
 {
-    /*VMWCHAR ucs_oldname[32], ucs_newname[32];
-    vm_chset_ascii_to_ucs2(ucs_oldname, 32, old_name);
-    vm_chset_ascii_to_ucs2(ucs_newname, 32, new_name);
-    //return vm_fs_rename(old_name, new_name);
-    return vm_fs_rename(ucs_oldname, ucs_newname);*/
-
     g_fcall_message.message_id = CCALL_MESSAGE_FRENAME;
     g_CCparams.cpar1 = old_name;
     g_CCparams.cpar2 = new_name;
@@ -109,15 +107,6 @@ extern int link(char* old_name, char* new_name)
 int _open(const char* file, int flags, int mode)
 {
     VMUINT fs_mode;
-    char file_name[64];
-    char* ptr;
-
-    if(file[1] != ':') {
-        snprintf(file_name, sizeof(file_name), "C:\\%s", file);
-        ptr = file_name;
-    } else {
-        ptr = (char *)file;
-    }
 
     if(flags & O_CREAT) {
         fs_mode = VM_FS_MODE_CREATE_ALWAYS_WRITE;
@@ -132,7 +121,7 @@ int _open(const char* file, int flags, int mode)
     }
 
     g_fcall_message.message_id = CCALL_MESSAGE_FOPEN;
-    g_CCparams.cpar1 = ptr;
+    g_CCparams.cpar1 = (char *)file;
     g_CCparams.ipar1 = fs_mode;
     vm_thread_send_message(g_main_handle, &g_fcall_message);
     // wait for call to finish...
@@ -187,12 +176,6 @@ extern int _isatty(int file)
 //-------------------------------------------------
 extern int _lseek(int file, int offset, int whence)
 {
-    /*int position;
-    int result;
-
-    vm_fs_seek(file, offset, whence + 1);
-    result = vm_fs_get_position(file, &position);*/
-
     g_fcall_message.message_id = CCALL_MESSAGE_FSEEK;
     g_CCparams.ipar1 = file;
     g_CCparams.ipar2 = offset;
@@ -285,10 +268,6 @@ extern int _write(int file, char* ptr, int len)
         }
         return len;
     } else {
-        /*VMUINT written_bytes;
-
-        vm_fs_write(file, ptr, len, &written_bytes);
-        return written_bytes;*/
         g_fcall_message.message_id = CCALL_MESSAGE_FWRITE;
         g_CCparams.ipar1 = file;
         g_CCparams.ipar2 = len;
@@ -345,16 +324,8 @@ void gcc_entry(unsigned int entry, unsigned int init_array_start, unsigned int c
     __init_array ptr;
     vm_get_sym_entry = (vm_get_sym_entry_t)entry;
 
-	// get c heap size from RTC_SPAR0 register if possible
-	volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + 0x0710060);
-    uint32_t chpsz = *reg;
-	g_reserved_heap = RESERVED_HEAP;
-    if ((chpsz & 0xF000) == 0xA000) {
-    	chpsz &= 0x0E00;
-    	chpsz >>= 9;	// 0~7
-       	chpsz++;		// 1~8
-   		g_reserved_heap = chpsz * RESERVED_HEAP;
-    }
+    // Get system variables
+    _get_sys_vars(1);
 
     // get maximum possible heap size
     while (g_base_address == NULL) {
@@ -390,9 +361,7 @@ void gcc_entry(unsigned int entry, unsigned int init_array_start, unsigned int c
         ptr[i]();
     }
 
-    /*while (vm_time_ust_get_count() < 10000000) {
-    	vm_thread_sleep(10);
-    }*/
+    // start main prog
     vm_main();
 }
 

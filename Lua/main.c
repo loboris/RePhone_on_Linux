@@ -21,6 +21,7 @@
 #include "vmusb.h"
 #include "vmfs.h"
 #include "vmchset.h"
+#include "vmmemory.h"
 
 #include "shell.h"
 #include "lua.h"
@@ -59,6 +60,7 @@ extern int luaopen_email(lua_State *L);
 extern int luaopen_ftp(lua_State *L);
 extern int luaopen_lcd(lua_State *L);
 extern int luaopen_term(lua_State *L);
+//extern int luaopen_marshal(lua_State *L);
 #if defined USE_SCREEN_MODULE
 extern int luaopen_screen(lua_State *L);
 #endif
@@ -68,18 +70,18 @@ extern void _uart_cb(int id);
 extern int btspp_tmo;
 extern void _btspp_recv_cb(void);
 extern int _LcdSpiTransfer(uint8_t *buf, int len);
+extern void _sitronix_LcdTransfer(uint8_t *buf, int len);
 
 
 #define SYS_TIMER_INTERVAL   22		// HISR timer interval in ticks, 22 -> 0.10153 seconds
 #define MAX_WDT_RESET_COUNT 145		// max run time (with 50 sec reset = 7250 seconds, ~2 hours)
 
 // Global variables
-int sys_wdt_tmo = 13001;			// HW WDT timeout in ticks: 13001 -> 59.999615 seconds
+int sys_wdt_tmo = 13001;			// ** HW WDT timeout in ticks: 13001 -> 59.999615 seconds **
 int sys_wdt_rst = 10834;			// time at which hw wdt is reset in ticks: 10834 -> 50 seconds, must be < 'sys_wdt_tmo'
-int sys_wdt_rst_usec = 48000;
 int sys_wdt_rst_time = 0;			// must be set to 0 periodicaly to prevent watchdog timeout
 int no_activity_time = 0;			// no activity counter, set to 0 when some activity is taken
-int max_no_activity_time = 300;	    // time with no activity before shut down in seconds
+int max_no_activity_time = 300;	    // ** time with no activity before shut down in seconds **
 int wakeup_interval = 20*60;		// regular wake up interval in seconds
 int led_blink = BLUELED;			// led blinking during session, set to 0 for no led blink
 int sys_wdt_time = 0;				// used to prevent wdg reset in critical situations (Lua PANIC)
@@ -89,6 +91,7 @@ int alarm_cb = LUA_NOREF;			// Lua callback function called on alarm
 int key_cb = LUA_NOREF;				// Lua callback function called on key up/down
 VMUINT8 alarm_flag = 0;
 int g_usb_status = 0;				// status of the USB cable connection
+int g_graphics_ready = 0;
 
 // Local variables
 static int sys_wdt_rst_count = 0;	// watchdog resets counter
@@ -229,6 +232,7 @@ static void wdg_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data
 	}
 
 	if (no_activity_time > max_no_activity_time) {
+		// ** Maximum no activity time reached
 		no_activity_time = 0;
 		if ((wakeup_interval > 0) && (shutdown_cb != LUA_NOREF)) {
 			// execute callback function
@@ -246,7 +250,7 @@ static void wdg_timer_callback(VM_TIMER_ID_NON_PRECISE timer_id, void* user_data
 		}
 	}
 	else {
-		// === Test uart's timeout
+		// === Test uart's & BT timeout, alarm flag ===
 		if (uart_tmo[0] >= 0) {
 			uart_tmo[0]++;
 			if (uart_tmo[0] > 2) _uart_cb(0);
@@ -359,6 +363,7 @@ static void lua_setup()
     luaopen_email(shellL);
     luaopen_ftp(shellL);
     luaopen_lcd(shellL);
+    //luaopen_marshal(shellL);
 
     lua_register(shellL, "msleep", msleep_c);
 
@@ -410,9 +415,15 @@ static void handle_sysevt(VMINT message, VMINT param)
 			vm_signal_post(g_shell_signal);
             break;
 
+		case CCALL_MESSAGE_SIT_LCDWR:
+			_sitronix_LcdTransfer(params->cpar1, params->ipar1);
+			g_shell_result = 0;
+			vm_signal_post(g_shell_signal);
+            break;
+
 		case CCALL_MESSAGE_FOPEN: {
 			    VMWCHAR ucs_name[64];
-				vm_chset_ascii_to_ucs2(ucs_name, 64, params->cpar1);
+			    full_fname(params->cpar1, ucs_name, 64);
 				g_shell_result = vm_fs_open(ucs_name, params->ipar1, VM_TRUE);
 				vm_signal_post(g_shell_signal);
 		    }
@@ -429,18 +440,25 @@ static void handle_sysevt(VMINT message, VMINT param)
             break;
 
 		case CCALL_MESSAGE_FCHECK: {
-			    VMWCHAR ucs_name[64];
-				vm_chset_ascii_to_ucs2(ucs_name, 64, params->cpar1);
-				g_shell_result = vm_fs_open(ucs_name, VM_FS_MODE_READ, VM_TRUE);
-				if (g_shell_result >= 0) vm_fs_close(g_shell_result);
+				VMWCHAR ucs_name[128];
+				vm_fs_info_ex_t fileinfoex;
+			    full_fname(params->cpar1, ucs_name, 128);
+
+			    VM_FS_HANDLE fhex = vm_fs_find_first_ex((VMWSTR)ucs_name, &fileinfoex);
+			    if (fhex >= 0) {
+			    	if (fileinfoex.attributes & VM_FS_ATTRIBUTE_DIRECTORY) g_shell_result = 2;
+			    	else g_shell_result = 1;
+			    	vm_fs_find_close_ex(fhex);
+			    }
+			    else g_shell_result = fhex;
 				vm_signal_post(g_shell_signal);
 		    }
             break;
 
 		case CCALL_MESSAGE_FSEEK: {
 				VMUINT position = 0;
-				res = vm_fs_seek(params->ipar1, params->ipar2, params->ipar3);
-				res = vm_fs_get_position(params->ipar1, &position);
+				g_shell_result = vm_fs_seek(params->ipar1, params->ipar2, params->ipar3);
+				if (g_shell_result == 0) g_shell_result = vm_fs_get_position(params->ipar1, &position);
 				g_shell_result = position;
 				vm_signal_post(g_shell_signal);
 			}
@@ -457,6 +475,7 @@ static void handle_sysevt(VMINT message, VMINT param)
 		case CCALL_MESSAGE_FREAD: {
 			    VMUINT read_bytes = 0;
 				g_shell_result = vm_fs_read(params->ipar1, params->cpar1, params->ipar2, &read_bytes);
+				//g_shell_result = read_bytes;
 				vm_signal_post(g_shell_signal);
 		    }
             break;
@@ -470,12 +489,27 @@ static void handle_sysevt(VMINT message, VMINT param)
             break;
 
 		case CCALL_MESSAGE_FRENAME: {
-				VMWCHAR ucs_oldname[32], ucs_newname[32];
-				vm_chset_ascii_to_ucs2(ucs_oldname, 32, params->cpar1);
-				vm_chset_ascii_to_ucs2(ucs_newname, 32, params->cpar2);
+				VMWCHAR ucs_oldname[64], ucs_newname[64];
+			    full_fname(params->cpar1, ucs_oldname, 64);
+			    full_fname(params->cpar2, ucs_newname, 64);
 				g_shell_result =  vm_fs_rename(ucs_oldname, ucs_newname);
 				vm_signal_post(g_shell_signal);
 		    }
+            break;
+
+        case CCALL_MESSAGE_MALLOC:
+        	params->cpar1 = vm_malloc(params->ipar1);
+			vm_signal_post(g_shell_signal);
+            break;
+
+        case CCALL_MESSAGE_REALLOC:
+        	params->cpar2 = vm_realloc(params->cpar1, params->ipar1);
+			vm_signal_post(g_shell_signal);
+            break;
+
+        case CCALL_MESSAGE_FREE:
+        	vm_free(params->cpar1);
+			vm_signal_post(g_shell_signal);
             break;
 
         case SHELL_MESSAGE_QUIT:
@@ -486,7 +520,7 @@ static void handle_sysevt(VMINT message, VMINT param)
 
         case VM_EVENT_PAINT:
         	// The graphics system is ready for application to use
-        	//vm_log_debug("[SYSEVT] GRAPHIC READY");
+        	g_graphics_ready = 1;
         	break;
 
         case VM_EVENT_QUIT:
@@ -514,38 +548,21 @@ void vm_main(void)
 {
 	_led_init();
 
-	// get watchdog timeout from RTC_SPAR0 register
+	// check power on status (RTC_SPAR0 register)
 	volatile uint32_t *reg = (uint32_t *)(REG_BASE_ADDRESS + 0x0710060);
-    uint32_t wdgtmo = *reg;
-    int rtc_wdgok = 0;
-    if ((wdgtmo & 0xF000) == 0xA000) {
-    	wdgtmo &= 0x01FF;
-    	wdgtmo *= 10;
-    	if ((wdgtmo >= 10) && (wdgtmo <= 3600)) {
-			sys_wdt_tmo = (wdgtmo * 216685) / 1000;	// set watchdog timeout
-			sys_wdt_rst = sys_wdt_tmo - 1083;		// reset wdg 5 sec before expires
-	        sys_wdt_rst_usec = (sys_wdt_tmo * 4615 / 1000) - 2000;
-			rtc_wdgok = 1;
-    	}
-    }
+	if (*reg == 0xD3A5) {
+		g_rtc_poweroff = 1;
+	}
+	else {
+		g_rtc_poweroff = 0;
+		*reg = 0xD3A5;
+	}
 
 	VM_TIMER_ID_HISR sys_timer_id = vm_timer_create_hisr("WDGTMR");
     vm_timer_set_hisr(sys_timer_id, sys_timer_callback, NULL, SYS_TIMER_INTERVAL, SYS_TIMER_INTERVAL);
     wdg_timer_id = vm_timer_create_non_precise(100, wdg_timer_callback, NULL);
 	// init watchdog;
     wdg_handle = vm_wdt_start(sys_wdt_tmo);
-
-    //retarget_setup();
-
-    /*
-    if (rtc_wdgok) {
-    	vm_log_info("WDG timeout set from RTC reg, %d %d", sys_wdt_tmo, sys_wdt_rst);
-    }
-    else {
-    	vm_log_info("WDG timeout in RTC reg wrong, using default, %d %d", sys_wdt_tmo, sys_wdt_rst);
-    }
-    vm_log_info("LUA for RePhone started");
-	*/
 
     key_init();
     vm_keypad_register_event_callback(handle_keypad_event);

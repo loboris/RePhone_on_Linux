@@ -5,6 +5,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h> 
+#include <fcntl.h>
 #include "tjpgd.h"
 
 //#include "vmdcl_gpio.h"
@@ -15,23 +16,30 @@
 #include "vmfs.h"
 #include "vmstdlib.h"
 #include "vmchset.h"
+#include "vmtouch.h"
 
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
 #include "lrotable.h"
 #include "shell.h"
-   
+
+#include "lcd_sitronix_st7789s.h"
+#include "tp_goodix_gt9xx.h"
+
 
 #define LCD_SOFT_RESET // if not using RST pin
-#define NUM_GPIO        18
+
+#define ST7735_WIDTH  128
+#define ST7735_HEIGHT 160
+#define ILI9341_WIDTH  240
+#define ILI9341_HEIGHT 320
+#define XADOW_WIDTH  240
+#define XADOW_HEIGHT 240
 
 #define INITR_GREENTAB 0x0
 #define INITR_REDTAB   0x1
 #define INITR_BLACKTAB 0x2
-
-#define ST7735_WIDTH  128
-#define ST7735_HEIGHT 160
 
 #define ST7735_NOP     0x00
 #define ST7735_SWRESET 0x01
@@ -51,10 +59,10 @@
 #define TFT_RASET      0x2B
 #define TFT_RAMWR      0x2C
 #define TFT_RAMRD      0x2E
+#define TFT_MADCTL	   0x36
+#define TFT_PTLAR 	   0x30
 
-#define ST7735_PTLAR   0x30
 #define ST7735_COLMOD  0x3A
-#define ST7735_MADCTL  0x36
 
 #define ST7735_FRMCTR1 0xB1
 #define ST7735_FRMCTR2 0xB2
@@ -79,9 +87,6 @@
 #define ST7735_GMCTRP1 0xE0
 #define ST7735_GMCTRN1 0xE1
 
-#define ILI9341_WIDTH  240
-#define ILI9341_HEIGHT 320
-
 #define ILI9341_NOP     0x00
 #define ILI9341_SWRESET 0x01
 #define ILI9341_RDDID   0x04
@@ -100,8 +105,6 @@
 
 #define ILI9341_GAMMASET 0x26
 
-#define ILI9341_PTLAR   0x30
-#define ILI9341_MADCTL  0x36
 #define ILI9341_PIXFMT  0x3A
 
 #define ILI9341_FRMCTR1 0xB1
@@ -178,33 +181,25 @@
 #define RIGHT	-4
 #define BOTTOM	-4
 
-#define SMALL_FONT  0
-#define BIG_FONT    1
-#define DEJAVU_12   2
-#define DEJAVU_18   3
-#define DEJAVU_24   4
-#define FONT_7SEG   5
+#define DEFAULT_FONT	0
+#define FONT_7SEG		1
+#define USER_FONT		2
 
 #define bitmapdatatype uint16_t *
 
-#define FILE_NOT_OPENED 0
-   
-//extern uint8_t SmallFont[];
-extern uint8_t Font8x8[];
-extern uint8_t BigFont[];
-extern uint8_t DejaVuSans18[];
-extern uint8_t DejaVuSans12[];
-extern uint8_t DejaVuSans24[];
+extern uint8_t lcd_DefaultFont[];
 
+static uint8_t *userfont = NULL;
+
+extern int g_graphics_ready;
 extern VM_DCL_HANDLE g_spi_handle;
 extern VM_DCL_HANDLE g_spi_cs_handle;
 extern VM_DCL_HANDLE g_spi_dc_handle;
 extern int _LcdSpiTransfer(uint8_t *buf, int len);
 
-static uint8_t TFT_type   = 0;
-
-static uint16_t _width = ST7735_WIDTH;
-static uint16_t _height = ST7735_HEIGHT;
+static int TFT_type = -1;
+static uint16_t _width = XADOW_WIDTH;
+static uint16_t _height = XADOW_HEIGHT;
 
 #ifndef LCD_SOFT_RESET
   uint8_t lcd_pinRST  = 255;
@@ -213,18 +208,19 @@ static uint16_t _height = ST7735_HEIGHT;
 #endif
   
 static int colstart = 0;
-static int rowstart = 0;               // May be overridden in init func
-static uint8_t orientation = PORTRAIT; // screen orientation
-static int rotation = 0;               // font rotation
+static int rowstart = 0;				// May be overridden in init func
+static uint8_t orientation = PORTRAIT;	// screen orientation
+static uint8_t rotation = 0;			// font rotation
+static uint8_t tp_initialized = 0;		// touch panel initialized flag
 
 typedef struct {
 	uint8_t 	*font;
 	uint8_t 	x_size;
 	uint8_t 	y_size;
-	uint8_t	        offset;
+	uint8_t	    offset;
 	uint16_t	numchars;
-        uint8_t         bitmap;
-	uint16_t        color;
+    uint8_t     bitmap;
+	uint16_t    color;
 } Font;
 
 typedef struct {
@@ -259,7 +255,8 @@ static uint8_t _forceFixed = 0;
 static uint16_t _fg = TFT_GREEN;
 static uint16_t _bg = TFT_BLACK;
 
-#define CCBUF_SIZE 578  // set the size 16 * n
+#define CCBUF_SIZE 768  // set the size 16 * n
+
 static uint8_t ccbuf[CCBUF_SIZE];
 static uint16_t ccbufPtr = 0;
 
@@ -267,69 +264,44 @@ static int TFT_X  = 0;
 static int TFT_Y  = 0;
 static int TFT_OFFSET  = 0;
 
+static int g_touch_cb_ref = LUA_NOREF;
+static cb_func_param_touch_t touch_cb_params;
+
 #define swap(a, b) { int16_t t = a; a = b; b = t; }
 
-/*
-// === DEBUG ===  
-static char buf_str[3*CCBUF_SIZE + 100];
 
-//---------------------------------
-static void dbgBuf(uint16_t size) {
-  int i;
-  char* buf_ptr = &buf_str[0];
+//--------------------------------------------------------------------
+static void handle_touch_event(VM_TOUCH_EVENT event, VMINT x, VMINT y)
+{
+    // VM_TOUCH_EVENT_TAP
+    // VM_TOUCH_EVENT_RELEASE
 
-  int count = size;
-  uint16_t ndata, j;
-  uint32_t rep;
-  uint16_t data;
-  uint8_t* tmpbuf;
-  uint8_t* buf = &ccbuf[0];
-  
-  buf_ptr += sprintf(buf_ptr, "\r\n SPI block (%d):\r\n", size);
-  for (i=0; i<size; i++) {
-    buf_ptr += sprintf(buf_ptr, "%02X ", ccbuf[i]);
-  }
-  *(buf_ptr + 1) = '\0';
-  printf("%s", buf_str);
-
-  buf_ptr = &buf_str[0];
-  while (count > 0) {
-    data = *buf++; // get command
-    if (data == 0) {
-      buf_ptr += sprintf(buf_ptr, "\r\n cmd: nil\r\n");
-      break;
+	if (g_touch_cb_ref != LUA_NOREF) {
+        lua_rawgeti(shellL, LUA_REGISTRYINDEX, g_touch_cb_ref);
+		touch_cb_params.event = event;
+		touch_cb_params.x = x;
+		touch_cb_params.y = x;
+		touch_cb_params.cb_ref = g_touch_cb_ref;
+        remote_lua_call(CB_FUNC_INT, &touch_cb_params);
     }
-
-    count--;
-    buf_ptr += sprintf(buf_ptr, "\r\n cmd: %02X ", data);
-    
-    // get ndata & rep    
-    ndata = (uint16_t)(*buf++ << 8);
-    ndata += (uint16_t)(*buf++);
-    rep = (uint32_t)(*buf++ << 24);
-    rep += (uint32_t)(*buf++ << 16);
-    rep += (uint32_t)(*buf++ << 8);
-    rep += (uint32_t)(*buf++);
-    buf_ptr += sprintf(buf_ptr, "ndata=%d rep=%d", ndata, rep);
-    count -= 6;
-    if ((count > 0) && (ndata > 0)) {
-      buf_ptr += sprintf(buf_ptr, " data: ");
-      for (i=0; i<rep; i++) {
-        tmpbuf = buf;
-        for (j=0; j<ndata; j++) {
-          data = *tmpbuf++;
-          buf_ptr += sprintf(buf_ptr, "%02X ", data);
-        }
-      }
-      buf += ndata;
-      count -= ndata;
+    else {
+        vm_log_debug("touch: ev=%d, x=%d, y=%d\n", event, x, y);
     }
-  }
-  *(buf_ptr + 1) = '\0';
-  printf("%s", buf_str);
 }
-// === DEBUG ===  
-*/
+
+//-------------------------------
+static void send_to_display(void)
+{	// use main thread to send data to sisplay
+    if (TFT_type > 0) {
+		if (TFT_type == 2) g_fcall_message.message_id = CCALL_MESSAGE_SIT_LCDWR;
+		else g_fcall_message.message_id = CCALL_MESSAGE_LCDWR;
+		g_CCparams.cpar1 = ccbuf;
+		g_CCparams.ipar1 = ccbufPtr;
+		vm_thread_send_message(g_main_handle, &g_fcall_message);
+		// wait for call to finish...
+		vm_signal_wait(g_shell_signal);
+    }
+}
 
 //---------------------------
 static void initccbuf(void) {
@@ -359,16 +331,8 @@ static void ccbufPushLong( uint32_t data ) {
 //-----------------------------------
 static void ccbufFlash( uint8_t n ) {
   if (ccbufPtr > (CCBUF_SIZE-n)) {
-    // write buffer
     ccbuf[ccbufPtr] = 0;
-
-    g_fcall_message.message_id = CCALL_MESSAGE_LCDWR;
-    g_CCparams.cpar1 = ccbuf;
-    g_CCparams.ipar1 = ccbufPtr;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
+    send_to_display();
     initccbuf();
   }
 }
@@ -376,17 +340,8 @@ static void ccbufFlash( uint8_t n ) {
 //-----------------------------
 static void ccbufSend( void ) {
   if (ccbufPtr > 0) {
-    //dbgBuf(ccbufPtr);
     ccbuf[ccbufPtr] = 0;
-    //_LcdSpiTransfer( &ccbuf[0], ccbufPtr);
-
-    g_fcall_message.message_id = CCALL_MESSAGE_LCDWR;
-    g_CCparams.cpar1 = ccbuf;
-    g_CCparams.ipar1 = ccbufPtr;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
+    send_to_display();
     initccbuf();
   }
 }
@@ -412,7 +367,6 @@ static void _TFT_pushAddrWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t 
 static void _TFT_pushColorRep(uint16_t x0, uint16_t y0,
                        uint16_t x1, uint16_t y1,
                        uint16_t color, uint32_t rep) {
-
   ccbufFlash(32);
 
   _TFT_pushAddrWindow(x0,y0,x1,y1);
@@ -434,7 +388,7 @@ static void TFT_sendCmd(uint8_t cmd, uint16_t ndata) {
 }
 
 
-// === ST7735 INITIALIZATION ===================================================
+// === LCD INITIALIZATION ===================================================
 // Rather than a bazillion TFT_sendCmd() and TFT_sendData() calls, screen
 // initialization commands and arguments are organized in these tables
 // stored in PROGMEM.  The table may look bulky, but that's mostly the
@@ -444,6 +398,7 @@ static void TFT_sendCmd(uint8_t cmd, uint16_t ndata) {
 #define DELAY 0x80
 
 // Initialization commands for 7735B screens
+// -----------------------------------------
 static const uint8_t Bcmd[] = {
   18,				// 18 commands in list:
   ST7735_SWRESET,   DELAY,	//  1: Software reset, no args, w/delay
@@ -458,7 +413,7 @@ static const uint8_t Bcmd[] = {
   0x06,				//     6 lines front porch
   0x03,				//     3 lines back porch
   10,				//     10 ms delay
-  ST7735_MADCTL , 1      ,	//  5: Memory access ctrl (directions), 1 arg:
+  TFT_MADCTL , 1      ,	//  5: Memory access ctrl (directions), 1 arg:
   0x08,				//     Row addr/col addr, bottom to top refresh
   ST7735_DISSET5, 2      ,	//  6: Display settings #5, 2 args, no delay:
   0x15,				//     1 clk cycle nonoverlap, 2 cycle gate
@@ -505,6 +460,7 @@ static const uint8_t Bcmd[] = {
 };
 
 // Init for 7735R, part 1 (red or green tab)
+// -----------------------------------------
 static const uint8_t  Rcmd1[] = {                 
   15,				// 15 commands in list:
   ST7735_SWRESET,   DELAY,	//  1: Software reset, 0 args, w/delay
@@ -537,7 +493,7 @@ static const uint8_t  Rcmd1[] = {
   ST7735_VMCTR1 , 1      ,	// 12: Power control, 1 arg, no delay:
   0x0E,
   TFT_INVOFF , 0      ,	// 13: Don't invert display, no args, no delay
-  ST7735_MADCTL , 1      ,	// 14: Memory access control (directions), 1 arg:
+  TFT_MADCTL , 1      ,	// 14: Memory access control (directions), 1 arg:
   0xC0,				//     row addr/col addr, bottom to top refresh, RGB order
   ST7735_COLMOD , 1+DELAY,	//  15: Set color mode, 1 arg + delay:
   0x05,				//     16-bit color 5-6-5 color format
@@ -545,6 +501,7 @@ static const uint8_t  Rcmd1[] = {
 };
 
 // Init for 7735R, part 2 (green tab only)
+// ---------------------------------------
 static const uint8_t Rcmd2green[] = {
   2,				//  2 commands in list:
   TFT_CASET  , 4      ,	        //  1: Column addr set, 4 args, no delay:
@@ -556,6 +513,7 @@ static const uint8_t Rcmd2green[] = {
 };
 
 // Init for 7735R, part 2 (red tab only)
+// -------------------------------------
 static const uint8_t Rcmd2red[] = {
   2,				//  2 commands in list:
   TFT_CASET  , 4      ,	        //  1: Column addr set, 4 args, no delay:
@@ -567,6 +525,7 @@ static const uint8_t Rcmd2red[] = {
 };
 
 // Init for 7735R, part 3 (red or green tab)
+// -----------------------------------------
 static const uint8_t Rcmd3[] = {
   4,				//  4 commands in list:
   ST7735_GMCTRP1, 16      ,	//  1: Magical unicorn dust, 16 args, no delay:
@@ -586,6 +545,7 @@ static const uint8_t Rcmd3[] = {
 };
 
 // Init for ILI7341
+// ----------------
 static const uint8_t ILI7341_init[] = {
   23,                           // 23 commands in list
   ILI9341_SWRESET, DELAY,   	//  1: Software reset, no args, w/delay
@@ -606,7 +566,7 @@ static const uint8_t ILI7341_init[] = {
   0x28, 
   ILI9341_VMCTR2, 1,    //VCM control2 
   0x86,
-  ILI9341_MADCTL, 1,    // Memory Access Control 
+  TFT_MADCTL, 1,    // Memory Access Control
   0x48,
   ILI9341_PIXFMT, 1,    
   0x55, 
@@ -617,7 +577,7 @@ static const uint8_t ILI7341_init[] = {
   0x08,
   0x82,
   0x27,  
-  ILI9341_PTLAR, 4, 0x00, 0x00, 0x01, 0x3F,
+  TFT_PTLAR, 4, 0x00, 0x00, 0x01, 0x3F,
   ILI9341_3GAMMA_EN, 1,  // 3Gamma Function Disable 
   0x00, // 0x02
   ILI9341_GAMMASET, 1,   //Gamma curve selected 
@@ -633,9 +593,9 @@ static const uint8_t ILI7341_init[] = {
   TFT_DISPON, 0,
 };
 
-
+//------------------------------------------------------
 // Companion code to the above tables.  Reads and issues
-// a series of LCD commands stored in PROGMEM byte array.
+// a series of LCD commands stored in PROGMEM byte array
 //--------------------------------------------
 static void commandList(const uint8_t *addr) {
   uint8_t  numCommands, numArgs, cmd;
@@ -707,7 +667,7 @@ static void ST7735_initR(uint8_t options) {
   // if black, change MADCTL color filter
   if (options == INITR_BLACKTAB) {
     initccbuf();
-    TFT_sendCmd(ST7735_MADCTL,1);
+    TFT_sendCmd(TFT_MADCTL,1);
     ccbufPushByte(0xC0);
     ccbufSend();
   }
@@ -723,25 +683,6 @@ static void TFT_drawPixel(int16_t x, int16_t y, uint16_t color) {
   if ((x < dispWin.x1) || (y < dispWin.y1) || (x > dispWin.x2) || (y >= dispWin.y2)) return;
   
   _TFT_pushColorRep(x,y,x,y, color, 1);
-}
-
-// fill a rectangle
-//------------------------------------------------------------------------------------
-static void TFT_fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {	
-  // clipping
-  if ((x > dispWin.x2) || (y > dispWin.y2)) return;
-  
-  if (x < dispWin.x1) x = dispWin.x1;
-  if (y < dispWin.y1) y = dispWin.y1;
-  
-  if ((x + w) > dispWin.x2) w = dispWin.x2 - x;
-  if ((y + h) > dispWin.y2) h = dispWin.y2 - y;
-  if (w == 0) w = 1;
-  if (h == 0) h = 1;
-  
-  initccbuf();
-  _TFT_pushColorRep(x, y, x+w-1, y+h-1, color, (uint32_t)(h*w));
-  ccbufSend();
 }
 
 //------------------------------------------------------------------------------
@@ -817,6 +758,25 @@ static void TFT_drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_
   }
 
   ccbufSend(); // Flush buffer
+}
+
+// fill a rectangle
+//------------------------------------------------------------------------------------
+static void TFT_fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
+  // clipping
+  if ((x > dispWin.x2) || (y > dispWin.y2)) return;
+
+  if (x < dispWin.x1) x = dispWin.x1;
+  if (y < dispWin.y1) y = dispWin.y1;
+
+  if ((x + w) > dispWin.x2) w = dispWin.x2 - x;
+  if ((y + h) > dispWin.y2) h = dispWin.y2 - y;
+  if (w == 0) w = 1;
+  if (h == 0) h = 1;
+
+  initccbuf();
+  _TFT_pushColorRep(x, y, x+w-1, y+h-1, color, (uint32_t)(h*w));
+  ccbufSend();
 }
 
 //---------------------------------------------------------------------------------------
@@ -1102,35 +1062,150 @@ static uint8_t getMaxWidth(void) {
   return w;
 }
 
-//-------------------------------------
-static void TFT_setFont(uint8_t font) {
-  if (font == DEJAVU_12) cfont.font=&DejaVuSans12[0];
-  else if (font == BIG_FONT) cfont.font=&BigFont[0];
-  else if (font == DEJAVU_18) cfont.font=&DejaVuSans18[0];
-  else if (font == DEJAVU_24) cfont.font=&DejaVuSans24[0];
-  else if (font == SMALL_FONT) cfont.font=&Font8x8[0];
-  else {
-    cfont.font = NULL;
-    if (font == FONT_7SEG) {
-      cfont.bitmap = 2;
-      cfont.x_size = 24;
-      cfont.y_size = 6;
-      cfont.offset = 0;
-      cfont.color  = _fg;
-    }
-    else  cfont.bitmap = 0;
-  }
-  if (cfont.font != NULL) {
-    cfont.bitmap = 1;
-    cfont.x_size = cfont.font[0];
-    cfont.y_size = cfont.font[1];
-    cfont.offset = cfont.font[2];
-    if (cfont.x_size != 0) cfont.numchars = cfont.font[3];
-    else cfont.numchars = getMaxWidth();
-  }
+//--------------------------------------------------------
+static int load_file_font(const char * fontfile, int info)
+{
+	if (userfont != NULL) {
+		free(userfont);
+		userfont = NULL;
+	}
+
+	// Open the file
+	int ffd = file_open(fontfile, 0);
+	if (ffd < 0) {
+		vm_log_error("Error opening font file '%s'", fontfile);
+		return 0;
+	}
+
+	// Get file size
+	int fsize = file_size(ffd);
+	if (fsize < 30) {
+		vm_log_error("Error getting font file size");
+		return 0;
+	}
+
+	userfont = malloc(fsize+4);
+	if (userfont == NULL) {
+		vm_log_error("Font memory allocation error");
+		file_close(ffd);
+		return 0;
+	}
+
+	int read = file_read(ffd, userfont, fsize);
+
+	file_close(ffd);
+
+	if (read != fsize) {
+		vm_log_error("Font read error");
+		free(userfont);
+		userfont = NULL;
+		return 0;
+	}
+
+	userfont[read] = 0;
+	if (strstr(userfont+read-8, "RPH_font") == NULL) {
+		vm_log_error("Font ID not found");
+		free(userfont);
+		userfont = NULL;
+		return 0;
+	}
+
+	// Check size
+	int size = 0;
+	int numchar = 0;
+	int width = userfont[0];
+	int height = userfont[1];
+	uint8_t first = 255;
+	uint8_t last = 0;
+	int offst = 0;
+	int pminwidth = 255;
+	int pmaxwidth = 0;
+
+	if (width != 0) {
+		// Fixed font
+		numchar = userfont[3];
+		first = userfont[2];
+		last = first + numchar - 1;
+		size = ((width * height * numchar) / 8) + 4;
+	}
+	else {
+		// Proportional font
+		size = 4; // point at first char data
+		uint8_t charCode;
+		int charwidth;
+
+		do {
+		    charCode = userfont[size];
+		    charwidth = userfont[size+2];
+
+		    if (charCode != 0xFF) {
+		    	numchar++;
+		    	if (charwidth != 0) size += ((((charwidth * userfont[size+3])-1) / 8) + 7);
+		    	else size += 6;
+
+		    	if (info) {
+	    			if (charwidth > pmaxwidth) pmaxwidth = charwidth;
+	    			if (charwidth < pminwidth) pminwidth = charwidth;
+	    			if (charCode < first) first = charCode;
+	    			if (charCode > last) last = charCode;
+	    		}
+		    }
+		    else size++;
+		  } while ((size < (read-8)) && (charCode != 0xFF));
+	}
+
+	if (size != (read-8)) {
+		vm_log_error("Font size error: found %d expected %d)", size, (read-8));
+		free(userfont);
+		userfont = NULL;
+		return 0;
+	}
+
+	if (info) {
+		if (width != 0) {
+			printf("Fixed width font:\n");
+			printf("size: %d  width: %d  height: %d  characters: %d (%d~%d)\n", size, width, height, numchar, first, last);
+		}
+		else {
+			printf("Proportional font:\n");
+			printf("size: %d  width: %d~%d  height: %d  characters: %d (%d~%d)\n", size, pminwidth, pmaxwidth, height, numchar, first, last);
+		}
+	}
+	return 1;
 }
 
-// private method to return the Glyph data for an individual character in the ttf font
+//----------------------------------------------------------
+static void TFT_setFont(uint8_t font, const char *font_file)
+{
+  cfont.font = NULL;
+  cfont.bitmap = 0;
+
+  if (font == USER_FONT) {
+	  if (load_file_font(font_file, 0) == 0) cfont.font = lcd_DefaultFont;
+	  else cfont.font = userfont;
+  }
+
+  else if (font == FONT_7SEG) {
+    cfont.bitmap = 2;
+    cfont.x_size = 24;
+    cfont.y_size = 6;
+    cfont.offset = 0;
+    cfont.color  = _fg;
+  }
+
+  else {
+	  cfont.font = lcd_DefaultFont;
+  }
+
+  cfont.bitmap = 1;
+  cfont.x_size = cfont.font[0];
+  cfont.y_size = cfont.font[1];
+  cfont.offset = cfont.font[2];
+  if (cfont.x_size != 0) cfont.numchars = cfont.font[3];
+  else cfont.numchars = getMaxWidth();
+}
+
+// private method to return the Glyph data for an individual character in the proportional font
 //--------------------------------
 static int getCharPtr(uint8_t c) {
   uint16_t tempPtr = 4; // point at first char data
@@ -1436,65 +1511,96 @@ static void TFT_fillScreen(uint16_t color) {
 // Input: m new rotation value (0 to 3)
 //--------------------------------------
 static void TFT_setRotation(uint8_t m) {
-  uint8_t rotation = m % 4; // can't be higher than 3
+  uint8_t rotation = m & 3; // can't be higher than 3
+  uint8_t send = 1;
+  uint8_t madctl = 0;
 
-  orientation = m;
-  initccbuf();
-  if (TFT_type == 0) {
-    TFT_sendCmd(ST7735_MADCTL, 1);
-    switch (rotation) {
-      case PORTRAIT:
-        ccbufPushByte(MADCTL_MX | MADCTL_MY | MADCTL_RGB);
-        _width  = ST7735_WIDTH;
-        _height = ST7735_HEIGHT;
-        break;
-      case LANDSCAPE:
-        ccbufPushByte(MADCTL_MY | MADCTL_MV | MADCTL_RGB);
-        _width  = ST7735_HEIGHT;
-        _height = ST7735_WIDTH;
-        break;
-      case PORTRAIT_FLIP:
-        ccbufPushByte(MADCTL_RGB);
-        _width  = ST7735_WIDTH;
-        _height = ST7735_HEIGHT;
-        break;
-      case LANDSCAPE_FLIP:
-        ccbufPushByte(MADCTL_MX | MADCTL_MV | MADCTL_RGB);
-        _width  = ST7735_HEIGHT;
-        _height = ST7735_WIDTH;
-        break;
-    }
-  }
+  if (m > 3) madctl = (m & 0xF8); // for testing, manually set MADCTL register
   else {
-    TFT_sendCmd(ILI9341_MADCTL,1);
-    switch (rotation) {
-      case PORTRAIT:
-        ccbufPushByte(MADCTL_MX | MADCTL_BGR);
-        _width  = ILI9341_WIDTH;
-        _height = ILI9341_HEIGHT;
-        break;
-      case LANDSCAPE:
-        ccbufPushByte(MADCTL_MV | MADCTL_BGR);
-        _width  = ILI9341_HEIGHT;
-        _height = ILI9341_WIDTH;
-        break;
-      case PORTRAIT_FLIP:
-        ccbufPushByte(MADCTL_MY | MADCTL_BGR);
-        _width  = ILI9341_WIDTH;
-        _height = ILI9341_HEIGHT;
-        break;
-      case LANDSCAPE_FLIP:
-        ccbufPushByte(MADCTL_MX | MADCTL_MY | MADCTL_MV | MADCTL_BGR);
-        _width  = ILI9341_HEIGHT;
-        _height = ILI9341_WIDTH;
-        break;
-   }
+	  orientation = m;
+	  if (TFT_type == 0) {
+		if ((rotation & 1)) {
+			_width  = ST7735_HEIGHT;
+			_height = ST7735_WIDTH;
+		}
+		else {
+			_width  = ST7735_WIDTH;
+			_height = ST7735_HEIGHT;
+		}
+		switch (rotation) {
+		  case PORTRAIT:
+			madctl = (MADCTL_MX | MADCTL_MY | MADCTL_RGB);
+			break;
+		  case LANDSCAPE:
+			madctl = (MADCTL_MY | MADCTL_MV | MADCTL_RGB);
+			break;
+		  case PORTRAIT_FLIP:
+			madctl = (MADCTL_RGB);
+			break;
+		  case LANDSCAPE_FLIP:
+			madctl = (MADCTL_MX | MADCTL_MV | MADCTL_RGB);
+			break;
+		}
+	  }
+	  else if (TFT_type == 1) {
+		if ((rotation & 1)) {
+			_width  = ILI9341_HEIGHT;
+			_height = ILI9341_WIDTH;
+		}
+		else {
+			_width  = ILI9341_WIDTH;
+			_height = ILI9341_HEIGHT;
+		}
+		switch (rotation) {
+		  case PORTRAIT:
+			madctl = (MADCTL_MX | MADCTL_BGR);
+			break;
+		  case LANDSCAPE:
+			madctl = (MADCTL_MV | MADCTL_BGR);
+			break;
+		  case PORTRAIT_FLIP:
+			madctl = (MADCTL_MY | MADCTL_BGR);
+			break;
+		  case LANDSCAPE_FLIP:
+			madctl = (MADCTL_MX | MADCTL_MY | MADCTL_MV | MADCTL_BGR);
+			break;
+		}
+	  }
+	  else if (TFT_type == 2) {
+		_width  = XADOW_WIDTH;
+		_height = XADOW_HEIGHT;
+		switch (rotation) {
+		  case PORTRAIT:
+			madctl = 0;
+			break;
+		  case LANDSCAPE:
+			madctl = (MADCTL_MV | MADCTL_MX);
+			break;
+		  case PORTRAIT_FLIP:
+			madctl = 0;
+			rotation = PORTRAIT;
+			break;
+		  case LANDSCAPE_FLIP:
+			madctl = (MADCTL_MV | MADCTL_MX);
+			rotation = LANDSCAPE;
+			break;
+		}
+	  }
+	  else send = 0;
   }
-  ccbufSend();
+
+  if (send) {
+	  initccbuf();
+	  TFT_sendCmd(TFT_MADCTL, 1);
+	  ccbufPushByte(madctl);
+	  ccbufSend();
+  }
+
   dispWin.x1 = 0;
   dispWin.y1 = 0;
   dispWin.x2 = _width-1;
   dispWin.y2 = _height-1;
+
 }
 
 // Send the command to invert all of the colors.
@@ -1632,28 +1738,79 @@ static void _initvar(void) {
   dispWin.y1 = 0;
 }
 
-//=================================
-static int lcd_init( lua_State* L )
+//====================================
+static int _init_xadow( lua_State* L )
 {
-  if ((g_spi_handle == VM_DCL_HANDLE_INVALID) || (g_spi_dc_handle == VM_DCL_HANDLE_INVALID) || (g_spi_cs_handle == VM_DCL_HANDLE_INVALID)) {
-    l_message( NULL, "spi not yet initialized" );
-    lua_pushinteger( L, -1);
-    return 1;
-  }
-      
+    lcd_st7789s_init();
+    lcd_init_st7789s(TFT_BLACK, NULL);
+
+	if (tp_initialized == 0) {
+		if (tp_gt9xx_init() < 0) {
+			vm_log_error("Touch panel init error");
+			tp_initialized = 0;
+			g_shell_result = -1;
+		}
+		else {
+			vm_touch_register_event_callback(handle_touch_event);
+			tp_initialized = 1;
+			g_shell_result = 0;
+		}
+	}
+
+	vm_signal_post(g_shell_signal);
+    return 0;
+}
+
+//==========================
+int lcd_init( lua_State* L )
+{
   uint8_t typ = luaL_checkinteger( L, 1);
+
+  if (typ < 8) {
+	  if ((g_spi_handle == VM_DCL_HANDLE_INVALID) || (g_spi_dc_handle == VM_DCL_HANDLE_INVALID) || (g_spi_cs_handle == VM_DCL_HANDLE_INVALID)) {
+		vm_log_error("SPI not yet initialized");
+		return 0;
+	  }
+  }
   
-  TFT_setFont(SMALL_FONT);
+  TFT_setFont(DEFAULT_FONT, NULL);
   _fg = TFT_GREEN;
   _bg = TFT_BLACK;
   
-  TFT_type = 0;
+  TFT_type = 0;  // ST7735 type display
   if (typ == 0) ST7735_initB();
   else if (typ == 1) ST7735_initR(INITR_BLACKTAB);
   else if (typ == 2) ST7735_initR(INITR_GREENTAB);
-  else {
+  else if (typ == 3) {
+	// ILI7341 type display
     TFT_type = 1;
     commandList(ILI7341_init);
+  }
+  else if ((typ == 8) || (typ == 9)) {
+	int tmo = 0;
+	while (g_graphics_ready == 0) {
+		vm_thread_sleep(20);
+		tmo++;
+		if (tmo > 25) break;
+	}
+	if (tmo <= 25) {
+		// Xadow sitronix ST7789S type display
+		TFT_type = 2;
+		_TS_VER_ = (typ & 1);
+		_VM_LCD_DRIVER_ = 0;
+
+		remote_CCall(&_init_xadow);
+		if (g_shell_result < 0) return 0;
+		_set_backlight(50);
+	}
+	else {
+		vm_log_error("graphics system not ready");
+		TFT_type = -1;
+	}
+  }
+  else {
+	vm_log_error("unknown lcd type");
+	return 0;
   }
   
   typ = PORTRAIT_FLIP;  
@@ -1664,8 +1821,28 @@ static int lcd_init( lua_State* L )
   TFT_fillScreen(TFT_BLACK);
   _initvar();
   
-  lua_pushinteger( L, 0 );
-  return 1;
+  return 0;
+}
+
+//==================================
+static int lcd_gettype(lua_State *L)
+{
+    lua_pushinteger( L, TFT_type);
+    return 1;
+}
+
+//=========================================
+static int lcd_set_brightness(lua_State *L)
+{
+    int brightness = luaL_checkinteger(L, 1);
+    if (TFT_type == 2) {
+		if (brightness < 0) brightness = 0;
+		if (brightness > 100) brightness = 100;
+
+		_set_backlight(brightness);
+    }
+
+    return 0;
 }
 
 //======================================
@@ -1684,6 +1861,7 @@ static int lcd_clear( lua_State* L )
   uint16_t color = TFT_BLACK;
   
   if (lua_gettop(L) > 0) color = getColor( L, 1 );
+
   TFT_fillScreen(color);
   _bg = color;
   _initvar();
@@ -1732,8 +1910,19 @@ static int lcd_setfont( lua_State* L )
 {
   if (checkParam(1, L)) return 0;
   
-  uint8_t fnt = luaL_checkinteger( L, 1 );
-  TFT_setFont(fnt);
+  uint8_t fnt = DEFAULT_FONT;
+  size_t fnlen = 0;
+  const char* fname = NULL;
+
+  if (lua_type(L, 1) == LUA_TNUMBER) {
+	  fnt = luaL_checkinteger( L, 1 );
+  }
+  else if (lua_type(L, 1) == LUA_TSTRING) {
+	  fnt = USER_FONT;
+	  fname = lua_tolstring(L, -1, &fnlen);
+  }
+
+  TFT_setFont(fnt, fname);
   if (fnt == FONT_7SEG) {
     if (lua_gettop(L) > 2) {
       uint8_t l = luaL_checkinteger( L, 2 );
@@ -1760,6 +1949,154 @@ static int lcd_setfont( lua_State* L )
     }
   }
   return 0;
+}
+
+
+//========================================
+static int compile_font_file(lua_State* L)
+{
+	char outfile[128] = {'\0'};
+	size_t len;
+
+	const char *fontfile = luaL_checklstring( L, 1, &len );
+
+	// check here that filename end with ".c".
+	if ((len < 3) || (len > 125) || (strcmp(fontfile + len - 2, ".c") != 0)) return luaL_error(L, "not a .c file");
+
+	sprintf(outfile, "%s", fontfile);
+	sprintf(outfile+strlen(outfile)-1, "fon");
+
+	// Open the source file
+	int ffd = file_open(fontfile, 0);
+	if (ffd < 0) return luaL_error(L, "error opening source file");
+
+	// Open the font file
+	int ffd_out = file_open(outfile, O_CREAT);
+	if (ffd_out < 0) {
+		file_close(ffd);
+		return luaL_error(L, "error opening destination file");
+	}
+
+	// Get file size
+	int fsize = file_size(ffd);
+	if (fsize <= 0) {
+		file_close(ffd);
+		file_close(ffd_out);
+		return luaL_error(L, "error getting source file size");
+	}
+
+	char *sourcebuf = malloc(fsize+4);
+	if (sourcebuf == NULL) {
+		file_close(ffd);
+		file_close(ffd_out);
+		return luaL_error(L, "memory allocation error");
+	}
+	char *fbuf = sourcebuf;
+
+	int fread = file_read(ffd, fbuf, fsize);
+	file_close(ffd);
+
+	if (fread != fsize) {
+		free(fbuf);
+		file_close(ffd_out);
+		return luaL_error(L, "error reading from source file");
+	}
+
+	*(fbuf+fread) = '\0';
+
+	fbuf = strchr(fbuf, '{');			// beginning of font data
+	char *fend = strstr(fbuf, "};");	// end of font data
+
+	if ((fbuf == NULL) || (fend == NULL) || ((fend-fbuf) < 22)) {
+		free(fbuf);
+		file_close(ffd_out);
+		return luaL_error(L, "wrong source file format");
+	}
+
+	fbuf++;
+	*fend = '\0';
+	char hexstr[5] = {'\0'};
+	int lastline = 0;
+
+	fbuf = strstr(fbuf, "0x");
+	int size = 0;
+	uint8_t xsize, ysize;
+	char *nextline;
+	char *numptr;
+
+	int bptr = 0;
+
+	while ((fbuf != NULL) && (fbuf < fend) && (lastline == 0)) {
+		nextline = strchr(fbuf, '\n'); // beginning of the next line
+		if (nextline == NULL) {
+			nextline = fend-1;
+			lastline++;
+		}
+		else nextline++;
+
+		while (fbuf < nextline) {
+			numptr = strstr(fbuf, "0x");
+			if ((numptr == NULL) || ((fbuf+4) > nextline)) numptr = strstr(fbuf, "0X");
+			if ((numptr != NULL) && ((numptr+4) <= nextline)) {
+				fbuf = numptr;
+				if (bptr >= 128) {
+					// buffer full, write to file
+					if (file_write(ffd_out, outfile, 128) != 128) goto error;
+					bptr = 0;
+					if (size == 0) {
+						xsize = outfile[0];
+						ysize = outfile[1];
+					}
+					size += 128;
+				}
+				memcpy(hexstr, fbuf, 4);
+				hexstr[4] = 0;
+				outfile[bptr++] = (uint8_t)strtol(hexstr, NULL, 0);
+				fbuf += 4;
+			}
+			else fbuf = nextline;
+		}
+		fbuf = nextline;
+	}
+
+	if (bptr > 0) {
+		if (size == 0) {
+			xsize = outfile[0];
+			ysize = outfile[1];
+		}
+		size += bptr;
+		if (file_write(ffd_out, outfile, bptr) != bptr)  goto error;
+	}
+
+	// write font ID
+	sprintf(outfile, "RPH_font");
+	if (file_write(ffd_out, outfile, 8) != 8)  goto error;
+
+	file_flush(ffd_out);
+	file_close(ffd_out);
+
+	free(sourcebuf);
+
+	// === Test compiled font ===
+	sprintf(outfile, "%s", fontfile);
+	sprintf(outfile+strlen(outfile)-1, "fon");
+
+	uint8_t *uf = userfont; // save userfont pointer
+	userfont = NULL;
+	if (load_file_font(outfile, 1) == 0) printf("Error compiling file!\n");
+	else {
+		free(userfont);
+		printf("File compiled successfully.\n");
+	}
+	userfont = uf; // restore userfont
+
+	return 0;
+
+error:
+	file_close(ffd_out);
+	free(sourcebuf);
+	return luaL_error(L, "error writing to destination file");
+
 }
 
 //========================================
@@ -2043,10 +2380,9 @@ static int lcd_image( lua_State* L )
 
   const char *fname;
   int fhndl = 0;
-  uint8_t buf[670];
+  uint8_t buf[640];
   uint32_t xrd = 0;
-  size_t len,xendsize;
-  VMINT write_size;
+  size_t len;
   
   int x = luaL_checkinteger( L, 1 );
   int y = luaL_checkinteger( L, 2 );
@@ -2055,58 +2391,187 @@ static int lcd_image( lua_State* L )
   fname = luaL_checklstring( L, 5, &len );
   
   if ((len > 63) || (len < 1)) {
-	    l_message(NULL, "Bad file name or file not found!");
-	    return 0;
+	  vm_log_error("Bad file name");
+	  return 0;
   }
-  VMWCHAR ucs_name[128];
-  vm_chset_ascii_to_ucs2(ucs_name, 128, fname);
-  fhndl = vm_fs_open(ucs_name, VM_FS_MODE_READ, VM_TRUE);
+
+  if (x == CENTER) x = (_width - xsize) / 2;
+  else if (x == RIGHT) x = (_width - xsize);
+  if (x < 0) x = 0;
+
+  if (y == CENTER) y = (_height - ysize) / 2;
+  else if (y == BOTTOM) y = (_height - ysize);
+  if (y < 0) y = 0;
+
+  // crop to disply width
+  int xend;
+  if ((x+xsize) > _width) xend = _width-1;
+  else xend = x+xsize-1;
+  int disp_xsize = xend-x+1;
+  if ((disp_xsize <= 1) || (y >= _height)) {
+	  vm_log_error("image out of screen.");
+	  return 0;
+  }
+
+  fhndl = file_open(fname, 0);
   if (fhndl < 0) {
-	    l_message(NULL, "Bad file name or file not found!");
-	    return 0;
+	  vm_log_error("Error opening file");
+	  return 0;
   }
 
-  if ((xsize > _width) || (ysize > _height)) {
-    l_message(NULL,"image too big.");
-    return 0;
-  }
+  disp_xsize *= 2;
+  do { // read 1 image line from file and send to display
+	initccbuf();
+	_TFT_pushAddrWindow(x, y, xend, y);
+	ccbufPushByte(TFT_RAMWR);
+	ccbufPushUint16(disp_xsize);
+	ccbufPushLong(1);
 
-  if ((x+xsize) > _width) xendsize = _width-1;
-  else xendsize = x+xsize-1;
+	xrd = file_read(fhndl, buf, 2*xsize);  // read line from file
+	if (xrd != (2*xsize)) {
+		vm_log_error("Error reading line: %d", xrd);
+		break;
+	}
 
-  do {
-    // read 1 imege line from file
-    initccbuf();
-    _TFT_pushAddrWindow(x, y, xendsize, y);
-    
-	xrd = vm_fs_read(fhndl, &buf[ccbufPtr+7], 2*xsize, &write_size);
-    if (xrd == 2*xsize) {
-      ccbufPushByte(TFT_RAMWR);
-      ccbufPushUint16(xrd);
-      ccbufPushLong(1);
-      
-      memcpy(&buf[0], &ccbuf[0], ccbufPtr);
-      buf[ccbufPtr+xrd] = 0;
+	memcpy(ccbuf+ccbufPtr, buf, disp_xsize);
+	ccbufPtr += disp_xsize;
+	ccbuf[ccbufPtr] = 0;
 
-      //_LcdSpiTransfer( &buf[0], ccbufPtr+xrd);
-      g_fcall_message.message_id = CCALL_MESSAGE_LCDWR;
-      g_CCparams.cpar1 = buf;
-      g_CCparams.ipar1 = ccbufPtr+xrd;
-      vm_thread_send_message(g_main_handle, &g_fcall_message);
-      // wait for call to finish...
-      vm_signal_wait(g_shell_signal);
+	send_to_display();
 
-      y++;
-      if (y < _height) ysize--;
-      else ysize = 0;
-    }
-    else xrd = 0;
-  }while ((xrd > 0) && (ysize > 0));
+	y++;
+	if (y >= _height) break;
+	ysize--;
+
+  } while (ysize > 0);
   
-  vm_fs_close(fhndl);
+  file_close(fhndl);
   
   return 0;
 }
+
+//=====================================
+static int lcd_bmpimage( lua_State* L )
+{
+	if (checkParam(3, L)) return 0;
+
+	const char *fname;
+	int fhndl = 0;
+	uint8_t buf[960];  // max bytes per line = 3 * 320
+	uint32_t xrd = 0;
+	size_t len;
+
+	int x = luaL_checkinteger( L, 1 );
+	int y = luaL_checkinteger( L, 2 );
+	fname = luaL_checklstring( L, 3, &len );
+
+	if ((len > 63) || (len < 1)) {
+	  vm_log_error("Bad file name");
+	  return 0;
+	}
+
+	fhndl = file_open(fname, 0);
+	if (fhndl < 0) {
+	  vm_log_error("Error opening file");
+	  return 0;
+	}
+
+	xrd = file_read(fhndl, buf, 54);  // read header
+	if (xrd != 54) {
+exithd:
+		file_close(fhndl);
+		vm_log_error("Error reading header");
+		return 0;
+	}
+
+	uint16_t wtemp;
+	uint32_t temp;
+	uint32_t offset;
+	uint32_t xsize;
+	uint32_t ysize;
+
+	// Check image header
+	if ((buf[0] != 'B') || (buf[1] != 'M')) goto exithd;
+
+	memcpy(&offset, buf+10, 4);
+	memcpy(&temp, buf+14, 4);
+	if (temp != 40) goto exithd;
+	memcpy(&wtemp, buf+26, 2);
+	if (wtemp != 1) goto exithd;
+	memcpy(&wtemp, buf+28, 2);
+	if (wtemp != 24) goto exithd;
+	memcpy(&temp, buf+30, 4);
+	if (temp != 0) goto exithd;
+
+	memcpy(&xsize, buf+18, 4);
+	memcpy(&ysize, buf+22, 4);
+
+	// Adjust position
+	if (x == CENTER) x = (_width - xsize) / 2;
+	else if (x == RIGHT) x = (_width - xsize);
+	if (x < 0) x = 0;
+
+	if (y == CENTER) y = (_height - ysize) / 2;
+	else if (y == BOTTOM) y = (_height - ysize);
+	if (y < 0) y = 0;
+
+	// Crop to display width
+	int xend;
+	if ((x+xsize) > _width) xend = _width-1;
+	else xend = x+xsize-1;
+	int disp_xsize = xend-x+1;
+	if ((disp_xsize <= 1) || (y >= _height)) {
+	  vm_log_error("image out of screen.");
+	  return 0;
+	}
+
+	uint16_t color = 0;
+	int i;
+	while (ysize > 0) {
+		// Position at line start
+		// ** BMP images are stored in file from LAST to FIRST line
+		//    so we have to read from the end line first
+
+		xrd = file_seek(fhndl, offset+((ysize-1)*(xsize*3)), 0);
+		if (xrd < offset)  break;
+
+		// ** read one image line from file and send to display **
+		// read only the part of image line which can be shown on screen
+		xrd = file_read(fhndl, buf, disp_xsize*3);
+		if (xrd != (disp_xsize*3)) {
+			vm_log_error("Error reading line: %d", xrd);
+			break;
+		}
+		//printf("read line: %d %d %d %d %d\n", y, offset, xrd, xsize, xend);
+
+		initccbuf();
+		_TFT_pushAddrWindow(x, y, xend, y);
+		ccbufPushByte(TFT_RAMWR);
+		ccbufPushUint16(disp_xsize*2);
+		ccbufPushLong(1);
+
+		i = 0;
+		while (i < xrd) {
+			color = ((buf[i++] & 0xF8) >> 3);
+			color |= ((buf[i++] & 0xFC) << 3);
+			color |= ((buf[i++] & 0xF8) << 8);	// get RGB888
+			ccbufPushUint16(color);				// and convert to RGB565
+		}
+		//printf("npixel: %d\n", disp_xsize);
+		ccbuf[ccbufPtr] = 0;
+		send_to_display();
+
+		y++;	// next image line
+		if (y >= _height) break;
+		ysize--;
+	}
+
+exit:
+	file_close(fhndl);
+
+	return 0;
+}
+
 
 // User defined device identifier
 typedef struct {
@@ -2193,7 +2658,13 @@ static UINT tjd_output (
 	    ccbuf[lenPtr] = (uint8_t)((ccbufPtr-len) & 0x00FF);
 	    //printf(", len: %d\n", ccbufPtr-len);
 		ccbuf[ccbufPtr] = 0;
-		len = _LcdSpiTransfer(ccbuf, ccbufPtr);			// send data to display
+		if (TFT_type > 0) {
+			if (TFT_type == 2) {
+				_sitronix_LcdTransfer(ccbuf, ccbufPtr);			// send data to display
+				len = 0;
+			}
+			else len = _LcdSpiTransfer(ccbuf, ccbufPtr);		// send data to display
+		}
 		if (len < 0) {
 			vm_log_error("error sending data to display: %d", len);
 			return 0;  // stop decompression
@@ -2229,7 +2700,7 @@ static int _lcd_jpg_image( lua_State* L )
 	}
 
 	VMWCHAR ucs_name[128];
-	vm_chset_ascii_to_ucs2(ucs_name, 128, fname);
+    full_fname((char *)fname, ucs_name, 128);
 	dev.fhndl = vm_fs_open(ucs_name, VM_FS_MODE_READ, VM_TRUE);
 	if (dev.fhndl < 0) {
 		vm_log_error("Bad file name or file not found!");
@@ -2351,6 +2822,23 @@ static int lcd_jpg_image( lua_State* L )
     return 0;
 }
 
+//======================================
+static int lcd_on_touch(lua_State *L)
+{
+    if (TFT_type == 2) {
+		if (g_touch_cb_ref != LUA_NOREF) {
+			luaL_unref(L, LUA_REGISTRYINDEX, g_touch_cb_ref);
+			g_touch_cb_ref = LUA_NOREF;
+		}
+		if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
+			lua_pushvalue(L, 1);
+			g_touch_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+		}
+    }
+    return 0;
+}
+
+
 
 #undef MIN_OPT_LEVEL
 #define MIN_OPT_LEVEL 0
@@ -2367,9 +2855,11 @@ const LUA_REG_TYPE lcd_map[] =
   { LSTRKEY( "on" ), LFUNCVAL( lcd_on )},
   { LSTRKEY( "off" ), LFUNCVAL( lcd_off )},
   { LSTRKEY( "setfont" ), LFUNCVAL( lcd_setfont )},
+  { LSTRKEY( "compilefont" ), LFUNCVAL( compile_font_file )},
   { LSTRKEY( "getscreensize" ), LFUNCVAL( lcd_getscreensize )},
   { LSTRKEY( "getfontsize" ), LFUNCVAL( lcd_getfontsize )},
   { LSTRKEY( "getfontheight" ), LFUNCVAL( lcd_getfontheight )},
+  { LSTRKEY( "gettype" ), LFUNCVAL( lcd_gettype )},
   { LSTRKEY( "setrot" ), LFUNCVAL( lcd_setrot )},
   { LSTRKEY( "setorient" ), LFUNCVAL( lcd_setorient )},
   { LSTRKEY( "setcolor" ), LFUNCVAL( lcd_setcolor )},
@@ -2387,7 +2877,10 @@ const LUA_REG_TYPE lcd_map[] =
   { LSTRKEY( "write" ), LFUNCVAL( lcd_write )},
   { LSTRKEY( "image" ), LFUNCVAL( lcd_image )},
   { LSTRKEY( "jpgimage" ), LFUNCVAL( lcd_jpg_image )},
+  { LSTRKEY( "bmpimage" ), LFUNCVAL( lcd_bmpimage )},
   { LSTRKEY( "hsb2rgb" ), LFUNCVAL( lcd_HSBtoRGB )},
+  { LSTRKEY( "setbrightness" ), LFUNCVAL( lcd_set_brightness )},
+  { LSTRKEY( "ontouch" ), LFUNCVAL( lcd_on_touch )},
   
 #if LUA_OPTIMIZE_MEMORY > 0
   { LSTRKEY( "PORTRAIT" ),       LNUMVAL( PORTRAIT ) },
@@ -2417,12 +2910,8 @@ const LUA_REG_TYPE lcd_map[] =
   { LSTRKEY( "ORANGE" ),         LNUMVAL( TFT_ORANGE ) },
   { LSTRKEY( "GREENYELLOW" ),    LNUMVAL( TFT_GREENYELLOW ) },
   { LSTRKEY( "PINK" ),           LNUMVAL( TFT_PINK ) },
-  { LSTRKEY( "FONT_SMALL" ),     LNUMVAL( SMALL_FONT ) },
-  { LSTRKEY( "FONT_BIG" ),       LNUMVAL( BIG_FONT ) },
+  { LSTRKEY( "FONT_DEFAULT" ),   LNUMVAL( DEFAULT_FONT ) },
   { LSTRKEY( "FONT_7SEG" ),      LNUMVAL( FONT_7SEG ) },
-  { LSTRKEY( "FONT_DEJAVU12" ),  LNUMVAL( DEJAVU_12 ) },
-  { LSTRKEY( "FONT_DEJAVU18" ),  LNUMVAL( DEJAVU_18 ) },
-  { LSTRKEY( "FONT_DEJAVU24" ),  LNUMVAL( DEJAVU_24 ) },
   { LSTRKEY( "ST7735" ),         LNUMVAL( 0 ) },
   { LSTRKEY( "ST7735B" ),        LNUMVAL( 1 ) },
   { LSTRKEY( "ST7735G" ),        LNUMVAL( 2 ) },
@@ -2433,6 +2922,12 @@ const LUA_REG_TYPE lcd_map[] =
 
 LUALIB_API int luaopen_lcd(lua_State *L)
 {
+	TFT_type = 2;
+	TFT_setFont(DEFAULT_FONT, NULL);
+	_fg = TFT_GREEN;
+	_bg = TFT_BLACK;
+
+	_initvar();
 
 #if LUA_OPTIMIZE_MEMORY > 0
     return 0;
@@ -2467,16 +2962,14 @@ LUALIB_API int luaopen_lcd(lua_State *L)
   MOD_REG_NUMBER( L, "ORANGE",          TFT_ORANGE);
   MOD_REG_NUMBER( L, "GREENYELLOW",     TFT_GREENYELLOW);
   MOD_REG_NUMBER( L, "PINK" ,           TFT_PINK);
-  MOD_REG_NUMBER( L, "FONT_SMALL" ,     SMALL_FONT);
-  MOD_REG_NUMBER( L, "FONT_BIG" ,       BIG_FONT);
+  MOD_REG_NUMBER( L, "FONT_DEFAULT" ,   DEFAULT_FONT);
   MOD_REG_NUMBER( L, "FONT_7SEG" ,      FONT_7SEG);
-  MOD_REG_NUMBER( L, "FONT_DEJAVU12" ,  DEJAVU_12);
-  MOD_REG_NUMBER( L, "FONT_DEJAVU18" ,  DEJAVU_18);
-  MOD_REG_NUMBER( L, "FONT_DEJAVU24" ,  DEJAVU_24);
   MOD_REG_NUMBER( L, "ST7735" ,         0);
   MOD_REG_NUMBER( L, "ST7735B" ,        1);
   MOD_REG_NUMBER( L, "ST7735G" ,        2);
   MOD_REG_NUMBER( L, "ILI9341" ,        3);
+  MOD_REG_NUMBER( L, "XADOW_V0" ,       8);
+  MOD_REG_NUMBER( L, "XADOW_V1" ,       9);
 
   return 1;
 #endif

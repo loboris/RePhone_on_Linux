@@ -90,8 +90,6 @@
 #define TERM_INPUT_DONT_WAIT		0
 #define TERM_INPUT_WAIT				1
 
-int use_term_input = 0;
-
 extern int retarget_getc(int tmo);
 
 static const int history_max_lengths[ LINENOISE_TOTAL_COMPONENTS ] = { LINENOISE_HISTORY_SIZE_LUA, LINENOISE_HISTORY_SIZE_SHELL };
@@ -182,16 +180,22 @@ int linenoisePrompt(int id, char *buf, int buflen, const char *prompt)
         switch(c) 
         {
           case KC_ENTER:
-          case KC_CTRL_C:
-          case KC_CTRL_D:
-          case KC_CTRL_Z:
             history_lengths[ id ] --;
             free( histories[ id ][history_lengths[ id ]] );
 
-            if ( c == KC_CTRL_C ) return LINENOISE_CTRL_C;
-            else if ( c == KC_CTRL_Z ) return -1;
-            else if (( c == KC_CTRL_D ) && (pos == 0)) return LINENOISE_CTRL_D;
-            return len;
+			return len;
+            break;
+
+         case KC_CTRL_D:
+         	if (len == 0) return LINENOISE_CTRL_D;
+         	break;
+
+         case KC_CTRL_C:
+         	 len = 0;
+         	 pos = 0;
+             buf[len] = '\0';
+             refreshLine(prompt,buf,len,pos,cols);
+             break;
 
          case KC_BACKSPACE:
             if (pos > 0 && len > 0) {
@@ -350,26 +354,23 @@ int term_linenoise_getline( int id, char* buffer, int maxinput, const char* prom
 {
   int count;
   
-  if( history_max_lengths[ id ] == 0 )
-  {
+  if( history_max_lengths[ id ] == 0 ) {
     fputs( prompt, stdout );
     fflush( stdout );
     return fgets( buffer, maxinput, stdin ) == NULL ? -1 : 0;
   }
-  while( 1 )
-  {
+
+  while ( 1 ) {
     count = linenoisePrompt( id, buffer, maxinput, prompt );
-    if ( count != -1 ) printf( "\n" );
+    printf( "\n" );
 
     if ( count == LINENOISE_CTRL_D ) {
     	// No input which makes lua interpreter close
     	return 0;
     }
-    if ( count != LINENOISE_CTRL_C )
-    {  
-      if ( count > 0 && buffer[ count ] != '\0' ) buffer[ count ] = '\0';
-      return count;  // return to Lua
-    }
+
+	if (buffer[ count ] != '\0') buffer[ count ] = '\0';
+    if ( count > 0) return count;  // return to Lua
   }
 }
 

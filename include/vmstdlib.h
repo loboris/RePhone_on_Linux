@@ -44,7 +44,7 @@ extern "C" {
 #include <stdarg.h>
 #include "vmtype.h"
 
-
+/*
 #if defined(__COMPILER_RVCT__) || defined(__COMPILER_GCC__)
 #undef vsprintf
 #undef sprintf
@@ -58,6 +58,7 @@ VMINT vm_sscanf(VMCSTR str, VMCSTR format, ...);
 #define sprintf vm_sprintf
 #define sscanf vm_sscanf
 #endif
+*/
 
 /*****************************************************************************
  * FUNCTION

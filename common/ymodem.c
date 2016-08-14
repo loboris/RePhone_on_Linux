@@ -15,111 +15,11 @@
 #include "vmchset.h"
 #include "vmstdlib.h"
 
+#include "shell.h"
 
 extern void retarget_putc(char ch);
 extern int retarget_getc(int tmo);
 extern void retarget_write(const char *str, unsigned int len);
-
-//----------------------------------------
-int file_open(const char* file, int flags)
-{
-    VMUINT fs_mode;
-    char file_name[64];
-    char* ptr;
-
-    if(file[1] != ':') {
-        snprintf(file_name, sizeof(file_name), "C:\\%s", file);
-        ptr = file_name;
-    } else {
-        ptr = (char *)file;
-    }
-
-    if(flags & O_CREAT) {
-        fs_mode = VM_FS_MODE_CREATE_ALWAYS_WRITE;
-    } else if((flags & O_RDWR) || (flags & O_WRONLY)) {
-        fs_mode = VM_FS_MODE_WRITE;
-    } else {
-        fs_mode = VM_FS_MODE_READ;
-    }
-
-    if(flags & O_APPEND) {
-        fs_mode |= VM_FS_MODE_APPEND;
-    }
-
-    g_fcall_message.message_id = CCALL_MESSAGE_FOPEN;
-    g_CCparams.cpar1 = ptr;
-    g_CCparams.ipar1 = fs_mode;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
-    return g_shell_result;
-}
-
-//----------------------
-int file_close(int file)
-{
-    g_fcall_message.message_id = CCALL_MESSAGE_FCLOSE;
-    g_CCparams.ipar1 = file;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
-    return g_shell_result;
-}
-
-//----------------------
-int file_flush(int file)
-{
-    g_fcall_message.message_id = CCALL_MESSAGE_FFLUSH;
-    g_CCparams.ipar1 = file;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
-    return g_shell_result;
-}
-
-//---------------------
-int file_size(int file)
-{
-    g_fcall_message.message_id = CCALL_MESSAGE_FSIZE;
-    g_CCparams.ipar1 = file;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
-    return g_shell_result;
-}
-
-//-----------------------------------------
-int file_read(int file, char* ptr, int len)
-{
-    g_fcall_message.message_id = CCALL_MESSAGE_FREAD;
-    g_CCparams.ipar1 = file;
-    g_CCparams.ipar2 = len;
-    g_CCparams.cpar1 = ptr;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
-    return g_shell_result;
-}
-
-//------------------------------------------
-int file_write(int file, char* ptr, int len)
-{
-    g_fcall_message.message_id = CCALL_MESSAGE_FWRITE;
-    g_CCparams.ipar1 = file;
-    g_CCparams.ipar2 = len;
-    g_CCparams.cpar1 = ptr;
-    vm_thread_send_message(g_main_handle, &g_fcall_message);
-    // wait for call to finish...
-    vm_signal_wait(g_shell_signal);
-
-    return g_shell_result;
-}
-
 
 //-----------------------------------------------------------
 static uint16_t Cal_CRC16(const uint8_t* data, uint32_t size)

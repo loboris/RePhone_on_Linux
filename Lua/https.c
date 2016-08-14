@@ -431,17 +431,15 @@ int _https_post(lua_State* L)
 						nfileentry++;
 						filenames_size += (vlen+1);
 
-						char fn[128];
-						short wfn[128];
-						sprintf(fn, "C:\\%s", value);
-						vm_chset_ascii_to_ucs2((VMWSTR)wfn, 256, fn);
+						VMWCHAR wfn[128];
+					    full_fname((char *)value, wfn, 128);
 						int fh = vm_fs_open(wfn, VM_FS_MODE_READ, VM_TRUE);
 						if (fh < 0) {
 							err++;
-							vm_log_debug("[POST]: File '%s' not found",fn);
+							vm_log_debug("[POST]: File '%s' not found", value);
 						}
 						else vm_fs_close(fh);
-						int fnmlen = (vm_wstr_string_length(wfn)+1)*2;
+						int fnmlen = (vm_wstr_string_length((VMWSTR)wfn)+1)*2;
 						pathnames_size += fnmlen;
 	  	    		}
 	  	    		else {
@@ -572,10 +570,8 @@ int _https_post(lua_State* L)
 					filenames_size += (vlen+1);
 
 					// save local file path/name & length
-					char fn[128];
 					short wfn[128];
-					sprintf(fn, "C:\\%s", value);
-					vm_chset_ascii_to_ucs2((VMWSTR)wfn, 256, fn);
+				    full_fname((char *)value, wfn, 128);
 					int wfnlen = vm_wstr_copy(g_https_path_names+pathnames_size, wfn);
 					cc.file_path_name = g_https_path_names+pathnames_size;
 					cc.file_path_name_length = vm_wstr_string_length(cc.file_path_name);

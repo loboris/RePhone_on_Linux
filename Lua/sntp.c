@@ -49,15 +49,17 @@
 extern VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type;
 
 #define NTP_PACKET_SIZE 48
-#define NTP_TIME_OUT 30
+#define NTP_TIME_OUT 60
 
 static VM_UDP_HANDLE g_udp;
 vm_soc_address_t g_address = {4, 123, {132, 163, 4, 101}};
 VMUINT8 g_packetBuffer[NTP_PACKET_SIZE];
 
-static VM_TIMER_ID_PRECISE sntp_timer_id;
+static VM_TIMER_ID_PRECISE sntp_timer_id = -1;
 
-static int ntp_time_set = 0;
+static VMUINT8 ntp_time_set = 0;
+static VMUINT8 ntp_can_write = 0;
+static VMUINT8 ntp_showlog = 0;
 static int ntp_time_zone = 0;
 static int ntp_timeout = 0;
 int ntp_cb_ref = LUA_NOREF;
@@ -85,27 +87,45 @@ struct NtpPacket
 //----------------------------------------------------------------------------
 static void sntp_timer_callback(VM_TIMER_ID_PRECISE timer_id, void* user_data)
 {
+	VMINT nwrite;
+
 	if (ntp_time_set == 0) {
+		//printf("waiting for ntp...\n");
 		ntp_timeout++;
 		if (ntp_timeout > NTP_TIME_OUT) {
 			ntp_timeout = 0;
+    		ntp_can_write = 0;
 			vm_udp_close(g_udp);
+
         	if (ntp_cb_ref != LUA_NOREF) {
         		ntp_cb_params.par = -1;
         		ntp_cb_params.cb_ref = ntp_cb_ref;
                 remote_lua_call(CB_FUNC_INT, &ntp_cb_params);
     			ntp_cb_ref = LUA_NOREF;
         	}
-        	else {
-				printf("\nNTP ERROR, time not set.\n");
+        	else if (ntp_showlog) {
+        		vm_log_error("NTP ERROR, time not set.");
         	}
 			vm_timer_delete_precise(sntp_timer_id);
+			sntp_timer_id = -1;
+		}
+		else {
+        	if (ntp_can_write) {
+        		ntp_can_write = 0;
+				//printf("ntp request\n");
+				if (vm_udp_send(g_udp, g_packetBuffer, NTP_PACKET_SIZE, &g_address) < 0) {
+					if (ntp_showlog) {
+						vm_log_error("NTP write error: %d", nwrite);
+					}
+	        		ntp_can_write = 1;
+				}
+        	}
 		}
 	}
 	else {
-        vm_timer_delete_precise(sntp_timer_id);
+		vm_timer_delete_precise(sntp_timer_id);
+		sntp_timer_id = -1;
 	}
-
 }
 
 
@@ -122,10 +142,13 @@ static void sntp_callback(VM_UDP_HANDLE handle, VM_UDP_EVENT event)
     switch (event)
     {
         case VM_UDP_EVENT_READ:
+        	ntp_can_write = 0;
+        	//printf("NTP read\n");
             ret = vm_udp_receive(g_udp, &buf, 100, &g_address);
-            if (ret > 0)
-            {
+            if (ret > 0) {
                 vm_timer_delete_precise(sntp_timer_id);
+    			sntp_timer_id = -1;
+            	//printf("received %d\n", ret);
                 //the timestamp starts at byte 40 of the received packet and is four bytes,
                 // or two words, long. First, esxtract the two words:
                 //unsigned long highWord = (buf[32] * 256) + buf[33];
@@ -159,33 +182,37 @@ static void sntp_callback(VM_UDP_HANDLE handle, VM_UDP_EVENT event)
                     remote_lua_call(CB_FUNC_INT, &ntp_cb_params);
         			ntp_cb_ref = LUA_NOREF;
             	}
-            	else {
-                    char buf[128] = {0};
-                    sprintf(buf, "Time Synchronized: tz=%d epoch=%lu: %s", ntp_time_zone, epoch, asctime(ntpTime));
-                    vm_log_info(buf);
+            	else if (ntp_showlog) {
+                    vm_log_debug("Time Synchronized: tz=%d epoch=%lu: %s", ntp_time_zone, epoch, asctime(ntpTime));
             	}
+                vm_udp_close(g_udp);
             }
-            vm_udp_close(g_udp);
+            else {
+            	//printf("no response\n");
+            	ntp_can_write = 1;
+            }
             break;
+
         case VM_UDP_EVENT_WRITE:
-            nwrite = vm_udp_send(g_udp, g_packetBuffer, NTP_PACKET_SIZE, &g_address);
+        	//printf("NTP write\n");
+        	ntp_can_write = 1;
             break;
+
         default:
+        	printf("NTP event %d\n", event);
             break;
     }
 
 }
 
-//-------------------------
-void sntp_gettime( int tz )
+//----------------------------------------
+void sntp_gettime(int tz, uint8_t showlog)
 {
   ntp_time_set = 0;
   ntp_time_zone = tz;
   ntp_timeout = 0;
-
-  sntp_timer_id = vm_timer_create_precise(500, sntp_timer_callback, NULL);
-
-  g_udp = vm_udp_create(1000, gprs_bearer_type, sntp_callback, 0);
+  ntp_can_write = 0;
+  ntp_showlog = showlog;
 
   memset(g_packetBuffer, 0, NTP_PACKET_SIZE);
   g_packetBuffer[0] = 0b11100011;   // LI, Version, Mode
@@ -197,6 +224,31 @@ void sntp_gettime( int tz )
   g_packetBuffer[13]  = 0x4E;
   g_packetBuffer[14]  = 49;
   g_packetBuffer[15]  = 52;*/
-  VMINT nwrite = vm_udp_send(g_udp, g_packetBuffer, NTP_PACKET_SIZE, &g_address);
+
+  if (sntp_timer_id >= 0) {
+      if (ntp_showlog) {
+    	  vm_log_debug("ntp request already running");
+      }
+      return;
+  }
+
+  sntp_timer_id = vm_timer_create_precise(1000, sntp_timer_callback, NULL);
+  if (sntp_timer_id < 0) {
+      if (ntp_showlog) {
+    	  vm_log_error("Error creating ntp timer: %d", sntp_timer_id);
+      }
+  }
+
+  g_udp = vm_udp_create(1000, gprs_bearer_type, sntp_callback, 0);
+  if (g_udp < 0) {
+      vm_timer_delete_precise(sntp_timer_id);
+	  sntp_timer_id = -1;
+      if (ntp_showlog) {
+    	  vm_log_error("Error creating udp socket: %d", g_udp);
+      }
+	  return;
+  }
+
+  vm_udp_send(g_udp, g_packetBuffer, NTP_PACKET_SIZE, &g_address);
 }
 

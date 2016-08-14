@@ -595,7 +595,7 @@ int net_close(lua_State* L)
     return 1;
 }
 
-//=====================================
+//======================================
 static int _net_ntptime (lua_State *L) {
 
   int tz = luaL_checkinteger( L, 1 );
@@ -611,7 +611,7 @@ static int _net_ntptime (lua_State *L) {
 	  ntp_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
   	}
   }
-  sntp_gettime(tz);
+  sntp_gettime(tz, 1);
 
   g_shell_result = 0;
   vm_signal_post(g_shell_signal);
