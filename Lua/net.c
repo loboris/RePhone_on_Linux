@@ -224,7 +224,7 @@ static int tcp_create(lua_State* L)
     	return luaL_error(L, "callback function missing");
     }
 
-    remote_CCall(&_tcp_create);
+    remote_CCall(L, &_tcp_create);
 
 	return 1;
 }
@@ -275,7 +275,7 @@ static int tcp_connect(lua_State* L)
     char* addr = luaL_checkstring(L, 2);
     unsigned port = luaL_checkinteger(L, 3);
 
-    remote_CCall(&_tcp_connect);
+    remote_CCall(L, &_tcp_connect);
 
 	return 1;
 }
@@ -305,7 +305,7 @@ static int tcp_write(lua_State* L)
     int len;
     char* str = (char *)luaL_checklstring(L, 2, &len);
 
-    remote_CCall(&_tcp_write);
+    remote_CCall(L, &_tcp_write);
 
     lua_pushinteger(L, g_shell_result);
 
@@ -369,7 +369,7 @@ static int tcp_read(lua_State* L)
     if (p->type != NET_TYPE_TCP) return luaL_error(L, "cannot read to udp socket");
     size_t size = luaL_checkinteger(L, 2);
 
-    remote_CCall(&_tcp_read);
+    remote_CCall(L, &_tcp_read);
 
 	return g_shell_result;
 }
@@ -428,7 +428,7 @@ static int udp_create(lua_State* L)
     	return luaL_error(L, "no free udp sockets");
 	}
 
-    remote_CCall(&_udp_create);
+    remote_CCall(L, &_udp_create);
 
     //lua_pushinteger(L, g_shell_result);
 
@@ -483,7 +483,7 @@ static int udp_write(lua_State* L)
     sprintf(dns_data.host, "%s", host);
 	g_shell_result = -9;
 	CCwait = 10000;
-    remote_CCall(&_udp_getIP);
+    remote_CCall(L, &_udp_getIP);
 
 	if (g_shell_result < 0) { // no response
 	    lua_pushinteger(L, -10);
@@ -502,7 +502,7 @@ static int udp_write(lua_State* L)
 			p->address.address[0], p->address.address[1],
 			p->address.address[2], p->address.address[3], p->address.port);
 
-	remote_CCall(&_udp_write);
+	remote_CCall(L, &_udp_write);
 
     lua_pushinteger(L, g_shell_result);
 
@@ -560,7 +560,7 @@ static int udp_read(lua_State* L)
     if (p->type != NET_TYPE_UDP) return luaL_error(L, "cannot write to tcp socket");
     size_t size = luaL_checkinteger(L, 2);
 
-	remote_CCall(&_udp_read);
+	remote_CCall(L, &_udp_read);
 
 	return 1;
 }
@@ -589,7 +589,7 @@ int net_close(lua_State* L)
 {
     net_info_t* p = ((net_info_t*)luaL_checkudata(L, 1, LUA_NET));
 
-    remote_CCall(&_net_close);
+    remote_CCall(L, &_net_close);
 	lua_pushinteger(L, g_shell_result);
 
     return 1;
@@ -621,7 +621,7 @@ static int _net_ntptime (lua_State *L) {
 //====================================
 static int net_ntptime (lua_State *L) {
 	int tz = luaL_checkinteger( L, 1 );
-	remote_CCall(&_net_ntptime);
+	remote_CCall(L, &_net_ntptime);
 	return g_shell_result;
 }
 
@@ -803,7 +803,7 @@ static int gprs_setapn(lua_State *L)
 	if (!lua_istable(L, 1)) {
 		return luaL_error( L, "table arg expected" );
 	}
-	remote_CCall(&_gprs_setapn);
+	remote_CCall(L, &_gprs_setapn);
 	return g_shell_result;
 }
 

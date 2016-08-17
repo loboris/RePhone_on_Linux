@@ -430,7 +430,7 @@ static int gsm_send(lua_State *L)
 
 	if (g_sms_send_cb_ref == LUA_NOREF) CCwait = 5000;
     g_shell_result = -9;
-	remote_CCall(&_gsm_send);
+	remote_CCall(L, &_gsm_send);
 	if (g_shell_result < 0) { // no response
 		lua_pushinteger(L, -1);
 	    g_shell_result = 1;
@@ -507,9 +507,9 @@ static int gsm_read(lua_State *L)
     // Read message
     if (g_sms_read_cb_ref == LUA_NOREF) CCwait = 2000;
     g_shell_result = -9;
-	remote_CCall(&_gsm_read);
+	remote_CCall(L, &_gsm_read);
 	if (g_shell_result < 0) { // no response
-		remote_CCall(&_gsm_readbuf_free);
+		remote_CCall(L, &_gsm_readbuf_free);
 		lua_pushnil(L);
 	    g_shell_result = 1;
 	}
@@ -543,7 +543,7 @@ static int gsm_sms_delete(lua_State *L)
     int message_id = luaL_checkinteger(L, 1);
 
     g_shell_result = -9;
-	remote_CCall(&_gsm_sms_delete);
+	remote_CCall(L, &_gsm_sms_delete);
 	if (g_shell_result < 0) { // no response
 		lua_pushinteger(L, -3);
 	    g_shell_result = 1;
@@ -571,7 +571,7 @@ static int gsm_on_new_message(lua_State *L)
 	if ((lua_type(L, 1) == LUA_TFUNCTION) || (lua_type(L, 1) == LUA_TLIGHTFUNCTION)) {
 	    lua_pushvalue(L, 1);
 	    g_gsm_new_message_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
-		remote_CCall(&_gsm_on_new_message);
+		remote_CCall(L, &_gsm_on_new_message);
 	}
 	else {
 		lua_pushinteger(L, -1);
@@ -599,7 +599,7 @@ static int _gsm_num_sms_received(lua_State *L)
 static int gsm_num_sms_received(lua_State *L)
 {
     g_shell_result = -9;
-	remote_CCall(&_gsm_num_sms_received);
+	remote_CCall(L, &_gsm_num_sms_received);
 
 	if (g_shell_result < 0) { // no response
 		lua_pushinteger(L, -1);
@@ -647,7 +647,7 @@ static int gsm_list_sms_received(lua_State *L)
 	}
 
     g_shell_result = -9;
-	remote_CCall(&_gsm_list_sms_received);
+	remote_CCall(L, &_gsm_list_sms_received);
 
 	if (g_shell_result < 0) { // no response
 		lua_newtable(L);
@@ -683,7 +683,7 @@ static int _gsm_info(lua_State *L)
 //===============================
 static int gsm_info(lua_State *L)
 {
-	remote_CCall(&_gsm_info);
+	remote_CCall(L, &_gsm_info);
 	return g_shell_result;
 }
 

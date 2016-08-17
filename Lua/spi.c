@@ -328,7 +328,7 @@ exit:
 //================================
 static int spi_setup(lua_State* L)
 {
-	remote_CCall(&_spi_setup);
+	remote_CCall(L, &_spi_setup);
 	return g_shell_result;
 }
 
@@ -361,7 +361,7 @@ static int _spi_deinit(lua_State* L)
 //=================================
 static int spi_deinit(lua_State* L)
 {
-	remote_CCall(&_spi_deinit);
+	remote_CCall(L, &_spi_deinit);
 	return g_shell_result;
 }
 
@@ -585,7 +585,7 @@ static int spi_test(lua_State* L)
 	if (g_spi_handle == VM_DCL_HANDLE_INVALID) return luaL_error(L, "SPI not setup");
 
     int spi_repeat = luaL_checkinteger(L, 1);
-    remote_CCall(&_spi_test_write);
+    remote_CCall(L, &_spi_test_write);
 
     return 0;
 }
@@ -709,7 +709,7 @@ static int spi_send(lua_State* L)
 	if (g_spi_handle == VM_DCL_HANDLE_INVALID) return luaL_error(L, "SPI not setup");
 
 	g_shell_result = 0;
-    if (lua_gettop(L) > 0) remote_CCall(&_spi_send);
+    if (lua_gettop(L) > 0) remote_CCall(L, &_spi_send);
 
     lua_pushinteger(L, g_shell_result);
     return 1;
@@ -830,7 +830,7 @@ static int spi_recv(lua_State* L)
 
 	uint32_t size = luaL_checkinteger(L, 1);
 
-    remote_CCall(&_spi_recv);
+    remote_CCall(L, &_spi_recv);
     return g_shell_result;
 }
 
@@ -1018,7 +1018,7 @@ static int spi_txrx(lua_State* L)
 	size_t size = luaL_checkinteger(L, -1);
     if ((size < 0) || (size > TEMP_BUF_SIZE)) return luaL_error(L, "read data length wrong");
 
-    remote_CCall(&_spi_txrx);
+    remote_CCall(L, &_spi_txrx);
     return g_shell_result;
 }
 

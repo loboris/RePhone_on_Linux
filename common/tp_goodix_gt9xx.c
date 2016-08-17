@@ -8,22 +8,25 @@
 #include "vmdrv_tp.h"
 #include "vmlog.h"
 #include "vmdatetime.h"
+#include "vmthread.h"
 
 #define TPD_RESET_ISSUE_WORDAROUND
 #define CTP_MAX_RESET_COUNT 3
 
+//extern vm_mutex_t ctp_i2c_mutex;
+//extern vm_mutex_t *ctp_i2c_mutex_ptr;
+
 const VMUINT8 gpio_ctp_reset_pin = 19;
 const VMUINT8 gpio_ctp_i2c_scl_pin = 1;
+//====================================
 const VMUINT8 gpio_ctp_i2c_sda_pin = 2;		// Software I2C
-//const VMUINT8 gpio_ctp_i2c_sda_pin = 0xFF;	// Hardware I2C
+//const VMUINT8 gpio_ctp_i2c_sda_pin = 0xFF;	// Hardware I2C (NOT WORKING)
+//====================================
 const VMUINT8 gpio_ctp_eint_pin = 52;
 
 VM_DCL_HANDLE gpio_ctp_eint_handle;
 
-VMUINT32 CTP_DELAY_TIME = 100;
-
-static VMUINT32* VSIM1_CON2 = (VMUINT32*)0xA0700188;
-static VMUINT32* VSIM1_CON0 = (VMUINT32*)0xA0700180;
+VMUINT32 CTP_DELAY_TIME = 100;  // hardware i2c speed
 
 VMUINT8 gt9xx_config[] = {
     0x43, 0xF0, 0x00, 0xF0, 0x00, 0x0A, 0x05, 0x00, 0x01, 0x08, 0x28, 0x0F, 0x50, 0x32, 0x03, 0x05, 0x00, 0x00, 0x00,
@@ -38,7 +41,7 @@ VMUINT8 gt9xx_config[] = {
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x47, 0x01
 };
 
-void delay_ms(VMUINT32 millisecs)
+static void delay_ms(VMUINT32 millisecs)
 {
     VMUINT32 timeStop;
     VMUINT32 timeStart;
@@ -194,19 +197,16 @@ static VM_DRV_TP_BOOL ctp_goodix_gt9xx_init(void)
 
     VMUINT8 i = 0;
 
+    volatile VMUINT32* VSIM1_CON2 = (VMUINT32*)0xA0700188;
+    volatile VMUINT32* VSIM1_CON0 = (VMUINT32*)0xA0700180;
+
+
     // turn on VSIM1
     *VSIM1_CON2 = *VSIM1_CON2 | 0x0002;
     *VSIM1_CON0 = *VSIM1_CON0 | 0x0001;
 
     // init i2c
-    if(gpio_ctp_i2c_sda_pin != 0xFF) {
-        sda_handle = vm_dcl_open(VM_DCL_GPIO, gpio_ctp_i2c_sda_pin);
-        scl_handle = vm_dcl_open(VM_DCL_GPIO, gpio_ctp_i2c_scl_pin);
-
-        vm_dcl_control(sda_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
-        vm_dcl_control(scl_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
-        CTP_DELAY_TIME = 3;
-    }
+    if (gpio_ctp_i2c_sda_pin != 0xFF) CTP_DELAY_TIME = 2;
 
     ctp_i2c_configure(CTP_SLAVE_ADDR, CTP_DELAY_TIME);
 
@@ -458,6 +458,11 @@ static vm_drv_tp_function_list_t ctp_custom_func = { ctp_goodix_gt9xx_init,     
 //----------------------
 int tp_gt9xx_init(void)
 {
+	/*if (ctp_i2c_mutex_ptr == NULL) {
+		vm_mutex_init(ctp_i2c_mutex_ptr);
+		ctp_i2c_mutex_ptr = &ctp_i2c_mutex;
+	}*/
+
     gpio_ctp_eint_handle = vm_dcl_open(VM_DCL_EINT, 3);
 
     if(VM_DCL_HANDLE_INVALID == gpio_ctp_eint_handle) {

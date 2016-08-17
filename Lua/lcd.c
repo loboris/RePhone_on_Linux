@@ -1178,31 +1178,28 @@ static int load_file_font(const char * fontfile, int info)
 static void TFT_setFont(uint8_t font, const char *font_file)
 {
   cfont.font = NULL;
-  cfont.bitmap = 0;
 
-  if (font == USER_FONT) {
-	  if (load_file_font(font_file, 0) == 0) cfont.font = lcd_DefaultFont;
-	  else cfont.font = userfont;
-  }
-
-  else if (font == FONT_7SEG) {
+  if (font == FONT_7SEG) {
     cfont.bitmap = 2;
     cfont.x_size = 24;
     cfont.y_size = 6;
     cfont.offset = 0;
     cfont.color  = _fg;
   }
-
   else {
-	  cfont.font = lcd_DefaultFont;
-  }
+	  if (font == USER_FONT) {
+		  if (load_file_font(font_file, 0) == 0) cfont.font = lcd_DefaultFont;
+		  else cfont.font = userfont;
+	  }
+	  else cfont.font = lcd_DefaultFont;
 
-  cfont.bitmap = 1;
-  cfont.x_size = cfont.font[0];
-  cfont.y_size = cfont.font[1];
-  cfont.offset = cfont.font[2];
-  if (cfont.x_size != 0) cfont.numchars = cfont.font[3];
-  else cfont.numchars = getMaxWidth();
+	  cfont.bitmap = 1;
+	  cfont.x_size = cfont.font[0];
+	  cfont.y_size = cfont.font[1];
+	  cfont.offset = cfont.font[2];
+	  if (cfont.x_size != 0) cfont.numchars = cfont.font[3];
+	  else cfont.numchars = getMaxWidth();
+  }
 }
 
 // private method to return the Glyph data for an individual character in the proportional font
@@ -1799,7 +1796,7 @@ int lcd_init( lua_State* L )
 		_TS_VER_ = (typ & 1);
 		_VM_LCD_DRIVER_ = 0;
 
-		remote_CCall(&_init_xadow);
+		remote_CCall(L, &_init_xadow);
 		if (g_shell_result < 0) return 0;
 		_set_backlight(50);
 	}
@@ -1923,6 +1920,7 @@ static int lcd_setfont( lua_State* L )
   }
 
   TFT_setFont(fnt, fname);
+
   if (fnt == FONT_7SEG) {
     if (lua_gettop(L) > 2) {
       uint8_t l = luaL_checkinteger( L, 2 );
@@ -1943,7 +1941,7 @@ static int lcd_setfont( lua_State* L )
         }
       }
     }
-    else {
+    else {  // default size
       cfont.x_size = 12;
       cfont.y_size = 2;
     }
@@ -2130,9 +2128,11 @@ static int lcd_getscreensize( lua_State* L )
 static int lcd_getfontheight( lua_State* L )
 {
   if (cfont.bitmap == 1) {
+	// Bitmap font
     lua_pushinteger( L, cfont.y_size );
   }
   else if (cfont.bitmap == 2) {
+	// 7-segment font
     lua_pushinteger( L, (3 * (2 * cfont.y_size + 1)) + (2 * cfont.x_size) );
   }
   else {
@@ -2817,7 +2817,7 @@ static int lcd_jpg_image( lua_State* L )
 	int y = luaL_checkinteger( L, 2 );
 	const char *fname = luaL_checklstring( L, 3, &len );
 
-	remote_CCall(&_lcd_jpg_image);
+	remote_CCall(L, &_lcd_jpg_image);
 
     return 0;
 }

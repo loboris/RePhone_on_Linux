@@ -151,7 +151,7 @@ exit1:
 static int screen_init(lua_State *L)
 {
 	CCwait = 3000;
-    remote_CCall(&_screen_init);
+    remote_CCall(L, &_screen_init);
     lua_pushinteger(L, g_shell_result);
 
     if (g_shell_result >= 0) _set_backlight(50);
@@ -186,7 +186,7 @@ static int _screen_update(lua_State *L)
 //====================================
 static int screen_update(lua_State *L)
 {
-    remote_CCall(&_screen_update);
+    remote_CCall(L, &_screen_update);
     
     return 0;
 }
@@ -244,7 +244,7 @@ static int _screen_point(lua_State *L)
 //===================================
 static int screen_point(lua_State *L)
 {
-    remote_CCall(&_screen_point);
+    remote_CCall(L, &_screen_point);
 
     return 0;
 }
@@ -283,7 +283,7 @@ static int _screen_line(lua_State *L)
 //==================================
 static int screen_line(lua_State *L)
 {
-    remote_CCall(&_screen_line);
+    remote_CCall(L, &_screen_line);
 
     return 0;
 }
@@ -322,7 +322,7 @@ static int _screen_rectangle(lua_State *L)
 //=======================================
 static int screen_rectangle(lua_State *L)
 {
-    remote_CCall(&_screen_rectangle);
+    remote_CCall(L, &_screen_rectangle);
 
     return 0;
 }
@@ -362,7 +362,7 @@ static int _screen_fill(lua_State *L)
 //==================================
 static int screen_fill(lua_State *L)
 {
-    remote_CCall(&_screen_fill);
+    remote_CCall(L, &_screen_fill);
 
     return 0;
 }
@@ -415,7 +415,7 @@ static int _screen_write(lua_State *L)
 //===================================
 static int screen_write(lua_State *L)
 {
-    remote_CCall(&_screen_write);
+    remote_CCall(L, &_screen_write);
     lua_pushinteger(L, g_shell_result);
     return 1;
 }

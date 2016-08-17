@@ -406,7 +406,13 @@ static void handle_sysevt(VMINT message, VMINT param)
 			// All Lua C functions containing such calls are executed from here
 			// execute lua "docall(shellL, 0, 0)", WAITS for execution!!
 			//shell_docall(shellL);
-			res = g_CCfunc(shellL);
+			res = g_CCfunc((lua_State *)param);
+			break;
+
+		case CCALL_MESSAGE_TICK:
+			params->upar1 = vm_time_ust_get_count();
+			g_shell_result = 0;
+			vm_signal_post(g_shell_signal);
 			break;
 
 		case CCALL_MESSAGE_LCDWR:

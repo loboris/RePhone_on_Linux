@@ -31,8 +31,6 @@ volatile VMUINT32 lcd_delay;
 
 VMUINT8 _VM_LCD_DRIVER_ = 1;
 VMUINT8 _TS_VER_ = _TOUCH_SCREEN_V1_0_;
-static VMUINT32* VSIM1_CON2 = (VMUINT32*)0xA0700188;
-static VMUINT32* VSIM1_CON0 = (VMUINT32*)0xA0700180;
 
 VM_DCL_HANDLE lcd_reset_handle;
 VM_DCL_HANDLE lcd_cs_handle;
@@ -59,6 +57,9 @@ LCD_DISABLE_CS;\
 //-------------------------
 void lcd_st7789s_init(void)
 {
+	volatile VMUINT32* VSIM1_CON2 = (VMUINT32*)0xA0700188;
+	volatile VMUINT32* VSIM1_CON0 = (VMUINT32*)0xA0700180;
+
 	lcd_reset_handle = vm_dcl_open(VM_DCL_GPIO, LCD_GPIO_RESET);
 	lcd_cs_handle = vm_dcl_open(VM_DCL_GPIO, LCD_GPIO_CS);
 

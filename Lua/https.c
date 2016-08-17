@@ -334,7 +334,7 @@ int _https_get(lua_State* L)
 int https_get(lua_State* L)
 {
     const char* url = luaL_checkstring(L, 1);
-	remote_CCall(&_https_get);
+	remote_CCall(L, &_https_get);
 	return g_shell_result;
 }
 
@@ -640,7 +640,7 @@ exit:
 //==========================
 int https_post(lua_State* L)
 {
-	remote_CCall(&_https_post);
+	remote_CCall(L, &_https_post);
 	return g_shell_result;
 }
 
@@ -701,7 +701,7 @@ static int _https_cancel( lua_State* L )
 //=====================================
 static int https_cancel( lua_State* L )
 {
-	remote_CCall(&_https_cancel);
+	remote_CCall(L, &_https_cancel);
 	return g_shell_result;
 }
 

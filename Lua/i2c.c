@@ -18,7 +18,10 @@
 #define I2C_CLOCK_RATE		13000
 #define I2C_MAX_BUF_SIZE	10*1024
 
-static VM_DCL_HANDLE g_i2c_handle = VM_DCL_HANDLE_INVALID;
+VM_DCL_HANDLE g_i2c_handle = VM_DCL_HANDLE_INVALID;
+VMUINT8 g_i2c_used_address = 0xFF;
+
+//extern vm_mutex_t *ctp_i2c_mutex_ptr;
 
 
 //--------------------------------------------------------------------
@@ -73,6 +76,7 @@ void i2c_set_transaction_speed(vm_dcl_i2c_control_config_t *conf_data)
 	reg = (uint32_t *)(REG_BASE_ADDRESS + 0x0120048);
 	creg = *reg & 0x00F2;
 	creg = creg | ((sample_cnt_div-1) << 8) | ((step_cnt_div-1) << 12);
+
 	if (conf_data->fast_mode_speed > 400) {
 		conf_data->transaction_mode = VM_DCL_I2C_TRANSACTION_HIGH_SPEED_MODE;
 		creg |= 1;
@@ -80,35 +84,28 @@ void i2c_set_transaction_speed(vm_dcl_i2c_control_config_t *conf_data)
 	*reg = creg;
 }
 
-// Lua: i2c.setup(address [, speed])
-//=================================
-static int i2c_setup(lua_State* L)
+//---------------------------------------------
+int _i2c_setup(VMUINT8 address, VMUINT32 speed)
 {
     vm_dcl_i2c_control_config_t conf_data;
-    int result;
-    uint8_t address = luaL_checkinteger(L, 1);
-    VMUINT32 speed = 100; // default speed - 100kbps
-
-    if (lua_gettop(L) > 1) {
-        speed = luaL_checkinteger(L, 2);
-        if (speed < 12) speed = 12;
-        if (speed > 6500) speed = 6500;
-    }
+	int result = VM_DCL_HANDLE_INVALID;
 
     if (g_i2c_handle == VM_DCL_HANDLE_INVALID) {
         g_i2c_handle = vm_dcl_open(VM_DCL_I2C, 0);
         if (g_i2c_handle < 0) {
         	vm_log_error("error opening i2c %d", g_i2c_handle);
-            lua_pushinteger(L, g_i2c_handle);
         	g_i2c_handle = VM_DCL_HANDLE_INVALID;
         }
     }
     if (g_i2c_handle != VM_DCL_HANDLE_INVALID) {
-		conf_data.transaction_mode = VM_DCL_I2C_TRANSACTION_FAST_MODE;
+    	// vm_mutex_lock(ctp_i2c_mutex_ptr);
+        g_i2c_used_address = (address << 1);
+
+        conf_data.transaction_mode = VM_DCL_I2C_TRANSACTION_FAST_MODE;
 		conf_data.fast_mode_speed = speed;
 		conf_data.high_mode_speed = speed;
 		conf_data.reserved_0 = (VM_DCL_I2C_OWNER)0;
-		conf_data.get_handle_wait = 0;
+		conf_data.get_handle_wait = 1;
 		conf_data.reserved_1 = 0;
 		conf_data.delay_length = 0;
 		conf_data.slave_address = (address << 1);
@@ -121,15 +118,34 @@ static int i2c_setup(lua_State* L)
 			if (conf_data.fast_mode_speed > 400) result = conf_data.high_mode_speed;
 			else result = conf_data.fast_mode_speed;
 		}
-
-		lua_pushinteger(L, result);
+    	// vm_mutex_unlock(ctp_i2c_mutex_ptr);
     }
+    return result;
+}
+
+// Lua: i2c.setup(address [, speed])
+//=================================
+static int i2c_setup(lua_State* L)
+{
+    vm_dcl_i2c_control_config_t conf_data;
+    uint8_t address = luaL_checkinteger(L, 1);
+    VMUINT32 speed = 100; // default speed - 100kbps
+
+    if (lua_gettop(L) > 1) {
+        speed = luaL_checkinteger(L, 2);
+        if (speed < 12) speed = 12;
+        if (speed > 6500) speed = 6500;
+    }
+
+    int result = _i2c_setup(address, speed);
+
+	lua_pushinteger(L, result);
 
     return 1;
 }
 
-//------------------------------------------------
-static int i2c_writedata(char *data, VMUINT32 len)
+//------------------------------------------
+int _i2c_writedata(char *data, VMUINT32 len)
 {
     if (len == 0) return 0;
     vm_dcl_i2c_control_continue_write_t param;
@@ -139,6 +155,7 @@ static int i2c_writedata(char *data, VMUINT32 len)
     VMUINT32 bufptr = 0;
 	param.transfer_number = 1;
 
+	// vm_mutex_lock(ctp_i2c_mutex_ptr);
 	do {
 		param.data_ptr = data+bufptr;
 		if (remain > 8) param.data_length = 8;
@@ -146,7 +163,7 @@ static int i2c_writedata(char *data, VMUINT32 len)
 
 		stat = vm_dcl_control(g_i2c_handle, VM_DCL_I2C_CMD_CONT_WRITE, &param);
 		if (stat < 0) {
-			vm_log_debug("error reading data: %d", stat);
+			vm_log_debug("error writing data: %d", stat);
 			break;
 		}
 		if (remain > 8) {
@@ -158,12 +175,13 @@ static int i2c_writedata(char *data, VMUINT32 len)
 			remain = 0;
 		}
 	} while (remain > 0);
+	// vm_mutex_unlock(ctp_i2c_mutex_ptr);
 
 	return stat;
 }
 
-//-----------------------------------------------
-static int i2c_readdata(char *data, VMUINT32 len)
+//-----------------------------------------
+int _i2c_readdata(char *data, VMUINT32 len)
 {
     if (len == 0) return 0;
     vm_dcl_i2c_control_continue_read_t param;
@@ -172,6 +190,8 @@ static int i2c_readdata(char *data, VMUINT32 len)
     VMUINT32 remain = len;
     VMUINT32 bufptr = 0;
 	param.transfer_number = 1;
+
+	// vm_mutex_lock(ctp_i2c_mutex_ptr);
 	do {
 		param.data_ptr = data+bufptr;
 		if (remain > 8) param.data_length = 8;
@@ -191,6 +211,7 @@ static int i2c_readdata(char *data, VMUINT32 len)
 			remain = 0;
 		}
 	} while (remain > 0);
+	// vm_mutex_unlock(ctp_i2c_mutex_ptr);
 
 	return stat;
 }
@@ -313,7 +334,7 @@ static int i2c_send(lua_State* L)
     }
 
     if ((status == 0) && (wbuf_index)) {
-		status = i2c_writedata(wbuf, wbuf_index);
+		status = _i2c_writedata(wbuf, wbuf_index);
         if (status == VM_DCL_STATUS_OK) status = wbuf_index;
     }
 
@@ -371,7 +392,7 @@ static int i2c_recv(lua_State* L)
     if (out_type < 2) luaL_buffinit(L, &b);
     else lua_newtable(L);
 
-    status = i2c_readdata(rbuf, size);
+    status = _i2c_readdata(rbuf, size);
     if (status == VM_DCL_STATUS_OK) {
         for (i = 0; i < size; i++) {
         	if (out_type == 0) luaL_addchar(&b, rbuf[i]);
@@ -561,7 +582,7 @@ static int i2c_txrx(lua_State* L)
 
 		if (size > 0) {
 			// Read remaining bytes
-        	status = i2c_readdata(rbuf, size);
+        	status = _i2c_readdata(rbuf, size);
 
         	if (status == VM_DCL_STATUS_OK) {
         		for (i = 0; i < size; i++) {

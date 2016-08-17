@@ -377,12 +377,13 @@ void dotty (lua_State *L) {
 //--------------------------------------
 // Execute Lua C function in main thread
 //--------------------------------------
-int remote_CCall(lua_CFunction func)
+int remote_CCall(lua_State *L, lua_CFunction func)
 {
 	sys_wdt_rst_time = 0;
 
 	g_CCfunc = func;
     g_shell_message.message_id = SHELL_MESSAGE_ID;
+    g_shell_message.user_data = L;
     vm_thread_send_message(g_main_handle, &g_shell_message);
 
     // wait for call to finish...
@@ -443,7 +444,7 @@ static int _get_ntptime (lua_State *L) {
 //-----------------------------------------
 static void setup_from_params(lua_State *L)
 {
-	remote_CCall(&_read_params);
+	remote_CCall(L,&_read_params);
 
 	if (g_shell_result < 0) return;
 
@@ -477,7 +478,7 @@ static void setup_from_params(lua_State *L)
 			if ((klen == 3) && (strstr(key, "apn") == key)) {
 				sprintf(apn_info.apn, value);
 				printf("        'apn' = \"%s\"\n", apn_info.apn);
-				remote_CCall(&_set_custom_apn);
+				remote_CCall(L,&_set_custom_apn);
 				ntpreq++;
 			}
 		  }
@@ -519,7 +520,7 @@ static void setup_from_params(lua_State *L)
     }
     if (ntpreq > 1) {
 		lua_pushinteger(L, tz);			// push tz param
-		remote_CCall(&_get_ntptime);
+		remote_CCall(L,&_get_ntptime);
 		lua_pop(L, 1);					// pop tz param
 		printf("        'ntp'   time requested, tz=%d\n", tz);
     }
@@ -729,7 +730,7 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
 	                }
 	                else lua_pushnil(L);
 
-	        		remote_CCall(&_gsm_readbuf_free);
+	        		remote_CCall(L,&_gsm_readbuf_free);
 	                lua_pcall(L, params->stat, 0, 0);
 	                params->busy = 0;
                 }

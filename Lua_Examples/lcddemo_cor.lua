@@ -1,5 +1,14 @@
--- init spi first
+--[[
+LCD demo using more advanced programming features
+The demo executes as coroutine
+--]]
 
+-- global variables
+
+-- local variables
+local lcd_OK
+
+-- if global 'dispType' not set, set it here
 if dispType == nil then
 	dispType = lcd.XADOW_V0
 	-- dispType = lcd.XADOW_V1
@@ -9,8 +18,9 @@ if dispType == nil then
 	-- dispType = lcd.ST7735G -- or this one
 end
 
-if dispType < 8 then
+if dispType < lcd.XADOW_V0 then
 	-- if not using Xadow display we have to initialize SPI interface
+	-- Select the right CS & DC for your display !!
 	lcd_OK = spi.setup({speed=10000, cs=2, dc=1})
 	if lcd_OK ~= 0 then
 		print("SPI not initialized")
@@ -18,12 +28,24 @@ if dispType < 8 then
 	end
 end
 
+-- Initialize the display
 lcd.init(dispType,lcd.PORTRAIT_FLIP)
+
+-- Check if the initialization was successful
 if lcd.gettype() < 0 then
 	print("LCD not initialized")
 	return
 end
 
+
+-- Init global variables
+useCo = false
+maxx, maxy = lcd.getscreensize()
+miny = lcd.getfontheight() + 5
+coInterval = 10
+
+
+-- Define the fonts used in demo
 fontnames = {
 	lcd.FONT_DEFAULT,
 	lcd.FONT_7SEG,
@@ -32,37 +54,49 @@ fontnames = {
 	"@font\\OCR_A_Extended_M.fon"
 }
 
--- print display header
+-- create Coroutine timer with dummy cb -----------
+coTmr = timer.create(coInterval, function() end, 2)
+-- ------------------------------------------------
+
+-- =================================================
+function coYield()
+	-- Only execute if running from within coroutine
+	if coroutine.running() ~= nil then
+		timer.resume(coTmr, 1)
+		coroutine.yield()
+	end
+end
+-- =================================================
+
+
+-- ------------------
+-- display the header
+-- ------------------
 function header(tx)
 	sys.random(1000,0,1)
 	maxx, maxy = lcd.getscreensize()
 	lcd.clear()
 	lcd.setcolor(lcd.CYAN)
-	if maxx < 240 then
-		lcd.setfont("@font\\SmallFont.fon")
-	else
-		lcd.setfont(lcd.FONT_DEFAULT)
-	end
+	lcd.setfont(lcd.FONT_DEFAULT)
 	miny = lcd.getfontheight() + 5
 	lcd.rect(0,0,maxx-1,miny-1,lcd.OLIVE,{8,16,8})
 	lcd.settransp(1)
 	lcd.write(lcd.CENTER,2,tx)
 	lcd.settransp(0)
+	coYield()
 end
 
+-- -----------------------
 -- Display available fonts
+-- -----------------------
 function dispFont(sec)
 	header("DISPLAY FONTS")
 
-	local tx
-	if maxx < 240 then
-		tx = "RePhone"
-	else
-		tx = "Hi from LoBo"
-	end
-	local starty = miny + 4
+	local tx, x, y, starty, n
+	
+	tx = "RePhone"
+	starty = miny + 4
 
-	local x,y
 	local n = sys.tick()
 	while sys.elapsed(n) < (sec*1000000) do
 		y = starty
@@ -81,6 +115,7 @@ function dispFont(sec)
 				if y > (maxy-lcd.getfontheight()) then
 					break
 				end
+				coYield()
 			end
 			y = y + 2
 			if y > (maxy-lcd.getfontheight()) then
@@ -112,7 +147,7 @@ function fontDemo(sec, rot)
 			lcd.setrot(math.floor(sys.random(359)/5)*5);
 		end
 		for i=1, #fontnames, 1 do
-			if (rot == 0) or (i ~= 1) then
+			if (rot == 0) or (i ~= 2) then
 				lcd.setcolor(sys.random(0xFFFF))
 				lcd.setfont(fontnames[i])
 				x = sys.random(maxx-8)
@@ -323,21 +358,29 @@ function fullDemo(sec, rpt)
 	end
 end
 
-function cotmr_cb_dummy()
-end
+coAbort = false
 
-coRun = 3000
-coTmr = timer.create(20, cotmr_cb_dummy, 1)
+-- ----------------------
+function rectDemoCo(sec)
+	local x, y, w, h, color, fill, n, startt, endt
 
-function rectDemoCo()
-	local tx = "CO RECTANGLE"
-	header(tx)
-	
+	header("CO RECTANGLE")
+
 	lcd.setclipwin(0,miny,maxx,maxy)
-	local x, y, w, h, color, fill
-	while coRun > 0 do
-		coRun = coRun - 1
-		--print("Run = "..coRun)
+
+	startt = sys.tick()
+	if sec == nil then
+		sec = 5
+	end
+	endt = startt + (sec * 1000000)
+	print("running for "..sec.." seconds")
+	n = 0
+	while sys.tick() < endt do
+		if coAbort then
+			print("Aborted")
+			break
+		end
+		n = n + 1
 		x = sys.random(maxx-2,4)
 		y = sys.random(maxy-2,miny)
 		w = sys.random(maxx-x,2)
@@ -345,29 +388,32 @@ function rectDemoCo()
 		color = sys.random(0xFFFF)
 		fill = sys.random(0xFFFF)
 		lcd.rect(x,y,w,h,color,fill)
-		
-		timer.resume(coTmr)
-		coroutine.yield()
-		timer.pause(coTmr)
-	end;
+		coYield()
+	end
 	lcd.resetclipwin()
+	endt = sys.elapsed(startt) / 1000
+	print("Running time: "..endt.." msec, drawn "..n.." rectangles")
 end
 
+coRunTime = 10
+-- create a coroutine with rectDemoCo as the entry
+CoRect = coroutine.create(rectDemoCo)
+
+-- ----------------
 function cotmr_cb()
-	if coRun > 0 then
-		if coroutine.status(CoRect) == "suspended" then
-			coroutine.resume(CoRect)
+	local stat
+	timer.pause(coTmr)
+	stat = coroutine.resume(CoRect, coRunTime)
+	if stat == false then
+		if coroutine.status(CoRect) == "dead" then
+			CoRect = coroutine.create(rectDemoCo)
+			if type(CoRect) == "thread" then
+				coroutine.resume(CoRect, coRunTime)
+			end
 		end
-	else
-		if coroutine.status(CoRect) == "suspended" then
-			coroutine.resume(CoRect)
-		end
-		timer.pause(coTmr)
 	end
 end
 
--- create a coroutine with rectDemoCo as the entry
-CoRect = coroutine.create(rectDemoCo)
 timer.changecb(coTmr, cotmr_cb)
 
 header("RePhone")

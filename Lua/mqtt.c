@@ -243,7 +243,7 @@ static int mqtt_check(lua_State *L)
 
 	g_shell_result = -9;
 	CCwait = 2000;
-	remote_CCall(&__mqtt_check);
+	remote_CCall(L, &__mqtt_check);
 	if (g_shell_result != 0) { // no response or error
 		g_shell_result = 0;
 		lua_pushnil(L);
@@ -311,7 +311,7 @@ static int mqtt_connect(lua_State *L)
 	if (g_bearer_hdl < 0) {
 		g_shell_result = -9;
 		CCwait = 8000;
-		remote_CCall(&_mqtt_getBearer);
+		remote_CCall(L, &_mqtt_getBearer);
 		if (g_shell_result < 0) { // no response
 			g_shell_result = 1;
 		    vm_log_debug("[MQTT] Error obtaining bearer");
@@ -323,7 +323,7 @@ static int mqtt_connect(lua_State *L)
 		// Activate bearer and get host IP
 		g_shell_result = -9;
 		CCwait = 2000;
-		remote_CCall(&_mqtt_getIP);
+		remote_CCall(L, &_mqtt_getIP);
 
 		if (g_shell_result < 0) { // no response
 			g_shell_result = 1;
@@ -383,7 +383,7 @@ static int mqtt_connect(lua_State *L)
 			(connect.ack.flags & MQTT_CONNECT_ACK_FLAG_SESSION_PRESENT) ? 1 : 0 );
 		p->connected = 1;
 		// === Create timer for checking new messages ===
-		remote_CCall(&_timer_create);
+		remote_CCall(L, &_timer_create);
 	}
 	else {
 		vm_log_debug("[MQTT] Client Connect: %s (%d)", MqttClient_ReturnCodeToString(rc), rc);
@@ -416,7 +416,7 @@ static int mqtt_disconnect(lua_State *L)
 {
 	mqtt_info_t *p = ((mqtt_info_t *)luaL_checkudata(L, -1, LUA_MQTT));
 
-	if (p->timerHandle >= 0) remote_CCall(&_timer_delete);
+	if (p->timerHandle >= 0) remote_CCall(L, &_timer_delete);
 
 	int rc = MqttClient_Disconnect(&p->client);
     vm_log_debug("[MQTT] Disconnect: %s (%d)", MqttClient_ReturnCodeToString(rc), rc);
@@ -819,7 +819,7 @@ static int mqtt_gc(lua_State *L)
 
 	g_shell_result = -9;
 	CCwait = 2000;
-    remote_CCall(&_mqtt_gc);
+    remote_CCall(L, &_mqtt_gc);
 	if (g_shell_result < 0) { // no response
 	    g_shell_result = 0;
 	}

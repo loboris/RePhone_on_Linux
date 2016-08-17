@@ -382,7 +382,7 @@ static int bt_start(lua_State *L)
     const char *bthost = luaL_checkstring(L, 1);
 	g_shell_result = -9;
 	CCwait = 4000;
-	remote_CCall(&_bt_start);
+	remote_CCall(L, &_bt_start);
 	if (g_shell_result < 0) { // no response
 		g_shell_result = 1;
         lua_pushinteger(L, -2);
@@ -467,7 +467,7 @@ static int bt_spp_start(lua_State *L)
 
     g_shell_result = -9;
 	CCwait = 2000;
-	remote_CCall(&_bt_spp_start);
+	remote_CCall(L, &_bt_spp_start);
 	if (g_shell_result < 0) { // no response or error
 		vm_free(bt_cb_params.recvbuf);
 		bt_cb_params.recvbuf = NULL;
@@ -558,11 +558,11 @@ static int bt_stop(lua_State *L)
 {
     g_shell_result = -9;
 	CCwait = 3000;
-	remote_CCall(&_bt_spp_disconnect);
+	remote_CCall(L, &_bt_spp_disconnect);
 
-	remote_CCall(&_bt_spp_stop);
-	remote_CCall(&_bt_off);
-	remote_CCall(&_bt_stop);
+	remote_CCall(L, &_bt_spp_stop);
+	remote_CCall(L, &_bt_off);
+	remote_CCall(L, &_bt_stop);
 	return g_shell_result;
 }
 
@@ -571,9 +571,9 @@ static int bt_spp_stop(lua_State *L)
 {
     g_shell_result = -9;
 	CCwait = 3000;
-	remote_CCall(&_bt_spp_disconnect);
+	remote_CCall(L, &_bt_spp_disconnect);
 
-	remote_CCall(&_bt_spp_stop);
+	remote_CCall(L, &_bt_spp_stop);
 	return g_shell_result;
 }
 
@@ -582,7 +582,7 @@ static int bt_spp_disconnect(lua_State *L)
 {
     g_shell_result = -9;
 	CCwait = 3000;
-	remote_CCall(&_bt_spp_disconnect);
+	remote_CCall(L, &_bt_spp_disconnect);
 	return g_shell_result;
 }
 
@@ -636,7 +636,7 @@ static int bt_spp_write(lua_State *L)
     size_t len;
     const char *str = luaL_checklstring(L, 1, &len);
 
-	remote_CCall(&_bt_spp_write);
+	remote_CCall(L, &_bt_spp_write);
 	return g_shell_result;
 }
 

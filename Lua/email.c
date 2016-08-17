@@ -531,7 +531,7 @@ static int smtp_send(lua_State *L)
     g_shell_result = -9;
 	CCwait = 30000;
 
-	remote_CCall(&_smtp_send);
+	remote_CCall(L, &_smtp_send);
 
 	if (g_shell_result < 0) lua_pushinteger(L, -1); // no response or error
 	else lua_pushinteger(L, 0);

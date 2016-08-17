@@ -882,7 +882,7 @@ static int file_recv( lua_State* L )
   unsigned char c, gnm;
   char fnm[64];
 
-  remote_CCall(&_fs_free_space);
+  remote_CCall(L, &_fs_free_space);
   unsigned int max_len = g_shell_result-(1024*10);
 
   gnm = 0;

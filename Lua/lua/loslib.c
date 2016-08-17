@@ -131,7 +131,7 @@ static int _os_remove (lua_State *L) {
 //===================================
 static int os_remove (lua_State *L) {
 	const char *filename = luaL_checkstring(L, 1);
-	remote_CCall(&_os_remove);
+	remote_CCall(L, &_os_remove);
 	return g_shell_result;
 }
 
@@ -169,57 +169,45 @@ static int os_getenv (lua_State *L) {
   return 1;
 }
 
-
-//===================================
-static int _os_clock (lua_State *L) {
-  lua_pushnumber(L, ((float)vm_time_ust_get_count())/(float)CLOCKS_PER_SEC);
-  g_shell_result = 1;
-  vm_signal_post(g_shell_signal);
-  return 1;
-}
-
-
 //==================================
 static int os_clock (lua_State *L) {
-	remote_CCall(&_os_clock);
-	return g_shell_result;
-}
+	g_fcall_message.message_id = CCALL_MESSAGE_TICK;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
 
-//===================================
-static int _sys_tick (lua_State *L) {
-  lua_pushinteger(L, vm_time_ust_get_count());
-  g_shell_result = 1;
-  vm_signal_post(g_shell_signal);
-  return 1;
+    lua_pushnumber(L, ((float)g_CCparams.upar1 / (float)CLOCKS_PER_SEC));
+    return 1;
 }
-
 
 //==================================
 static int sys_tick (lua_State *L) {
-	remote_CCall(&_sys_tick);
-	return g_shell_result;
+	//remote_CCall(L, &_sys_tick);
+
+	g_fcall_message.message_id = CCALL_MESSAGE_TICK;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+    lua_pushinteger(L, g_CCparams.upar1);
+    return 1;
 }
-
-//======================================
-static int _sys_elapsed (lua_State *L) {
-  int tmstart = luaL_checkinteger(L, 1);
-  VM_TIME_UST_COUNT tmend = vm_time_ust_get_count();
-  VMUINT32 dur;
-  if (tmend > tmstart) dur = tmend - tmstart;
-  else dur = tmend + (0xFFFFFFFF - tmstart);
-
-  lua_pushinteger(L, dur);
-  g_shell_result = 1;
-  vm_signal_post(g_shell_signal);
-  return 1;
-}
-
 
 //=====================================
 static int sys_elapsed (lua_State *L) {
 	int tmstart = luaL_checkinteger(L, 1);
-	remote_CCall(&_sys_elapsed);
-	return g_shell_result;
+	//remote_CCall(L, &_sys_elapsed);
+	g_fcall_message.message_id = CCALL_MESSAGE_TICK;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    VMUINT32 dur;
+    if (g_CCparams.upar1 > tmstart) dur = g_CCparams.upar1 - tmstart;
+    else dur = g_CCparams.upar1 + (0xFFFFFFFF - tmstart);
+
+    lua_pushinteger(L, dur);
+
+    return 1;
 }
 
 /*
@@ -380,7 +368,7 @@ static int _os_battery (lua_State *L) {
 
 //====================================
 static int os_battery (lua_State *L) {
-	remote_CCall(&_os_battery);
+	remote_CCall(L, &_os_battery);
 	return g_shell_result;
 }
 
@@ -397,7 +385,7 @@ static int _os_reboot (lua_State *L) {
 
 //===================================
 static int os_reboot (lua_State *L) {
-	remote_CCall(&_os_reboot);
+	remote_CCall(L, &_os_reboot);
 	return g_shell_result;
 }
 
@@ -413,7 +401,7 @@ static int _os_shutdown (lua_State *L) {
 
 //=====================================
 static int os_shutdown (lua_State *L) {
-	remote_CCall(&_os_shutdown);
+	remote_CCall(L, &_os_shutdown);
 	return g_shell_result;
 }
 
@@ -485,7 +473,7 @@ exit:
 
 //==============================================
 static int os_scheduled_startup (lua_State *L) {
-	remote_CCall(&_os_scheduled_startup);
+	remote_CCall(L, &_os_scheduled_startup);
 	return g_shell_result;
 }
 
@@ -504,7 +492,7 @@ int _os_getver(lua_State* L) {
 
 //===================================
 static int os_getver (lua_State *L) {
-	remote_CCall(&_os_getver);
+	remote_CCall(L, &_os_getver);
 	return g_shell_result;
 }
 
@@ -537,7 +525,7 @@ static int _os_mkdir (lua_State *L) {
 //==================================
 static int os_mkdir (lua_State *L) {
     const char *dirname = luaL_checkstring(L, 1);
-	remote_CCall(&_os_mkdir);
+	remote_CCall(L, &_os_mkdir);
 	return g_shell_result;
 }
 
@@ -557,7 +545,7 @@ static int _os_rmdir (lua_State *L) {
 //==================================
 static int os_rmdir (lua_State *L) {
 	const char *dirname = luaL_checkstring(L, 1);
-	remote_CCall(&_os_rmdir);
+	remote_CCall(L, &_os_rmdir);
 	return g_shell_result;
 }
 
@@ -584,7 +572,7 @@ static int os_copy(lua_State* L)
 {
 	const char *fromname = luaL_checkstring(L, 1);
 	const char *toname = luaL_checkstring(L, 2);
-	remote_CCall(&_os_copy);
+	remote_CCall(L, &_os_copy);
 	return g_shell_result;
 }
 
@@ -670,7 +658,7 @@ static int _os_listfiles(lua_State* L)
 //===================================
 static int os_listfiles(lua_State* L)
 {
-	remote_CCall(&_os_listfiles);
+	remote_CCall(L, &_os_listfiles);
 	return g_shell_result;
 }
 
@@ -686,7 +674,7 @@ static int _os_exit (lua_State *L) {
 
 //=================================
 static int os_exit (lua_State *L) {
-	remote_CCall(&_os_exit);
+	remote_CCall(L, &_os_exit);
 	return g_shell_result;
 }
 
@@ -787,7 +775,7 @@ static int _os_usb (lua_State *L) {
 
 //================================
 static int os_usb (lua_State *L) {
-	remote_CCall(&_os_usb);
+	remote_CCall(L, &_os_usb);
 	return g_shell_result;
 }
 
@@ -997,7 +985,7 @@ static int _os_testcheap( lua_State* L )
 //=====================================
 static int os_testcheap( lua_State* L )
 {
-	remote_CCall(&_os_testcheap);
+	remote_CCall(L, &_os_testcheap);
 	return 0;
 }
 
@@ -1358,7 +1346,7 @@ exit1:
 //==================================
 static int read_params(lua_State *L)
 {
-	remote_CCall(&_read_params);
+	remote_CCall(L, &_read_params);
 
 	if (g_shell_result < 0) lua_pushinteger(L, g_shell_result);
 	else {
@@ -1372,7 +1360,7 @@ static int read_params(lua_State *L)
 //=================================
 static int get_params(lua_State *L)
 {
-	remote_CCall(&_get_params);
+	remote_CCall(L, &_get_params);
 
 	return 1;
 }
@@ -1380,7 +1368,7 @@ static int get_params(lua_State *L)
 //=================================
 static int get_sysvars(lua_State *L)
 {
-	remote_CCall(&_get_sysvars);
+	remote_CCall(L, &_get_sysvars);
 
 	return 2;
 }
@@ -1388,7 +1376,7 @@ static int get_sysvars(lua_State *L)
 //=================================
 static int save_params(lua_State *L)
 {
-	remote_CCall(&_save_params);
+	remote_CCall(L, &_save_params);
 
 	lua_pushinteger(L, g_shell_result);
 
@@ -1408,7 +1396,7 @@ static int os_wdg_timeout (lua_State *L)
 		sys_wdt_tmo = (wdgtmo * 216685) / 1000;	// set watchdog timeout
 		sys_wdt_rst = sys_wdt_tmo - 1083;		// reset wdg 5 sec before expires
 
-		remote_CCall(&_save_params);
+		remote_CCall(L, &_save_params);
 
 		lua_pushinteger(L, (sys_wdt_tmo * 1000) / 216685);
 		lua_pushinteger(L, g_shell_result);
@@ -1432,7 +1420,7 @@ static int os_cheap_size (lua_State *L)
 		hsz &= 0x0FF8000;
 		g_reserved_heap = hsz;
 
-		remote_CCall(&_save_params);
+		remote_CCall(L, &_save_params);
 		lua_pushinteger(L, g_reserved_heap);
 		lua_pushinteger(L, g_shell_result);
 		return 2;

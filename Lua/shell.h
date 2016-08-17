@@ -43,7 +43,8 @@
 #define CCALL_MESSAGE_SIT_LCDWR	350
 #define CCALL_MESSAGE_MALLOC	352
 #define CCALL_MESSAGE_REALLOC	354
-#define CCALL_MESSAGE_FREE		355
+#define CCALL_MESSAGE_FREE		356
+#define CCALL_MESSAGE_TICK		358
 #define CB_MESSAGE_ID		    400
 
 typedef struct {
@@ -67,6 +68,7 @@ typedef struct {
     VMUINT32			failed;
     VMUINT8				busy;
     VMUINT8				state;
+    VMUINT8				last_state;
 } timer_info_t;
 
 typedef struct {
@@ -121,6 +123,7 @@ typedef struct {
 	int		ipar2;
 	int		ipar3;
 	int		busy;
+	uint32_t upar1;
 } cfunc_params_t;
 
 typedef struct {
@@ -252,7 +255,7 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data);
 VMINT32 tty_thread(VM_THREAD_HANDLE thread_handle, void* user_data);
 void l_message (const char *pname, const char *msg);
 //void shell_docall(lua_State *L);
-int remote_CCall(lua_CFunction func);
+int remote_CCall(lua_State *L, lua_CFunction func);
 void remote_lua_call(VMUINT16 type, void *params);
 int file_exists(const char *filename);
 void full_fname(char *fname, VMWCHAR *ucs_name, int size);
