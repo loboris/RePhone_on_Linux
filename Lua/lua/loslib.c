@@ -682,10 +682,23 @@ static int os_exit (lua_State *L) {
 static int os_retarget (lua_State *L) {
 	int targ = luaL_checkinteger(L,1);
 
-	if ((targ == 0) && (retarget_usb_handle >= 0)) retarget_target = retarget_usb_handle;
-	else if ((targ == 1) && (retarget_uart1_handle >= 0)) retarget_target = retarget_uart1_handle;
-	else if ((targ == 2) && (bt_cb_params.connected)) retarget_target = -1000;
-	return 0;
+	if ((targ == 0) && (retarget_usb_handle >= 0)) {
+		retarget_target = retarget_usb_handle;
+		lua_pushboolean(L, TRUE);
+		return 1;
+	}
+	else if ((targ == 1) && (retarget_uart1_handle >= 0)) {
+		retarget_target = retarget_uart1_handle;
+		lua_pushboolean(L, TRUE);
+		return 1;
+	}
+	else if ((targ == 2) && (bt_cb_params.connected)) {
+		retarget_target = -1000;
+		lua_pushboolean(L, TRUE);
+		return 1;
+	}
+	lua_pushboolean(L, FALSE);
+	return 1;
 }
 
 //====================================

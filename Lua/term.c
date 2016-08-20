@@ -288,16 +288,17 @@ int term_getch( int mode )
 int term_getstr(char *buf, int maxlen)
 {
 	int c;
-	int len = strlen(buf);
-	int x = len+1;
-	int startx = term_cx;
+	int len = 0;
+	int startx = term_cx + strlen(buf) + 1;
+	int x = 0;
+
+    term_gotoxy(term_cx, term_cy );
+    term_clreol();
+	term_putstr(buf, strlen(buf));
+
+	memset(buf, 0, maxlen);
 
     while(1) {
-        term_gotoxy( startx, term_cy );
-        term_clreol();
-        term_putstr(buf, strlen(buf));
-        term_gotoxy( startx+x-1, term_cy );
-
         c = term_getch(TERM_INPUT_WAIT);
         if (c < 0) continue;
 
@@ -311,50 +312,58 @@ int term_getstr(char *buf, int maxlen)
         		break;
 
         	case KC_BACKSPACE:
-        		if (x > 1) {
+        		if (x > 0) {
         			x--;
-        			memmove(buf+x-1, buf+x, len-x);
+        			memmove(buf+x, buf+x+1, len-x-1);
         			len--;
         			buf[len] = '\0';
         		}
+        		else continue;
         		break;
 
         	case KC_DEL:
-        		if (x <= len) {
-        			memmove(buf+x-1, buf+x, len-x);
+        		if (x < len) {
+        			memmove(buf+x, buf+x+1, len-x);
         			len--;
         			buf[len] = '\0';
         		}
+        		else continue;
         		break;
 
         	case KC_LEFT:
-        		if (x > 1) x--;
+        		if (x == 0) continue;
+        		x--;
         		break;
 
         	case KC_RIGHT:
-        		if (x <= len) x++;
+        		if (x >= len) continue;
+        		x++;
         		break;
 
         	case KC_HOME:
-        		x = 1;
+        		x = 0;
         		break;
 
         	case KC_END:
-        		x = len+1;
+        		x = len;
         		break;
 
         	default:
                 if ((c >= 32) && (c < 127)) {
                 	if (len < maxlen) {
-						if (x <= len) memmove(buf+x, buf+x-1, len-x+1);
+						if (x < len) memmove(buf+x+1, buf+x, len-x);
 						len++;
-						buf[x-1] = c;
+						buf[x] = c;
 						buf[len] = '\0';
 						x++;
                 	}
                 }
         		break;
         }
+        term_gotoxy( startx, term_cy );
+        term_clreol();
+    	term_putstr(buf, strlen(buf));
+        term_gotoxy( startx+x, term_cy );
     }
 }
 

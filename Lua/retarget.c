@@ -15,6 +15,8 @@
 #include "lauxlib.h"
 #include "shell.h"
 
+//#define TEST_USB2	1
+
 #define LUA_UART   "uart"
 
 #define SERIAL_BUFFER_SIZE  256
@@ -222,6 +224,36 @@ static void __retarget_irq_handler(void* parameter, VM_DCL_EVENT event, VM_DCL_H
     }
 }
 
+#if defined (TEST_USB2)
+//---------------------------------------------------------------------------------------------
+static void __usb2_irq_handler(void* parameter, VM_DCL_EVENT event, VM_DCL_HANDLE device_handle)
+{
+    if (event == VM_DCL_SIO_UART_READY_TO_READ)
+    {
+        char data[SERIAL_BUFFER_SIZE+1];
+        int i;
+        VM_DCL_STATUS status;
+        VM_DCL_BUFFER_LENGTH returned_len = 0;
+
+        status = vm_dcl_read(device_handle,
+                             (VM_DCL_BUFFER *)data,
+                             SERIAL_BUFFER_SIZE,
+                             &returned_len,
+                             g_owner_id);
+        if(status < VM_DCL_STATUS_OK) {
+            // vm_log_info((char*)"read failed");
+        }
+        else if (returned_len) {
+        	data[returned_len] = '\0';
+			printf("USB2 read [%s]\n", data);
+        }
+    }
+    if (event == VM_DCL_SIO_UART_READY_TO_WRITE) {
+
+    }
+}
+#endif
+
 //-------------------------------
 void retarget_setup(lua_State *L)
 {
@@ -280,6 +312,21 @@ void retarget_setup(lua_State *L)
     	retarget_target = -1;
 		#endif
     }
+
+#if defined (TEST_USB2)
+    // configure USB2 serial port
+    uart_handle = vm_dcl_open(VM_DCL_SIO_USB_PORT2, g_owner_id);
+    if (uart_handle >= 0) {
+        vm_dcl_register_callback(uart_handle, VM_DCL_SIO_UART_READY_TO_READ,
+                                 (vm_dcl_callback)__usb2_irq_handler, (void*)NULL);
+        vm_dcl_add_event(uart_handle, VM_DCL_SIO_UART_READY_TO_WRITE, (void*)NULL);
+    	printf("USB2 serial OK\n");
+    }
+    else {
+    	printf("USB2 serial error %d\n", uart_handle);
+    }
+#endif
+
 }
 
 
@@ -288,9 +335,73 @@ static int uart_create(lua_State *L)
 {
     VMUINT32 id = luaL_checkinteger(L, 1) & 0x01;
 
-    if (uart_has_userdata[id]) {
+	if (((id == 0) && (retarget_target == retarget_usb_handle)) ||
+		((id == 1) && (retarget_target == retarget_uart1_handle))) {
+		vm_log_error("Cannot open UART on active shell port");
+		lua_pushnil(L);
+		return 1;
+	}
+
+	if (((id == 0) && (retarget_usb_handle < 0)) || ((id == 1)  && (retarget_uart1_handle == 0))) {
+		vm_log_error("Selected UART not available");
+		lua_pushnil(L);
+		return 1;
+	}
+
+	if (uart_has_userdata[id]) {
     	return luaL_error(L, "uart already created!");
     }
+
+	if ((lua_type(L, 3) == LUA_TTABLE) && (id == 1)) {
+		vm_dcl_sio_control_dcb_t settings;
+		int ipar;
+
+		settings.owner_id = g_owner_id;
+		settings.config.dsr_check = 0;
+		settings.config.data_bits_per_char_length = VM_DCL_SIO_UART_BITS_PER_CHAR_LENGTH_8;
+		settings.config.flow_control = VM_DCL_SIO_UART_FLOW_CONTROL_NONE;
+		settings.config.parity = VM_DCL_SIO_UART_PARITY_NONE;
+		settings.config.stop_bits = VM_DCL_SIO_UART_STOP_BITS_1;
+		settings.config.baud_rate = VM_DCL_SIO_UART_BAUDRATE_115200;
+		settings.config.sw_xoff_char = 0x13;
+		settings.config.sw_xon_char = 0x11;
+
+		lua_getfield(L, 3, "bit");
+		if (!lua_isnil(L, -1)) {
+			if ( lua_isnumber(L, -1) ) {
+				ipar = luaL_checkinteger( L, -1 );
+				if ((ipar >= 5) && (ipar <= 5)) settings.config.data_bits_per_char_length = ipar;
+			}
+			else lua_pop(L, 1);
+		}
+		lua_getfield(L, 2, "par");
+		if (!lua_isnil(L, -1)) {
+			if ( lua_isnumber(L, -1) ) {
+				ipar = luaL_checkinteger( L, -1 );
+				if ((ipar >= 0) && (ipar <= 4)) settings.config.parity = ipar;
+			}
+			else lua_pop(L, 1);
+		}
+		lua_getfield(L, 2, "stop");
+		if (!lua_isnil(L, -1)) {
+			if ( lua_isnumber(L, -1) ) {
+				ipar = luaL_checkinteger( L, -1 );
+				if ((ipar >= 1) && (ipar <= 3)) settings.config.stop_bits = ipar;
+			}
+			else lua_pop(L, 1);
+		}
+		lua_getfield(L, 2, "bdr");
+		if (!lua_isnil(L, -1)) {
+			if ( lua_isnumber(L, -1) ) {
+				ipar = luaL_checkinteger( L, -1 );
+				if ((ipar >= 75) && (ipar <= 921600)) settings.config.baud_rate = ipar;
+			}
+			else lua_pop(L, 1);
+		}
+
+		if (id == 0) vm_dcl_control(retarget_usb_handle, VM_DCL_SIO_COMMAND_SET_DCB_CONFIG, (void *)&settings);
+		else vm_dcl_control(retarget_uart1_handle, VM_DCL_SIO_COMMAND_SET_DCB_CONFIG, (void *)&settings);
+	}
 
 	if ((lua_type(L, 2) == LUA_TFUNCTION) || (lua_type(L, 2) == LUA_TLIGHTFUNCTION)) {
 		uart_info_t *p;
@@ -310,8 +421,6 @@ static int uart_create(lua_State *L)
 		p->bufptr = 0;
 
 		uart_data[id] = p;
-		if ((id == 0) && (retarget_target == retarget_usb_handle)) retarget_target = -1;
-		else if ((id == 1) && (retarget_target == retarget_uart1_handle)) retarget_target = -1;
 
 	    return 1;
     }
@@ -332,9 +441,6 @@ static int uart_delete(lua_State *L)
     uart_has_userdata[p->uart_id] = 0;
     uart_data[p->uart_id] = NULL;
 
-    if ((p->uart_id == 0) && (retarget_target == -1)) retarget_target = retarget_usb_handle;
-    else if ((p->uart_id == 1) && (retarget_target == -1)) retarget_target = retarget_uart1_handle;
-
 	return 0;
 }
 
@@ -342,13 +448,8 @@ static int uart_delete(lua_State *L)
 static int uart_write(lua_State *L)
 {
 	int id = -1;
-	if (lua_isnumber(L, 1)) {
-		id = luaL_checkinteger(L, 1) & 0x01;
-	}
-	else {
-		uart_info_t *p = ((uart_info_t *)luaL_checkudata(L, 1, LUA_UART));
-		id = p->uart_id;
-	}
+	uart_info_t *p = ((uart_info_t *)luaL_checkudata(L, 1, LUA_UART));
+	id = p->uart_id;
 
     VM_DCL_BUFFER_LENGTH writen_len = 0;
     size_t len;

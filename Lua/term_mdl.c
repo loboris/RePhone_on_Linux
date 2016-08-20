@@ -227,7 +227,7 @@ static int luaterm_getstr( lua_State* L )
     if (lua_isstring(L,4)) {
     	size_t len;
         buf = lua_tolstring( L, 4, &len );
-        snprintf(inbuf, maxlen, "%s", buf);
+        if (len < 128) snprintf(inbuf, maxlen, "%s", buf);
     }
 
     term_gotoxy( x, y );
@@ -235,7 +235,7 @@ static int luaterm_getstr( lua_State* L )
     term_gotoxy( x, y );
     term_clreol();
 
-    if (res < 0) lua_pushnil(L);
+    if (res < 0) lua_pushstring(L, "");
     else lua_pushstring(L, inbuf);
 
     return 1;

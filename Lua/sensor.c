@@ -1229,7 +1229,6 @@ static int lsensor_ow_init( lua_State* L )
   unsigned pin=0;
   
   pin = luaL_checkinteger( L, 1 );
-  pin = luaL_checkinteger( L, 1 );
   if (gpio_get_handle(pin, &OW_DEVICE.handle) == VM_DCL_HANDLE_INVALID) {
       return luaL_error(L, "invalid pin handle");
   }
