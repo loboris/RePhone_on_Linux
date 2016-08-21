@@ -1,0 +1,2 @@
+=== Ver.: 1.0.3    21/08/2016 ===
+- Fix bugs in Xadow Touch panel handling (Lua callback function), fix touch in landscape mode

@@ -8,6 +8,7 @@
 #include "vmthread.h"
 #include "tp_i2c.h"
 #include "vmdatetime.h"
+#include "vmthread.h"
 #include "string.h"
 
 
@@ -24,13 +25,11 @@
 #define REG_GPIO_ID_DATA	(uint32_t *)0xA0020400
 
 VM_DRV_TP_BOOL ctp_i2c_configure_done = VM_DRV_TP_FALSE;
+// extern vm_mutex_t ctp_i2c_mutex;
 
 extern const VMUINT8 gpio_ctp_i2c_sda_pin;
 extern const VMUINT8 gpio_ctp_i2c_scl_pin;
 extern VMUINT32 CTP_DELAY_TIME;
-
-// vm_mutex_t ctp_i2c_mutex;
-// vm_mutex_t *ctp_i2c_mutex_ptr = NULL;
 
 static VM_DCL_HANDLE sda_handle;
 static VM_DCL_HANDLE scl_handle;

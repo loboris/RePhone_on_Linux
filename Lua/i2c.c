@@ -21,7 +21,7 @@
 VM_DCL_HANDLE g_i2c_handle = VM_DCL_HANDLE_INVALID;
 VMUINT8 g_i2c_used_address = 0xFF;
 
-//extern vm_mutex_t *ctp_i2c_mutex_ptr;
+//vm_mutex_t ctp_i2c_mutex;
 
 
 //--------------------------------------------------------------------
@@ -98,7 +98,7 @@ int _i2c_setup(VMUINT8 address, VMUINT32 speed)
         }
     }
     if (g_i2c_handle != VM_DCL_HANDLE_INVALID) {
-    	// vm_mutex_lock(ctp_i2c_mutex_ptr);
+    	// vm_mutex_lock(&ctp_i2c_mutex);
         g_i2c_used_address = (address << 1);
 
         conf_data.transaction_mode = VM_DCL_I2C_TRANSACTION_FAST_MODE;
@@ -118,7 +118,7 @@ int _i2c_setup(VMUINT8 address, VMUINT32 speed)
 			if (conf_data.fast_mode_speed > 400) result = conf_data.high_mode_speed;
 			else result = conf_data.fast_mode_speed;
 		}
-    	// vm_mutex_unlock(ctp_i2c_mutex_ptr);
+    	// vm_mutex_unlock(&ctp_i2c_mutex);
     }
     return result;
 }
@@ -155,7 +155,7 @@ int _i2c_writedata(char *data, VMUINT32 len)
     VMUINT32 bufptr = 0;
 	param.transfer_number = 1;
 
-	// vm_mutex_lock(ctp_i2c_mutex_ptr);
+	// vm_mutex_lock(&ctp_i2c_mutex);
 	do {
 		param.data_ptr = data+bufptr;
 		if (remain > 8) param.data_length = 8;
@@ -175,7 +175,7 @@ int _i2c_writedata(char *data, VMUINT32 len)
 			remain = 0;
 		}
 	} while (remain > 0);
-	// vm_mutex_unlock(ctp_i2c_mutex_ptr);
+	// vm_mutex_unlock(&ctp_i2c_mutex);
 
 	return stat;
 }
@@ -191,7 +191,7 @@ int _i2c_readdata(char *data, VMUINT32 len)
     VMUINT32 bufptr = 0;
 	param.transfer_number = 1;
 
-	// vm_mutex_lock(ctp_i2c_mutex_ptr);
+	// vm_mutex_lock(&ctp_i2c_mutex);
 	do {
 		param.data_ptr = data+bufptr;
 		if (remain > 8) param.data_length = 8;
@@ -211,7 +211,7 @@ int _i2c_readdata(char *data, VMUINT32 len)
 			remain = 0;
 		}
 	} while (remain > 0);
-	// vm_mutex_unlock(ctp_i2c_mutex_ptr);
+	// vm_mutex_unlock(&ctp_i2c_mutex);
 
 	return stat;
 }
@@ -641,6 +641,7 @@ LUALIB_API int luaopen_i2c(lua_State* L)
 #if LUA_OPTIMIZE_MEMORY > 0
     return 0;
 #else  // #if LUA_OPTIMIZE_MEMORY > 0
+	//vm_mutex_init(&ctp_i2c_mutex);
     luaL_register(L, "i2c", i2c_map);
     return 1;
 #endif // #if LUA_OPTIMIZE_MEMORY > 0

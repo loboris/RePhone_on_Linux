@@ -573,6 +573,6 @@ void vm_main(void)
     key_init();
     vm_keypad_register_event_callback(handle_keypad_event);
 
-    /* register system events handler */
+	/* register system events handler */
     vm_pmng_register_system_event_callback(handle_sysevt);
 }

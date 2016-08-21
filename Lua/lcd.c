@@ -278,17 +278,26 @@ static void handle_touch_event(VM_TOUCH_EVENT event, VMINT x, VMINT y)
 
 	if ((event == VM_TOUCH_EVENT_TAP) ||
 		(event == VM_TOUCH_EVENT_LONG_TAP) ||
+		(event == VM_TOUCH_EVENT_MOVE) ||
 		(event == VM_TOUCH_EVENT_DOUBLE_CLICK)) {
 		if (g_touch_cb_ref != LUA_NOREF) {
-			lua_rawgeti(shellL, LUA_REGISTRYINDEX, g_touch_cb_ref);
-			touch_cb_params.event = event;
-			touch_cb_params.x = x;
-			touch_cb_params.y = x;
-			touch_cb_params.cb_ref = g_touch_cb_ref;
-			remote_lua_call(CB_FUNC_INT, &touch_cb_params);
+			if (touch_cb_params.busy == 0) {
+				touch_cb_params.busy = 1;
+				touch_cb_params.event = event;
+				if ((orientation & 1)) {
+					touch_cb_params.x = y;
+					touch_cb_params.y = 240 - x;
+				}
+				else {
+					touch_cb_params.x = x;
+					touch_cb_params.y = y;
+				}
+				touch_cb_params.cb_ref = g_touch_cb_ref;
+				remote_lua_call(CB_FUNC_TOUCH, &touch_cb_params);
+			}
 		}
 		else {
-			vm_log_debug("touch: ev=%d, x=%d, y=%d\n", event, x, y);
+			//vm_log_debug("touch: ev=%d, x=%d, y=%d\n", event, x, y);
 		}
 	}
 }
@@ -2932,6 +2941,8 @@ LUALIB_API int luaopen_lcd(lua_State *L)
 	_bg = TFT_BLACK;
 
 	_initvar();
+	touch_cb_params.busy = 0;
+	touch_cb_params.cb_ref = LUA_NOREF;
 
 #if LUA_OPTIMIZE_MEMORY > 0
     return 0;
