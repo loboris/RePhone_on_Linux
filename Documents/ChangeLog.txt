@@ -1,2 +1,7 @@
+=== Ver.: 1.0.4    21/08/2016 ===
+- Fixes in audio module
+- audio: recording added
+- documentation for audio module updated
+
 === Ver.: 1.0.3    21/08/2016 ===
 - Fix bugs in Xadow Touch panel handling (Lua callback function), fix touch in landscape mode
