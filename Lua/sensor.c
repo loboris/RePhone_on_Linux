@@ -17,10 +17,12 @@
 #include "vmthread.h"
 #include "vmlog.h"
 
+#include "bme280.h"
 
 //#define DS18B20ALARMFUNC
 //#define DS18B20_USE_CRC
 
+#define BME280_I2C_SPEED			400
 
 /* OneWire commands */
 #define ONEWIRE_CMD_RSCRATCHPAD		0xBE
@@ -100,12 +102,19 @@ static unsigned char ow_roms[MAX_ONEWIRE_SENSORS][8];
 static int ds_measure_time = 800;
 static VM_TIME_UST_COUNT ds_start_measure_time = 0;
 
+static struct bme280_t bme280;
+
 #ifdef DS18B20ALARMFUNC
 static unsigned char ow_alarm_device [MAX_ONEWIRE_SENSORS][8];
 #endif
 
 //**************************************************
 
+extern VMUINT8 g_i2c_used_address;
+extern VM_DCL_HANDLE g_i2c_handle;
+extern int _i2c_setup(VMUINT8 address, VMUINT32 speed);
+extern int _i2c_writedata(char *data, VMUINT32 len);
+extern int _i2c_write_and_read_data(uint8_t *wdata, uint8_t *rdata, VMUINT32 wlen, VMUINT32 rlen);
 extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
 
 
@@ -547,11 +556,11 @@ static void TM_DS18B20_StartAll() {
 }
 
 //------------------------------------------------------------------------
-static owState_t TM_DS18B20_Read(unsigned char *ROM, float *destination) {
+static owState_t TM_DS18B20_Read(unsigned char *ROM, double *destination) {
   unsigned int temperature;
   unsigned char resolution;
   char digit, minus = 0;
-  float decimal;
+  double decimal;
   unsigned char i = 0;
   unsigned char data[9];
   unsigned char crc;
@@ -608,19 +617,19 @@ static owState_t TM_DS18B20_Read(unsigned char *ROM, float *destination) {
 	  switch (resolution) {
 		case 9: {
 		  decimal = (temperature >> 3) & 0x01;
-		  decimal *= (float)DS18B20_DECIMAL_STEPS_9BIT;
+		  decimal *= (double)DS18B20_DECIMAL_STEPS_9BIT;
 		} break;
 		case 10: {
 		  decimal = (temperature >> 2) & 0x03;
-		  decimal *= (float)DS18B20_DECIMAL_STEPS_10BIT;
+		  decimal *= (double)DS18B20_DECIMAL_STEPS_10BIT;
 		} break;
 		case 11: {
 		  decimal = (temperature >> 1) & 0x07;
-		  decimal *= (float)DS18B20_DECIMAL_STEPS_11BIT;
+		  decimal *= (double)DS18B20_DECIMAL_STEPS_11BIT;
 		} break;
 		case 12: {
 		  decimal = temperature & 0x0F;
-		  decimal *= (float)DS18B20_DECIMAL_STEPS_12BIT;
+		  decimal *= (double)DS18B20_DECIMAL_STEPS_12BIT;
 		} break;
 		default: {
 		  decimal = 0xFF;
@@ -652,7 +661,7 @@ static owState_t TM_DS18B20_Read(unsigned char *ROM, float *destination) {
 	decimal /= (int)data[7];
 	temperature += decimal;
     /* Set to pointer */
-	*destination = (float)temperature / 1000.0;
+	*destination = (double)temperature / 1000.0;
   }
   /* Return 1, temperature valid */
   return owOK;
@@ -1050,7 +1059,7 @@ static int lsensor_18b20_gettemp( lua_State* L )
 {
   unsigned char dev = 0;
   owState_t stat;
-  float temper;
+  double temper;
   
   dev = luaL_checkinteger( L, 1 );
   if (check_dev(dev)) {
@@ -1160,7 +1169,7 @@ static int lsensor_18b20_get( lua_State* L )
   }
 
   owState_t stat;
-  float temper;
+  double temper;
 
   // Read temperature from selected device
   // Read temperature from ROM address and store it to temper variable
@@ -1386,6 +1395,7 @@ static int _dht11_read(unsigned char *dhtdata, VM_DCL_HANDLE handle)
 		}
 	}
     vm_irq_restore(imask);
+    /*
     printf("state=%d idx=%d bit=%d min=%d max=%d\n", state, data_idx, bit_no, min_time, max_time);
     if (data_idx > 0) {
   	  for (int i=0; i<5; i++) {
@@ -1393,6 +1403,7 @@ static int _dht11_read(unsigned char *dhtdata, VM_DCL_HANDLE handle)
   	  }
   	  printf("\n");
     }
+    */
     if (err == 1) err = 0;
     return err;
 }
@@ -1451,7 +1462,7 @@ static int lsensor_dht11_get( lua_State* L )
   return 3;
 }
 
-
+/*
 //=====================================
 static int lsensor_test( lua_State* L )
 {
@@ -1504,8 +1515,252 @@ static int lsensor_test( lua_State* L )
   lua_pushinteger(L, vm_time_ust_get_duration(startt, vm_time_ust_get_count()));
   return 4;
 }
+*/
 
+// ================================ BME280 ===========================================
 
+#define	I2C_BUFFER_LEN 8
+#define BME280_DATA_INDEX	1
+#define BME280_ADDRESS_INDEX	2
+
+/*-------------------------------------------------------------------*
+*	This is a sample code for read and write the data by using I2C
+*	The device address defined in the bme280.h file
+*--------------------------------------------------------------------*/
+
+/*	\Brief: The function is used as I2C bus write
+ *	\Return : Status of the I2C write
+ *	\param dev_addr : The device address of the sensor
+ *	\param reg_addr : Address of the first register, will data is going to be written
+ *	\param reg_data : It is a value hold in the array,
+ *		will be used for write the value into the register
+ *	\param cnt : The no of byte of data to be write
+ */
+
+//---------------------------------------------------------------------
+s8 BME280_I2C_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
+{
+	s32 iError = BME280_INIT_VALUE;
+	u8 array[I2C_BUFFER_LEN];
+	u8 stringpos = BME280_INIT_VALUE;
+	array[BME280_INIT_VALUE] = reg_addr;
+
+	for (stringpos = BME280_INIT_VALUE; stringpos < cnt; stringpos++) {
+		array[stringpos + BME280_DATA_INDEX] = *(reg_data + stringpos);
+	}
+
+	if ((g_i2c_used_address != dev_addr) || (g_i2c_handle < 0)) _i2c_setup(dev_addr, BME280_I2C_SPEED);
+
+	iError = _i2c_writedata(array, cnt+1);
+
+	return (s8)iError;
+}
+
+ /*	\Brief: The function is used as I2C bus write&read
+ *	\Return : Status of the I2C read
+ *	\param dev_addr : The device address of the sensor
+ *	\param reg_addr : Address of the first register, will data is going to be read
+ *	\param reg_data : This data read from the sensor, which is hold in an array
+ *	\param cnt : The no of data byte of to be read
+ */
+//--------------------------------------------------------------------
+s8 BME280_I2C_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
+{
+    s32 iError = BME280_INIT_VALUE;
+	u8 regadr = reg_addr;
+
+    // Send and receive
+	if ((g_i2c_used_address != dev_addr) || (g_i2c_handle < 0)) _i2c_setup(dev_addr, BME280_I2C_SPEED);
+
+	iError = _i2c_write_and_read_data(&regadr, reg_data, 1, cnt);
+
+	return (s8)iError;
+}
+
+/*	Brief : The delay routine
+ *	\param : delay in ms
+*/
+//------------------------------
+void BME280_delay_msek(u32 msek)
+{
+    vm_thread_sleep(msek);
+}
+
+//---------------------------------------------------------
+static void bme280_getsby(lua_State* L, int index, u8 *sby)
+{
+	if (lua_gettop(L) >= index) {
+		int sb = luaL_checkinteger(L, index);
+		if (sb < 10) *sby = BME280_STANDBY_TIME_1_MS;
+		else if (sb < 20) *sby = BME280_STANDBY_TIME_10_MS;
+		else if (sb < 62) *sby = BME280_STANDBY_TIME_20_MS;
+		else if (sb < 125) *sby = BME280_STANDBY_TIME_63_MS;
+		else if (sb < 250) *sby = BME280_STANDBY_TIME_125_MS;
+		else if (sb < 500) *sby = BME280_STANDBY_TIME_250_MS;
+		else if (sb < 1000) *sby = BME280_STANDBY_TIME_500_MS;
+		else *sby = BME280_STANDBY_TIME_1000_MS;
+	}
+}
+
+//====================================
+static int bme280_doinit(lua_State* L)
+{
+	u8 v_stand_by_time_u8 = BME280_INIT_VALUE;
+	s32 com_rslt = ERROR;
+	u8 mode = BME280_SLEEP_MODE;
+	u8 sby = BME280_STANDBY_TIME_125_MS;
+
+	u8 addr = luaL_checkinteger(L, 1);
+	if ((addr != BME280_I2C_ADDRESS1) && (addr != BME280_I2C_ADDRESS2)) addr = BME280_I2C_ADDRESS1;
+
+	if (lua_gettop(L) >= 2) {
+		int md = luaL_checkinteger(L, 2);
+		if ((md == BME280_NORMAL_MODE) || (md == BME280_FORCED_MODE)) mode = md;
+
+		if (mode == BME280_NORMAL_MODE) {
+			bme280_getsby(L, 3, &sby);
+		}
+	}
+
+	bme280.chip_id = 0;
+	bme280.mode = 255;
+	bme280.bus_write = BME280_I2C_bus_write;
+	bme280.bus_read = BME280_I2C_bus_read;
+	bme280.dev_addr = addr;
+	bme280.delay_msec = BME280_delay_msek;
+
+	/*--------------------------------------------------------------------------*
+	 *  This function used to assign the value/reference of
+	 *	the following parameters
+	 *	I2C address
+	 *	Bus Write
+	 *	Bus read
+	 *	Chip id
+	*-------------------------------------------------------------------------*/
+	com_rslt = bme280_init(&bme280);
+	if (com_rslt == BME280_CHIP_ID_READ_SUCCESS) {
+		bme280.mode = mode;
+
+		com_rslt += bme280_set_soft_rst();
+		vm_thread_sleep(5);
+
+		//	For reading the pressure, humidity and temperature data it is required to
+		//	set the OSS setting of humidity, pressure and temperature
+		// set the humidity oversampling
+		com_rslt += bme280_set_oversamp_humidity(BME280_OVERSAMP_1X);
+		// set the pressure oversampling
+		com_rslt += bme280_set_oversamp_pressure(BME280_OVERSAMP_2X);
+		// set the temperature oversampling
+		com_rslt += bme280_set_oversamp_temperature(BME280_OVERSAMP_4X);
+		// set standby time
+		com_rslt += bme280_set_standby_durn(sby);
+
+		com_rslt += bme280_set_power_mode(mode);
+	}
+
+	// **************** END INITIALIZATION ****************
+	lua_pushinteger(L, com_rslt);
+	return 1;
+}
+
+//=====================================
+static int bme280_setmode(lua_State* L)
+{
+	u8 mode, md;
+	s32 com_rslt = ERROR;
+
+	if (bme280.chip_id == BME280_CHIP_ID) {
+		md = luaL_checkinteger(L, 1);
+		if ((md == BME280_SLEEP_MODE) || (md == BME280_FORCED_MODE) || (md == BME280_NORMAL_MODE)) {
+			com_rslt = bme280_get_power_mode(&mode);
+			if (com_rslt == 0) {
+				if (mode != md) {
+					com_rslt = bme280_set_power_mode(md);
+					if (com_rslt == 0) {
+						bme280.mode = md;
+						if (md == BME280_NORMAL_MODE) {
+							u8 sby = 255;
+							bme280_getsby(L, 2, &sby);
+							if (sby < 8) com_rslt = bme280_set_standby_durn(sby);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	lua_pushinteger(L, com_rslt);
+	return 1;
+}
+
+//=====================================
+static int bme280_getmode(lua_State* L)
+{
+	u8 mode;
+	u8 sby = 255;
+	s32 com_rslt = ERROR;
+
+	if (bme280.chip_id == BME280_CHIP_ID) {
+		com_rslt = bme280_get_power_mode(&mode);
+		if (com_rslt == 0) {
+			com_rslt += bme280_get_standby_durn(&sby);
+			if (com_rslt != 0) sby = 255;
+			com_rslt = mode;
+		}
+	}
+
+	lua_pushinteger(L, com_rslt);
+	if (sby < 255) {
+		int sb = 1000;
+		if (sby == BME280_STANDBY_TIME_1_MS) sb = 1;
+		else if (sby == BME280_STANDBY_TIME_10_MS) sb = 10;
+		else if (sby == BME280_STANDBY_TIME_20_MS) sb = 20;
+		else if (sby == BME280_STANDBY_TIME_63_MS) sb = 63;
+		else if (sby == BME280_STANDBY_TIME_125_MS) sb = 125;
+		else if (sby == BME280_STANDBY_TIME_250_MS) sb = 250;
+		else if (sby == BME280_STANDBY_TIME_500_MS) sb = 500;
+		lua_pushinteger(L, sb);
+	}
+	else lua_pushnil(L);
+
+	return 2;
+}
+
+//=================================
+static int bme280_get(lua_State* L)
+{
+	// The variable used to read uncompensated temperature
+	s32 v_data_uncomp_temp_s32 = BME280_INIT_VALUE;
+	// The variable used to read uncompensated pressure
+	s32 v_data_uncomp_pres_s32 = BME280_INIT_VALUE;
+	// The variable used to read uncompensated pressure
+	s32 v_data_uncomp_hum_s32 = BME280_INIT_VALUE;
+
+	double temp = 0.0;
+	double pres = 0.0;
+	double hum = 0.0;
+
+	s32 com_rslt = ERROR;
+	if (bme280.chip_id == BME280_CHIP_ID) {
+		if (bme280.mode != BME280_NORMAL_MODE)
+			com_rslt = bme280_get_forced_uncomp_pressure_temperature_humidity(
+					&v_data_uncomp_pres_s32, &v_data_uncomp_temp_s32, &v_data_uncomp_hum_s32);
+		else com_rslt = bme280_read_uncomp_pressure_temperature_humidity(
+				&v_data_uncomp_pres_s32, &v_data_uncomp_temp_s32, &v_data_uncomp_hum_s32);
+
+		//printf("BME280 READ uncomp %d, data: %d  %d  %d\n", com_rslt, v_data_uncomp_pres_s32, v_data_uncomp_temp_s32, v_data_uncomp_hum_s32);
+		temp = bme280_compensate_temperature_double(v_data_uncomp_temp_s32);
+		pres = bme280_compensate_pressure_double(v_data_uncomp_pres_s32);
+		hum = bme280_compensate_humidity_double(v_data_uncomp_hum_s32);
+	}
+
+	lua_pushnumber(L, temp);
+	lua_pushnumber(L, hum);
+	lua_pushnumber(L, pres);
+	return 3;
+}
+
+//====================================================================================
 
 
 #define MOD_REG_NUMBER(L, name, value) \
@@ -1517,18 +1772,22 @@ static int lsensor_test( lua_State* L )
 #include "lrodefs.h"
 static const LUA_REG_TYPE sensor_map[] =
 {
-  { LSTRKEY( "test" ),       LFUNCVAL(lsensor_test) },
-  { LSTRKEY( "dht_get" ),    LFUNCVAL(lsensor_dht11_get ) },
-  { LSTRKEY( "ds_init" ),    LFUNCVAL(lsensor_ow_init ) },
-  { LSTRKEY( "ds_gettemp" ), LFUNCVAL(lsensor_18b20_gettemp ) },
-  { LSTRKEY( "ds_get" ),     LFUNCVAL(lsensor_18b20_get ) },
-  { LSTRKEY( "ds_startm" ),  LFUNCVAL(lsensor_18b20_startm ) },
-  { LSTRKEY( "ds_search" ),  LFUNCVAL(lsensor_18b20_search ) },
-  { LSTRKEY( "ds_getres" ),  LFUNCVAL(lsensor_18b20_getres ) },
-  { LSTRKEY( "ds_setres" ),  LFUNCVAL(lsensor_18b20_setres ) },
-  { LSTRKEY( "ds_getrom" ),  LFUNCVAL(lsensor_ow_getrom ) },
-  { LSTRKEY( "ow_init" ),    LFUNCVAL(lsensor_ow_init ) },
-  { LSTRKEY( "ow_search" ),  LFUNCVAL(lsensor_ow_search ) },
+  //{ LSTRKEY( "test" ),			LFUNCVAL(lsensor_test) },
+  { LSTRKEY( "dht_get" ),			LFUNCVAL(lsensor_dht11_get ) },
+  { LSTRKEY( "ds_init" ),			LFUNCVAL(lsensor_ow_init ) },
+  { LSTRKEY( "ds_gettemp" ),		LFUNCVAL(lsensor_18b20_gettemp ) },
+  { LSTRKEY( "ds_get" ),			LFUNCVAL(lsensor_18b20_get ) },
+  { LSTRKEY( "ds_startm" ),			LFUNCVAL(lsensor_18b20_startm ) },
+  { LSTRKEY( "ds_search" ),			LFUNCVAL(lsensor_18b20_search ) },
+  { LSTRKEY( "ds_getres" ),			LFUNCVAL(lsensor_18b20_getres ) },
+  { LSTRKEY( "ds_setres" ),			LFUNCVAL(lsensor_18b20_setres ) },
+  { LSTRKEY( "ds_getrom" ),			LFUNCVAL(lsensor_ow_getrom ) },
+  { LSTRKEY( "ow_init" ),			LFUNCVAL(lsensor_ow_init ) },
+  { LSTRKEY( "ow_search" ),			LFUNCVAL(lsensor_ow_search ) },
+  { LSTRKEY( "bme280_init" ),		LFUNCVAL(bme280_doinit ) },
+  { LSTRKEY( "bme280_getmode" ),	LFUNCVAL(bme280_getmode ) },
+  { LSTRKEY( "bme280_setmode" ),	LFUNCVAL(bme280_setmode ) },
+  { LSTRKEY( "bme280_get" ),		LFUNCVAL(bme280_get ) },
 #if LUA_OPTIMIZE_MEMORY > 0
   { LSTRKEY( "DS18B20_RES9" ),  LNUMVAL( TM_DS18B20_Resolution_9bits ) },
   { LSTRKEY( "DS18B20_RES10" ), LNUMVAL( TM_DS18B20_Resolution_10bits ) },
@@ -1540,6 +1799,9 @@ static const LUA_REG_TYPE sensor_map[] =
 
 LUALIB_API int luaopen_sensor(lua_State *L)
 {
+	bme280.chip_id = 0;
+	bme280.mode = 255;
+
 #if LUA_OPTIMIZE_MEMORY > 0
     return 0;
 #else

@@ -21,11 +21,11 @@
 VM_DCL_HANDLE g_i2c_handle = VM_DCL_HANDLE_INVALID;
 VMUINT8 g_i2c_used_address = 0xFF;
 
-//vm_mutex_t ctp_i2c_mutex;
+int ctp_i2c_mutex = 0;
 
 
-//--------------------------------------------------------------------
-void i2c_set_transaction_speed(vm_dcl_i2c_control_config_t *conf_data)
+//---------------------------------------------------------------------------
+static void i2c_set_transaction_speed(vm_dcl_i2c_control_config_t *conf_data)
 {
 	VMUINT32 step_cnt_div;
 	VMUINT32 sample_cnt_div;
@@ -98,7 +98,8 @@ int _i2c_setup(VMUINT8 address, VMUINT32 speed)
         }
     }
     if (g_i2c_handle != VM_DCL_HANDLE_INVALID) {
-    	// vm_mutex_lock(&ctp_i2c_mutex);
+        while (ctp_i2c_mutex > 0) { result++; }
+        ctp_i2c_mutex = 1;
         g_i2c_used_address = (address << 1);
 
         conf_data.transaction_mode = VM_DCL_I2C_TRANSACTION_FAST_MODE;
@@ -118,7 +119,7 @@ int _i2c_setup(VMUINT8 address, VMUINT32 speed)
 			if (conf_data.fast_mode_speed > 400) result = conf_data.high_mode_speed;
 			else result = conf_data.fast_mode_speed;
 		}
-    	// vm_mutex_unlock(&ctp_i2c_mutex);
+    	ctp_i2c_mutex = 0;
     }
     return result;
 }
@@ -155,7 +156,8 @@ int _i2c_writedata(char *data, VMUINT32 len)
     VMUINT32 bufptr = 0;
 	param.transfer_number = 1;
 
-	// vm_mutex_lock(&ctp_i2c_mutex);
+    while (ctp_i2c_mutex > 0) { stat++; }
+    ctp_i2c_mutex = 1;
 	do {
 		param.data_ptr = data+bufptr;
 		if (remain > 8) param.data_length = 8;
@@ -175,31 +177,34 @@ int _i2c_writedata(char *data, VMUINT32 len)
 			remain = 0;
 		}
 	} while (remain > 0);
-	// vm_mutex_unlock(&ctp_i2c_mutex);
+	ctp_i2c_mutex = 0;
 
 	return stat;
 }
 
-//-----------------------------------------
-int _i2c_readdata(char *data, VMUINT32 len)
+//----------------------------------------------------
+int _i2c_readdata(char *data, VMUINT32 len, int check)
 {
     if (len == 0) return 0;
     vm_dcl_i2c_control_continue_read_t param;
+    int status = 0;
 
-    int stat = 0;
     VMUINT32 remain = len;
     VMUINT32 bufptr = 0;
 	param.transfer_number = 1;
 
-	// vm_mutex_lock(&ctp_i2c_mutex);
+    if (check) {
+    	while (ctp_i2c_mutex > 0) { status++; }
+    	ctp_i2c_mutex = 1;
+    }
 	do {
 		param.data_ptr = data+bufptr;
 		if (remain > 8) param.data_length = 8;
 		else param.data_length = remain;
 
-		stat = vm_dcl_control(g_i2c_handle, VM_DCL_I2C_CMD_CONT_READ, &param);
-		if (stat < 0) {
-			vm_log_debug("error reading data: %d", stat);
+		status = vm_dcl_control(g_i2c_handle, VM_DCL_I2C_CMD_CONT_READ, &param);
+		if (status < 0) {
+			vm_log_debug("error reading data: %d", status);
 			break;
 		}
 		if (remain > 8) {
@@ -211,11 +216,38 @@ int _i2c_readdata(char *data, VMUINT32 len)
 			remain = 0;
 		}
 	} while (remain > 0);
-	// vm_mutex_unlock(&ctp_i2c_mutex);
 
-	return stat;
+    if (check) ctp_i2c_mutex = 0;
+
+	return status;
 }
 
+// Send and receive
+//----------------------------------------------------------------------------------------
+int _i2c_write_and_read_data(uint8_t *wdata, uint8_t *rdata, VMUINT32 wlen, VMUINT32 rlen)
+{
+    vm_dcl_i2c_control_write_and_read_t param;
+    int status = 0;
+
+    param.out_data_length = wlen;
+	param.out_data_ptr = wdata;
+	if (rlen > 8) param.in_data_length = 8;
+	else param.in_data_length = rlen;
+	param.in_data_ptr = rdata;
+
+    while (ctp_i2c_mutex > 0) { status++; }
+    ctp_i2c_mutex = 1;
+
+    status = vm_dcl_control(g_i2c_handle, VM_DCL_I2C_CMD_WRITE_AND_READ, &param);
+	if ((status == VM_DCL_STATUS_OK) && (rlen > 8)) {
+		// Read remaining bytes
+		status = _i2c_readdata(rdata+8, rlen-8, 0);
+	}
+
+	ctp_i2c_mutex = 0;
+
+	return status;
+}
 
 // Lua: wrote = i2c.send(data1, [data2], ..., [datan] )
 // data can be either a string, a table or an 8-bit number
@@ -392,7 +424,7 @@ static int i2c_recv(lua_State* L)
     if (out_type < 2) luaL_buffinit(L, &b);
     else lua_newtable(L);
 
-    status = _i2c_readdata(rbuf, size);
+    status = _i2c_readdata(rbuf, size, 1);
     if (status == VM_DCL_STATUS_OK) {
         for (i = 0; i < size; i++) {
         	if (out_type == 0) luaL_addchar(&b, rbuf[i]);
@@ -478,7 +510,6 @@ static int i2c_txrx(lua_State* L)
     int argn;
     int i;
     luaL_Buffer b;
-    vm_dcl_i2c_control_write_and_read_t param;
     char wbuf[8];
     int wbuf_index = 0;
     int top = lua_gettop(L);
@@ -541,6 +572,7 @@ static int i2c_txrx(lua_State* L)
     	goto exit;
     }
 
+
     VM_DCL_STATUS status = 0;
     char hbuf[4];
     uint8_t *rbuf = vm_calloc(size);
@@ -550,13 +582,8 @@ static int i2c_txrx(lua_State* L)
     }
 
     // Send and receive
-    param.out_data_length = wbuf_index;
-    param.out_data_ptr = wbuf;
-    if (size > 8) param.in_data_length = 8;
-    else param.in_data_length = size;
-    param.in_data_ptr = rbuf;
+    status = _i2c_write_and_read_data(wbuf, rbuf, wbuf_index, size);
 
-    status = vm_dcl_control(g_i2c_handle, VM_DCL_I2C_CMD_WRITE_AND_READ, &param);
     if (status != VM_DCL_STATUS_OK) {
     	vm_log_error("write and read error %d", status);
     	lua_pushnil(L);
@@ -566,7 +593,7 @@ static int i2c_txrx(lua_State* L)
         else lua_newtable(L);
 
 		// Get bytes received from write&read command (max 8)
-		for (i = 0; i < 8; i++) {
+		for (i = 0; i < size; i++) {
         	if (out_type == 0) luaL_addchar(&b, rbuf[i]);
         	else if (out_type == 1) {
         		sprintf(hbuf, "%02x;", rbuf[i]);
@@ -576,29 +603,7 @@ static int i2c_txrx(lua_State* L)
         	    lua_pushinteger( L, rbuf[i]);
         	    lua_rawseti(L,-2, i+1);
         	}
-			size--;
-			if (size == 0) break;
 		}
-
-		if (size > 0) {
-			// Read remaining bytes
-        	status = _i2c_readdata(rbuf, size);
-
-        	if (status == VM_DCL_STATUS_OK) {
-        		for (i = 0; i < size; i++) {
-                	if (out_type == 0) luaL_addchar(&b, rbuf[i]);
-                	else if (out_type == 1) {
-                		sprintf(hbuf, "%02x;", rbuf[i]);
-                		luaL_addstring(&b, hbuf);
-                	}
-                	else {
-                	    lua_pushinteger( L, rbuf[i]);
-                	    lua_rawseti(L,-2, i+9);
-                	}
-        		}
-        	}
-		}
-
 		if (out_type < 2) luaL_pushresult(&b);
     }
     vm_free(rbuf);
@@ -641,7 +646,6 @@ LUALIB_API int luaopen_i2c(lua_State* L)
 #if LUA_OPTIMIZE_MEMORY > 0
     return 0;
 #else  // #if LUA_OPTIMIZE_MEMORY > 0
-	//vm_mutex_init(&ctp_i2c_mutex);
     luaL_register(L, "i2c", i2c_map);
     return 1;
 #endif // #if LUA_OPTIMIZE_MEMORY > 0

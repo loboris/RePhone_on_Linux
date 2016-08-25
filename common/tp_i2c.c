@@ -25,37 +25,29 @@
 #define REG_GPIO_ID_DATA	(uint32_t *)0xA0020400
 
 VM_DRV_TP_BOOL ctp_i2c_configure_done = VM_DRV_TP_FALSE;
-// extern vm_mutex_t ctp_i2c_mutex;
+extern int ctp_i2c_mutex;
 
 extern const VMUINT8 gpio_ctp_i2c_sda_pin;
 extern const VMUINT8 gpio_ctp_i2c_scl_pin;
-extern VMUINT32 CTP_DELAY_TIME;
+//extern VMUINT32 CTP_DELAY_TIME;
 
 static VM_DCL_HANDLE sda_handle;
 static VM_DCL_HANDLE scl_handle;
 
-#define CTP_I2C_DELAY ctp_i2c_udelay(CTP_DELAY_TIME);
+#define CTP_I2C_DELAY ctp_i2c_udelay();
 
 
 //----------------------------------------
-static void ctp_i2c_udelay(VMUINT32 delay)
+static void ctp_i2c_udelay(void)
 {
-    VMUINT32 ust = 0, ust1 = 0; // ust_get_current_time
+    VMUINT32 ust = 0;
     VMUINT32 count = 0;
-    VMUINT32 break_count = 0;
 
-    if (delay > 4615) // longer than 1 tick
-    {
-        vm_thread_sleep(delay / 4615);
-        delay = delay % 4615;
+    ust = vm_time_ust_get_count() + 2;
+    while (vm_time_ust_get_count() < ust) {
+        count++;
+        if (count > 10) break;
     }
-    ust = vm_time_ust_get_count();
-    do {
-        ust1 = vm_time_ust_get_count();
-        if (ust1 != ust) count++;
-        else break_count++;
-        ust = ust1;
-    } while ((count < delay) && (break_count < 0xFFFFFF));
 }
 
 //---------------------------------------------------------
@@ -63,18 +55,21 @@ int ctp_i2c_configure(VMUINT32 slave_addr, VMUINT32 speed)
 {
     vm_dcl_i2c_control_config_t conf_data;
     ctp_i2c_configure_done = VM_DRV_TP_FALSE;
+    int i = 0;
 
-	// vm_mutex_lock(&ctp_i2c_mutex);
+    while (ctp_i2c_mutex > 0) { i++; }
+    ctp_i2c_mutex = 1;
 	sda_handle = vm_dcl_open(VM_DCL_GPIO, gpio_ctp_i2c_sda_pin);
 	scl_handle = vm_dcl_open(VM_DCL_GPIO, gpio_ctp_i2c_scl_pin);
 
 	vm_dcl_control(sda_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
 	vm_dcl_control(sda_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
 	vm_dcl_control(scl_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
-	vm_dcl_control(scl_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+	//vm_dcl_control(scl_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+	vm_dcl_control(scl_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
 
 	ctp_i2c_configure_done = VM_DRV_TP_TRUE;
-	// vm_mutex_unlock(&ctp_i2c_mutex);
+	ctp_i2c_mutex = 0;
 
 	return ctp_i2c_configure_done;
 }
@@ -114,6 +109,9 @@ static void ctp_i2c_stop(void)
 	CTP_I2C_DELAY;
 	vm_dcl_control(scl_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 	CTP_I2C_DELAY;
+
+	vm_dcl_control(scl_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
+	vm_dcl_control(sda_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_IN, NULL);
 }
 
 //-----------------------------------------------------
@@ -192,11 +190,12 @@ static VMUINT8 ctp_i2c_receive_byte(VM_DRV_TP_BOOL bAck)
 //---------------------------------------------------------------------------------------------------------------
 VM_DRV_TP_BOOL ctp_i2c_send(VMUINT8 ucDeviceAddr, VMUINT8 ucBufferIndex, VMUINT8* pucData, VMUINT32 unDataLength)
 {
-    VMUINT32 i;
+    VMUINT32 i=0;
     VM_DRV_TP_BOOL bRet = VM_DRV_TP_TRUE;
     vm_dcl_i2c_control_continue_write_t write;
 
-    // vm_mutex_lock(&ctp_i2c_mutex);
+    while (ctp_i2c_mutex > 0) { i++; }
+    ctp_i2c_mutex = 1;
 
 	ctp_i2c_start();
 
@@ -216,7 +215,7 @@ VM_DRV_TP_BOOL ctp_i2c_send(VMUINT8 ucDeviceAddr, VMUINT8 ucBufferIndex, VMUINT8
 
 	ctp_i2c_stop();
 
-    // vm_mutex_unlock(&ctp_i2c_mutex);
+    ctp_i2c_mutex = 0;
 
     return bRet;
 }
@@ -227,9 +226,10 @@ VM_DRV_TP_BOOL ctp_i2c_send_ext(VMUINT8 ucDeviceAddr, VMUINT16 ucBufferIndex, VM
     VM_DRV_TP_BOOL bRet = VM_DRV_TP_TRUE;
     VMUINT8 addr_h = (ucBufferIndex >> 8) & 0xFF;
     VMUINT8 addr_l = ucBufferIndex & 0xFF;
-	VMUINT32 i;
+	VMUINT32 i=0;
 
-    // vm_mutex_lock(&ctp_i2c_mutex);
+    while (ctp_i2c_mutex > 0) { i++; }
+    ctp_i2c_mutex = 1;
 
 	ctp_i2c_start();
 
@@ -248,7 +248,7 @@ VM_DRV_TP_BOOL ctp_i2c_send_ext(VMUINT8 ucDeviceAddr, VMUINT16 ucBufferIndex, VM
 	else bRet = VM_DRV_TP_FALSE;
 	ctp_i2c_stop();
 
-	// vm_mutex_unlock(&ctp_i2c_mutex);
+	ctp_i2c_mutex = 0;
 
 	return bRet;
 }
@@ -257,9 +257,10 @@ VM_DRV_TP_BOOL ctp_i2c_send_ext(VMUINT8 ucDeviceAddr, VMUINT16 ucBufferIndex, VM
 VM_DRV_TP_BOOL ctp_i2c_receive(VMUINT8 ucDeviceAddr, VMUINT8 ucBufferIndex, VMUINT8* pucData, VMUINT32 unDataLength)
 {
     VM_DRV_TP_BOOL bRet = VM_DRV_TP_TRUE;
-	VMUINT32 i;
+	VMUINT32 i = 0;
 
-    // vm_mutex_lock(&ctp_i2c_mutex);
+    while (ctp_i2c_mutex > 0) { i++; }
+    ctp_i2c_mutex = 1;
 
     ctp_i2c_start();
 
@@ -282,7 +283,7 @@ VM_DRV_TP_BOOL ctp_i2c_receive(VMUINT8 ucDeviceAddr, VMUINT8 ucBufferIndex, VMUI
 	else bRet = VM_DRV_TP_FALSE;
 	ctp_i2c_stop();
 
-    // vm_mutex_unlock(&ctp_i2c_mutex);
+    ctp_i2c_mutex = 0;
 
     return bRet;
 }
@@ -293,12 +294,11 @@ VM_DRV_TP_BOOL ctp_i2c_receive_ext(VMUINT8 ucDeviceAddr, VMUINT16 ucBufferIndex,
     VM_DRV_TP_BOOL bRet = VM_DRV_TP_TRUE;
     VMUINT8 addr_h = (ucBufferIndex >> 8) & 0xFF;
     VMUINT8 addr_l = ucBufferIndex & 0xFF;
-	VMUINT32 i;
+	VMUINT32 i = 0;
 
-    // vm_mutex_lock(&ctp_i2c_mutex);
-
+    while (ctp_i2c_mutex > 0) { i++; }
+    ctp_i2c_mutex = 1;
 	ctp_i2c_start();
-
 	if(ctp_i2c_send_byte(ucDeviceAddr & 0xFE) == CTP_I2C_ACK) {
 		if((ctp_i2c_send_byte(addr_h) == CTP_I2C_ACK) && (ctp_i2c_send_byte(addr_l) == CTP_I2C_ACK)) {
 			ctp_i2c_start();
@@ -318,7 +318,7 @@ VM_DRV_TP_BOOL ctp_i2c_receive_ext(VMUINT8 ucDeviceAddr, VMUINT16 ucBufferIndex,
 	else bRet = VM_DRV_TP_FALSE;
 	ctp_i2c_stop();
 
-    // vm_mutex_unlock(&ctp_i2c_mutex);
+    ctp_i2c_mutex = 0;
 
     return bRet;
 }

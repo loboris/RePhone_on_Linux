@@ -53,7 +53,7 @@ This implementation is specially oriented to IoT applications building.
   * <b>net</b> module, tcp & udp support, ntp support (set RTC time from NTP server)
   * <b>bt</b> Bluetooth module with possible Lua shell redirect 
   * <b>uart</b> Hardware UART (two ports) module with possible Lua shell redirect 
-  * <b>sensor</b> module (DS18B20, DHT-11, DHT-22 for now)
+  * <b>sensor</b> module: DS18B20, DS18S20, DS1822 and DS28EA00, DHT-11, DHT-22, BME280 sensors
   * hash modules: <b>md5</b>, <b>SHA1</b>, <b>SHA2</b>
   * complete <b>json</b> module (cjson)
   * <b>struct</b> module (python struct library Lua implementation)

@@ -62,7 +62,7 @@
 #define CTP_STAT_NUMBER_TOUCH     0xF
 #define GPIO_CTP_INT_PIN          gpio_ctp_eint_pin
 #define GPIO_CTP_SHUTDN_PIN       gpio_ctp_reset_pin
-#define GPIO_CTP_EINT_NO          4
+#define GPIO_CTP_EINT_NO          23 //4
 #define CONFIG_LEN (186)
 
 //hotknot
