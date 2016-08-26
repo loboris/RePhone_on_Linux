@@ -179,16 +179,19 @@ typedef struct {
 typedef struct {
 	int		cb_ref;
 	int		len;
+	int		maxlen;
 	int		more;
 	char    *reply;
-	int		busy;
+	int		ffd;
+	VMUINT8	busy;
+	VMUINT8	state;
 } cb_func_param_httpsdata_t;
 
 typedef struct {
 	int		cb_ref;
 	int		len;
 	char    *header;
-	int		busy;
+	VMUINT8	busy;
 } cb_func_param_httpsheader_t;
 
 typedef struct {

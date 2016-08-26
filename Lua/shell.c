@@ -756,46 +756,39 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
 
             case CB_FUNC_HTTPS_HEADER: {
             		cb_func_param_httpsheader_t *params = (cb_func_param_httpsheader_t*)message.user_data;
-            	    int i;
-        			luaL_Buffer b;
 
         			lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);
-        			if ((lua_type(L, -1) != LUA_TFUNCTION) && (lua_type(L, -1) != LUA_TLIGHTFUNCTION)) {
-        			  // * BAD CB function reference
-        			  lua_remove(L, -1);
-        			}
-        			else {
-        				luaL_buffinit(L, &b);
-        				for(i = 0; i < params->len; i++) {
-        					luaL_addchar(&b, params->header[i]);
-        				}
-        				luaL_pushresult(&b);
-        				lua_pcall(L, 1, 0, 0);
-        			}
+
+        	    	lua_pushlstring(L, params->header, params->len);
+					lua_pcall(L, 1, 0, 0);
 	                params->busy = 0;
                 }
                 break;
 
             case CB_FUNC_HTTPS_DATA: {
             		cb_func_param_httpsdata_t *params = (cb_func_param_httpsdata_t*)message.user_data;
-            	    int i;
-        			luaL_Buffer b;
 
-        			lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);
-        			if ((lua_type(L, -1) != LUA_TFUNCTION) && (lua_type(L, -1) != LUA_TLIGHTFUNCTION)) {
-        			  // * BAD CB function reference
-        			  lua_remove(L, -1);
-        			}
-        			else {
-        				luaL_buffinit(L, &b);
-        				for(i = 0; i < params->len; i++) {
-        					luaL_addchar(&b, params->reply[i]);
-        				}
-        				luaL_pushresult(&b);
-        				lua_pushinteger(L, params->more);
-        				lua_pcall(L, 2, 0, 0);
-        			}
-	                params->busy = 0;
+            		lua_rawgeti(L, LUA_REGISTRYINDEX, params->cb_ref);
+
+					lua_pushinteger(L, params->state);
+            	    if (params->reply != NULL) {
+            	    	lua_pushlstring(L, params->reply, params->len);
+						free(params->reply);
+            	    }
+            	    else {
+            	    	lua_pushstring(L, "__Receive_To_File__");
+            	    }
+					lua_pushinteger(L, params->len);
+					lua_pushinteger(L, params->more);
+
+					lua_pcall(L, 4, 0, 0);
+
+					params->reply = NULL;
+					params->maxlen = 0;
+					params->len = 0;
+					params->more = 0;
+					params->busy = 0;
+					params->state = 0;
                 }
                 break;
 
@@ -898,7 +891,7 @@ VMINT32 tty_thread(VM_THREAD_HANDLE thread_handle, void* user_data)
     vm_signal_wait(g_tty_signal);
 
     lua_settop(L, 0);  // clear stack
-    printf("LUA SHELL STARTED [%s]\n", LUA_RELEASE);
+    printf("LUA SHELL STARTED [ver.: %s] [%s]\n", LUA_RELEASE, LUA_RELEASE_DATE);
     //===============================================================
     dotty(L);
     //===============================================================

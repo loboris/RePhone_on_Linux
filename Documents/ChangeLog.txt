@@ -1,3 +1,7 @@
+=== Ver.: 1.0.6    26/08/2016 ===
+- https module upgraded, new functionality added, some bugs fixed
+- documentation for https module updated
+
 === Ver.: 1.0.5    25/08/2016 ===
 - BME280 sensor added to sensor module
 - documentation for sensor module updated

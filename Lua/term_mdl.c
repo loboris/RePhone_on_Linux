@@ -836,8 +836,7 @@ endread:
     	term_gotoxy( 1, term_get_lines());
     	term_clreol();
         if ((c == 'y') || (c == 'Y')) {
-    		term_putstr("Save as: ", 9);
-    		sprintf(buf, "%s", fname);
+    		sprintf(buf, "Save as %s", fname);
     		res = term_getstr(buf, 64);
     		if (res == 0) {
     			// save file

@@ -199,7 +199,7 @@ static void sntp_callback(VM_UDP_HANDLE handle, VM_UDP_EVENT event)
             break;
 
         default:
-        	printf("NTP event %d\n", event);
+        	//printf("NTP event %d\n", event);
             break;
     }
 
