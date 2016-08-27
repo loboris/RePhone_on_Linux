@@ -12,9 +12,9 @@ extern int retarget_getc(int tmo);
 
 unsigned term_num_lines = 25;
 unsigned term_num_cols = 80;
-unsigned term_cx = 0;
-unsigned term_cy = 0;
-int use_term_input = 0;
+unsigned term_cx = 1;
+unsigned term_cy = 1;
+int use_term_input = 1;
 
 // Local variables
 static unsigned int skip_0A = 0;
@@ -59,7 +59,9 @@ void term_curs(int ctype)
 void term_clrscr()
 {
   term_ansi( "2J" );
-  term_cx = term_cy = 1;
+  term_ansi( "%u;%uH", 1, 1);
+  term_cx = 1;
+  term_cy = 1;
 }
 
 // Clear to end of line

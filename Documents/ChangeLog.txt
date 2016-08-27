@@ -1,3 +1,9 @@
+=== Ver.: 1.0.7    27/08/2016 ===
+- fixed bug in term.edit(), not saving under default name
+- advanced line input mode set as default
+- some minor bug fixes
+- documentation updated with more info on installation and usage, some errors corrected
+
 === Ver.: 1.0.6    26/08/2016 ===
 - https module upgraded, new functionality added, some bugs fixed
 - documentation for https module updated

@@ -235,7 +235,7 @@ static int luaterm_getstr( lua_State* L )
     term_gotoxy( x, y );
     term_clreol();
 
-    if (res < 0) lua_pushstring(L, "");
+    if (res < 0) lua_pushnil(L);
     else lua_pushstring(L, inbuf);
 
     return 1;
@@ -390,7 +390,7 @@ static void show_editlines()
 			editor->line = lin + editor->first;
 			show_current_line(0);
 		}
-		else {
+		else { // blank lines after last editor line
 			term_gotoxy(1, lin + EDITOR_HEAD + 1);
 			term_clreol();
 			term_gotoxy(term_num_cols, lin + EDITOR_HEAD + 1);
@@ -808,6 +808,7 @@ endread:
 		editor->numlines = 1;
 	}
 	editor->show_lnum = 6;
+	// Set number of visible lines
 	editor->scrlin = term_get_lines() - EDITOR_HEAD - EDITOR_FOOT;
 	editor->changed = 0;
 
@@ -836,9 +837,10 @@ endread:
     	term_gotoxy( 1, term_get_lines());
     	term_clreol();
         if ((c == 'y') || (c == 'Y')) {
-    		sprintf(buf, "Save as %s", fname);
+    		sprintf(buf, "Save as [%s]: ", fname);
     		res = term_getstr(buf, 64);
     		if (res == 0) {
+    			if (strlen(buf) == 0) sprintf(buf, "%s", fname);
     			// save file
                 ffd = file_open(buf, O_CREAT);
                 if (ffd >= 0) {
