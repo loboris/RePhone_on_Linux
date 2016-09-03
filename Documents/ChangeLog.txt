@@ -1,3 +1,9 @@
+=== Ver.: 1.0.8    03/09/2016 ===
+- mqtt module, password max length is now 63 (was 31)
+- some bug fixes and improvements in spi module
+- initial support for resistive touch screen (XPT2046)
+- some minor bug fixes
+
 === Ver.: 1.0.7    27/08/2016 ===
 - fixed bug in term.edit(), not saving under default name
 - advanced line input mode set as default
