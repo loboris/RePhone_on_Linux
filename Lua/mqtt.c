@@ -706,7 +706,7 @@ static int mqtt_create(lua_State *L)
 		if (!lua_isnil(L, -1)) {
 		  if ( lua_isstring(L, -1) ) {
 		    pass = luaL_checklstring( L, -1, &len );
-		    if (len > 31) pass = NULL;
+		    if (len > 63) pass = NULL;
 		  }
 		}
 		if (pass == NULL) user = NULL;

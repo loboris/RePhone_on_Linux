@@ -1,7 +1,7 @@
 
 #include <stdio.h>
 #include <fcntl.h>
-#include <sys/types.h>
+#include <stdlib.h>
 #if defined(__GNUC__) /* GCC CS3 */
 #include <sys/stat.h>
 #endif
@@ -18,19 +18,26 @@
 #include "vmthread.h"
 #include "vmboard.h"
 
+#include "shell.h"
+
+
 #define LOG(args...) //printf(args)
 
 
 typedef VMINT (*vm_get_sym_entry_t)(char* symbol);
 vm_get_sym_entry_t vm_get_sym_entry;
 
-#define RESERVED_HEAP 1024*64             // heap reserved for C usage
+#define RESERVED_HEAP 1024*64				// initial size of heap reserved for C usage
 
-unsigned int g_memory_size = 1024 * 800;  // heap for lua usage, will be adjusted
-int g_memory_size_b = 0;                  // adjusted heap for C usage
-static void* g_base_address = NULL;       // base address of the lua heap
+unsigned int g_memory_size = 1024 * 800;	// heap for lua usage, ** will be adjusted **
+int g_memory_size_b = 0;					// adjusted heap for C usage
+static void* g_base_address = NULL;			// base address of the lua heap
+int g_reserved_heap = RESERVED_HEAP;
+int g_max_heap_inc = 0;
 
 extern void vm_main();
+extern int retarget_getc(int tmo);
+extern void _get_sys_vars(int doset, void *heapsz, void *wdgtmo);
 
 int __g_errno = 0;
 
@@ -66,18 +73,19 @@ extern caddr_t _sbrk(int incr)
             vm_log_fatal("malloc failed");
         } else {
             heap = base;
-            vm_log_info("Init memory success");
+            //vm_log_info("Init memory success, base: %#08x, size: %d, heap: %d", (caddr_t)g_base_address, g_memory_size, g_memory_size_b);
         }
     }
 
     prev_heap = heap;
 
-    if(heap + incr > g_base_address + g_memory_size) {
-        vm_log_fatal("Not enough memory");
+    if ((heap + incr) > (g_base_address + g_memory_size)) {
+        vm_log_fatal("Not enough memory, requested %d bytes from %p", incr, heap);
     }
     else {
     	heap += incr;
     }
+    if (incr > g_max_heap_inc) g_max_heap_inc = incr;
 
     return (caddr_t)prev_heap;
 }
@@ -85,30 +93,20 @@ extern caddr_t _sbrk(int incr)
 //---------------------------------------------
 extern int link(char* old_name, char* new_name)
 {
-    VMWCHAR ucs_oldname[32], ucs_newname[32];
-    vm_chset_ascii_to_ucs2(ucs_oldname, 32, old_name);
-    vm_chset_ascii_to_ucs2(ucs_newname, 32, new_name);
-    //return vm_fs_rename(old_name, new_name);
-    return vm_fs_rename(ucs_oldname, ucs_newname);
+    g_fcall_message.message_id = CCALL_MESSAGE_FRENAME;
+    g_CCparams.cpar1 = old_name;
+    g_CCparams.cpar2 = new_name;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
 }
 
 //----------------------------------------------
 int _open(const char* file, int flags, int mode)
 {
-    int result;
     VMUINT fs_mode;
-    VMWCHAR wfile_name[64];
-    char file_name[64];
-    char* ptr;
-
-    if(file[1] != ':') {
-        snprintf(file_name, sizeof(file_name), "C:\\%s", file);
-        ptr = file_name;
-    } else {
-        ptr = (char *)file;
-    }
-
-    vm_chset_ascii_to_ucs2(wfile_name, 64, ptr);
 
     if(flags & O_CREAT) {
         fs_mode = VM_FS_MODE_CREATE_ALWAYS_WRITE;
@@ -122,17 +120,27 @@ int _open(const char* file, int flags, int mode)
         fs_mode |= VM_FS_MODE_APPEND;
     }
 
-    result = vm_fs_open(wfile_name, fs_mode, 0);
-    LOG("_open(%s, 0x%X, 0x%X) - %d\n", file, flags, mode, result);
-    return result;
+    g_fcall_message.message_id = CCALL_MESSAGE_FOPEN;
+    g_CCparams.cpar1 = (char *)file;
+    g_CCparams.ipar1 = fs_mode;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
 }
 
 //-------------------------
 extern int _close(int file)
 {
-    LOG("_close(%d)\n", file);
-    vm_fs_close(file);
-    return 0;
+    //vm_fs_close(file);
+    g_fcall_message.message_id = CCALL_MESSAGE_FCLOSE;
+    g_CCparams.ipar1 = file;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    return g_shell_result;
 }
 
 //------------------------------------------
@@ -141,44 +149,46 @@ extern int _fstat(int file, struct stat* st)
     int size;
     st->st_mode = S_IFCHR;
 
-    if(file < 3) {
-        return 0;
-    }
+    if(file < 3) return 0;
 
-    if(vm_fs_get_size(file, &size) > 0) {
+    /*if(vm_fs_get_size(file, &size) > 0) {
+        st->st_size = size;
+    }*/
+    g_fcall_message.message_id = CCALL_MESSAGE_FSIZE;
+    g_CCparams.ipar1 = file;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
+
+    if (g_shell_result > 0) {
         st->st_size = size;
     }
-
-    LOG("_fstat(%d, 0x%X) - size: %d\n", file, (int)st, size);
     return 0;
 }
 
 //--------------------------
 extern int _isatty(int file)
 {
-    if(file < 3) {
-        return 1;
-    }
-
-    LOG("_isatty(%d)\n", file);
+    if (file < 3) return 1;
     return 0;
 }
 
 //-------------------------------------------------
 extern int _lseek(int file, int offset, int whence)
 {
-    int position;
-    int result;
+    g_fcall_message.message_id = CCALL_MESSAGE_FSEEK;
+    g_CCparams.ipar1 = file;
+    g_CCparams.ipar2 = offset;
+    g_CCparams.ipar3 = whence + 1;
+    vm_thread_send_message(g_main_handle, &g_fcall_message);
+    // wait for call to finish...
+    vm_signal_wait(g_shell_signal);
 
-    vm_fs_seek(file, offset, whence + 1);
-    result = vm_fs_get_position(file, &position);
-
-    LOG("_lseek(%d, %d, %d) - %d\n", file, offset, whence, position);
-    return position;
+    return g_shell_result;
 }
 
-//---------------------------------------
-__attribute__((weak)) int retarget_getc()
+//----------------------------------------------
+__attribute__((weak)) int retarget_getc(int tmo)
 {
     return 0;
 }
@@ -187,18 +197,57 @@ __attribute__((weak)) int retarget_getc()
 extern int _read(int file, char* ptr, int len)
 {
     if(file < 3) {
-        int i;
-        for(i = 0; i < len; i++) {
-            *ptr = retarget_getc();
-            ptr++;
+        int i, ch;
+        i = 0;
+        while (i < len) {
+            ch = retarget_getc(0);
+            if (ch >= 0) {
+                // backspace key
+                if (ch == 0x7f || ch == 0x08) {
+                    if (i > 0) {
+                        fputs("\x08 \x08", stdout);
+                        fflush(stdout);
+                        i--;
+                        ptr--;
+                    }
+                    continue;
+                }
+                // EOF(ctrl+d)
+                else if (ch == 0x04) break;
+                // end of line
+                if (ch == '\r') ch = '\n';
+                if (ch == '\n') {
+                	*ptr++ = ch;
+                	i++;
+                	break;
+                }
+                // other control character or not an acsii character
+                if (ch < 0x20 || ch >= 0x80) continue;
+
+                // echo
+    			fputc(ch, stdout);
+    			fflush(stdout);
+            	*ptr++ = ch;
+            	i++;
+            }
+            else vm_thread_sleep(10);
         }
-        return len;
-    } else {
-        int read_bytes = len;
-        int bytes;
-        bytes = vm_fs_read(file, ptr, len, &read_bytes);
-        LOG("_read(%d, %s, %d, %d) - %d\n", file, ptr, len, read_bytes, bytes);
-        return bytes;
+        for (int j=0; j<i; j++) {
+            fputs("\x08 \x08", stdout);
+        }
+        fflush(stdout);
+        return i;
+    }
+    else {
+        g_fcall_message.message_id = CCALL_MESSAGE_FREAD;
+        g_CCparams.ipar1 = file;
+        g_CCparams.ipar2 = len;
+        g_CCparams.cpar1 = ptr;
+        vm_thread_send_message(g_main_handle, &g_fcall_message);
+        // wait for call to finish...
+        vm_signal_wait(g_shell_signal);
+
+        return g_shell_result;
     }
 }
 
@@ -219,11 +268,15 @@ extern int _write(int file, char* ptr, int len)
         }
         return len;
     } else {
-        VMUINT written_bytes;
+        g_fcall_message.message_id = CCALL_MESSAGE_FWRITE;
+        g_CCparams.ipar1 = file;
+        g_CCparams.ipar2 = len;
+        g_CCparams.cpar1 = ptr;
+        vm_thread_send_message(g_main_handle, &g_fcall_message);
+        // wait for call to finish...
+        vm_signal_wait(g_shell_signal);
 
-        vm_fs_write(file, ptr, len, &written_bytes);
-        LOG("_write(%d, %s, %d, %d)\n", file, ptr, len, written_bytes);
-        return written_bytes;
+        return g_shell_result;
     }
 }
 
@@ -271,23 +324,31 @@ void gcc_entry(unsigned int entry, unsigned int init_array_start, unsigned int c
     __init_array ptr;
     vm_get_sym_entry = (vm_get_sym_entry_t)entry;
 
+    // Get system variables
+    _get_sys_vars(1,0,0);
+
+    // get maximum possible heap size
     while (g_base_address == NULL) {
     	g_base_address = vm_malloc(g_memory_size);
         if (g_base_address == NULL) {
-        	g_memory_size -= 1024;
+        	g_memory_size -= 256;
         }
         else break;
     }
     vm_free(g_base_address);
+
     g_base_address = NULL;
-    g_memory_size_b = RESERVED_HEAP;
-    g_memory_size -= RESERVED_HEAP;
+    g_memory_size_b = g_reserved_heap;
+    g_memory_size -= g_reserved_heap;
+
+    // allocate heap size for Lua
 	g_base_address = vm_malloc(g_memory_size);
 
+	// find maximum C heap size
     while ((g_base_address_b == NULL) && (g_memory_size_b > 0)) {
     	g_base_address_b = vm_malloc(g_memory_size_b);
         if (g_base_address_b == NULL) {
-        	g_memory_size_b -= 1024;
+        	g_memory_size_b -= 256;
         }
         else break;
     }
@@ -300,9 +361,7 @@ void gcc_entry(unsigned int entry, unsigned int init_array_start, unsigned int c
         ptr[i]();
     }
 
-    /*while (vm_time_ust_get_count() < 10000000) {
-    	vm_thread_sleep(10);
-    }*/
+    // start main prog
     vm_main();
 }
 
@@ -318,31 +377,35 @@ typedef struct {
     VMCHAR mux[VM_DCL_PIN_MODE_MAX];
 } VM_DCL_PIN_MUX;
 
-#define VM_DCL_PIN_TABLE_SIZE 22
+#define VM_DCL_PIN_TABLE_SIZE 25
 
 static const VM_DCL_PIN_MUX pinTable[VM_DCL_PIN_TABLE_SIZE] = {
-    { VM_PIN_P0, 0, 0, VM_DCL_PWM_4, { VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_ADC, 0, VM_DCL_PIN_MODE_PWM, 0, 0, 0, 0, 0 } },		//GPIO3   PWM1 ADC
+    { VM_PIN_P0, 0, 12, VM_DCL_PWM_4, { VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_ADC, 0, VM_DCL_PIN_MODE_PWM, 0, 0, 0, 0, 0 } },	//GPIO3   PWM1 ADC12
     { VM_PIN_P1, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, VM_DCL_PIN_MODE_SPI, 0, 0, 0, 0, 0 } },									//GPIO27  SCK
     { VM_PIN_P2, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, VM_DCL_PIN_MODE_SPI, 0, 0, 0, 0, 0 } },									//GPIO28  MOSI
     { VM_PIN_P3, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, VM_DCL_PIN_MODE_SPI, 0, 0, 0, 0, 0 } },									//GPIO29  MISO
-    { VM_PIN_P4, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO19
+    { VM_PIN_P4, 0, 0, VM_DCL_PWM_4, { VM_DCL_PIN_MODE_GPIO, 0, 0, VM_DCL_PIN_MODE_PWM, 0, 0, 0, 0, 0, 0 } },						//GPIO19  PWM1
     { VM_PIN_P5, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_I2C, 0, 0, 0, 0, 0, 0, 0, 0 } },									//GPIO43  SCL
     { VM_PIN_P6, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_I2C, 0, 0, 0, 0, 0, 0, 0, 0 } },									//GPIO44  SDA
-    { VM_PIN_P7, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_UART, 0, 0, 0, 0, 0, 0, 0, 0 } },									//GPIO10  URXD1
-    { VM_PIN_P8, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_UART, 0, 0, 0, 0, 0, 0, 0, 0 } },									//GPIO11  UTSD1
-    { VM_PIN_P9, 1, 15, 0, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_EINT, VM_DCL_PIN_MODE_ADC, 0, 0, 0, 0, 0, 0, 0 } },				//GPIO1   EINT1  ADC15
-    { VM_PIN_P10, 2, 13, 0, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_EINT, VM_DCL_PIN_MODE_ADC, 0, 0, 0, 0, 0, 0, 0 } },				//GPIO2   EINT2  ADC13
-    { VM_PIN_P11, 23, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, 0, 0, 0, 0, 0, 0, 0 } },								//AGPI52  EINT23
-    { VM_PIN_P12, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_UART, 0, 0, 0, 0, 0, 0, 0 } },								//GPIO17  UTXD2
-    { VM_PIN_P13, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, VM_DCL_PIN_MODE_UART, 0, 0, 0, 0, 0, 0 } },								//GPIO15  UART1_CTS(in)
-    { VM_PIN_P14, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_UART, 0, 0, 0, 0, 0, 0, 0 } },								//GPIO12  UARTRXD2
+    { VM_PIN_P7, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_UART, 0, 0, 0, 0, 0, 0, 0, 0 } },									//GPIO10  UART1_RX
+    { VM_PIN_P8, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_UART, 0, 0, 0, 0, 0, 0, 0, 0 } },									//GPIO11  UART1_TX
+    { VM_PIN_P9, 1, 13, 0, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_EINT, VM_DCL_PIN_MODE_ADC, VM_DCL_PIN_MODE_UART, 0, 0, 0, 0, 0, 0 } },	//GPIO1   EINT1  ADC13  UART3_TX
+    { VM_PIN_P10, 2, 11, VM_DCL_PWM_1, { VM_DCL_PIN_MODE_GPIO, VM_DCL_PIN_MODE_EINT, VM_DCL_PIN_MODE_ADC, 0, VM_DCL_PIN_MODE_PWM, 0, 0, 0, 0, 0 } },	//GPIO2   EINT2  ADC11
+    //{ VM_PIN_P11, 15, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, VM_DCL_PIN_MODE_EINT, 0, 0, 0, 0, 0 } },								//GPIO25  EINT15
+    { VM_PIN_P12, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO17  RED_LED
+    { VM_PIN_P13, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO15  GREEN_LED
+    { VM_PIN_P14, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO12  BLUE_LED
     { VM_PIN_P15, 11, 0, VM_DCL_PWM_1, { VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, VM_DCL_PIN_MODE_PWM, 0, 0, 0, 0, 0, 0 } },	//GPIO13  EINT11 PWM0
     { VM_PIN_P16, 13, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, 0, 0, 0, 0, 0, 0, 0 } },								//GPIO18  EINT13
     { VM_PIN_P17, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO47
     { VM_PIN_P18, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO48
     { VM_PIN_P19, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO49
-    { VM_PIN_P20, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO50
-    { VM_PIN_P21, 20, 0, 0, {VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, 0 , 0, 0, 0, 0, 0, 0} }									//GPIO46  EINT20
+    { VM_PIN_P20, 22, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, 0, 0, 0, 0, 0, 0, 0 } },								//GPIO50  EINT22
+    { VM_PIN_P21, 20, 0, 0, {VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, 0 , 0, 0, 0, 0, 0, 0} },								//GPIO46  EINT20
+    { VM_PIN_P22, 16, 0, 0, {VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, 0 , 0, 0, 0, 0, 0, 0} },								//GPIO30  EINT16
+    { VM_PIN_P23, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO38
+    { VM_PIN_P24, 0, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },													//GPIO39
+    { VM_PIN_P25, 23, 0, 0, { VM_DCL_PIN_MODE_GPIO, 0, VM_DCL_PIN_MODE_EINT, 0, 0, 0, 0, 0, 0, 0 } }								//GPIO52  EINT23
 };
 
 //--------------------------------------------------------------------

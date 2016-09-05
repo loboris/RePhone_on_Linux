@@ -28,12 +28,12 @@
 		<link>
 			<name>common</name>
 			<type>2</type>
-			<location>/home/LoBo2_Razno/RePhone/eclipse-linux/rephone/common</location>
+			<location>/home/Boris/Programiranje/RePhone/common</location>
 		</link>
 		<link>
 			<name>include</name>
 			<type>2</type>
-			<location>/home/LoBo2_Razno/RePhone/eclipse-linux/rephone/include</location>
+			<location>/home/Boris/Programiranje/RePhone/include</location>
 		</link>
 	</linkedResources>
 </projectDescription>

@@ -3,7 +3,8 @@ WORKSPACE_PATH = ../
 
 PROJECT = js
 
-OBJECTS += main.o retarget.o v7.o sj_prompt.o gpio.o audio.o gsm.o
+OBJECTS += main.o retarget.o v7.o sj_prompt.o gpio.o audio.o gsm.o shell.o \
+$(WORKSPACE_PATH)common/CheckSumUtils.o
 CC_SYMBOLS += -DNO_BSD_SOCKETS
 
 # ===============================================================================
@@ -14,7 +15,7 @@ CC_SYMBOLS += -DNO_BSD_SOCKETS
 GCC_BIN ?= /usr/bin/
 
 OBJECTS += $(WORKSPACE_PATH)common/lcd_sitronix_st7789s.o $(WORKSPACE_PATH)common/tp_goodix_gt9xx.o $(WORKSPACE_PATH)common/tp_i2c.o
-SYS_OBJECTS += $(WORKSPACE_PATH)common/gccmain.o
+SYS_OBJECTS += gccmain.o
 INCLUDE_PATHS += -I. -I$(WORKSPACE_PATH)include -I$(WORKSPACE_PATH)common
 LIBRARY_PATHS += -L$(WORKSPACE_PATH)lib
 LIBRARIES += $(WORKSPACE_PATH)lib/LINKIT10/armgcc/percommon.a -lm

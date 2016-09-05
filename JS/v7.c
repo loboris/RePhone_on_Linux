@@ -38,6 +38,8 @@
  * threads, a care should be taken to serialize accesses.
  */
 
+#include "vmdatetime.h"
+
 #ifndef V7_HEADER_INCLUDED
 #define V7_HEADER_INCLUDED
 
@@ -17313,9 +17315,14 @@ static etimeint_t ecma_MakeDate(etimeint_t day, etimeint_t time) {
 
 static void d_gettime(etime_t *t) {
 #ifndef _WIN32
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  *t = (etime_t) tv.tv_sec * 1000 + (etime_t) tv.tv_usec / 1000;
+  //struct timeval tv;
+  VMUINT rtct;
+  //vm_time_get_unix_time(&rtct);
+  rtct = vm_time_ust_get_count();
+  //gettimeofday(&tv, NULL);
+  //*t = (etime_t) tv.tv_sec * 1000 + (etime_t) tv.tv_usec / 1000;
+  //*t = (etime_t) rtct * 1000;
+  *t = (etime_t) rtct * 1000 + (etime_t) rtct / 1000;
 #else
   /* TODO(mkm): use native windows API in order to get ms granularity */
   *t = time(NULL) * 1000.0;

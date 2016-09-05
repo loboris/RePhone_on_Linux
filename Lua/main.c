@@ -101,7 +101,7 @@ static uint32_t alarm_state = 0;
 static cb_func_param_int_t alarm_cb_param;
 
 static VM_WDT_HANDLE wdg_handle = -1;
-static VM_TIMER_ID_NON_PRECISE wdg_timer_id = NULL;
+static VM_TIMER_ID_NON_PRECISE wdg_timer_id = -1;
 
 static cb_func_param_int_t reboot_cb_params;
 

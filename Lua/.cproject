@@ -23,9 +23,9 @@
 							<builder id="cdt.managedbuild.builder.gnu.cross.637745845" keepEnvironmentInBuildfile="false" managedBuildOn="false" name="Gnu Make Builder" superClass="cdt.managedbuild.builder.gnu.cross"/>
 							<tool id="cdt.managedbuild.tool.gnu.cross.c.compiler.1560123144" name="Cross GCC Compiler" superClass="cdt.managedbuild.tool.gnu.cross.c.compiler">
 								<option id="gnu.c.compiler.option.include.paths.470174954" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="/home/LoBo2_Razno/RePhone/eclipse-linux/rephone/Lua"/>
-									<listOptionValue builtIn="false" value="/home/LoBo2_Razno/RePhone/eclipse-linux/rephone/common"/>
-									<listOptionValue builtIn="false" value="/home/LoBo2_Razno/RePhone/eclipse-linux/rephone/include"/>
+									<listOptionValue builtIn="false" value="/home/Boris/Programiranje/RePhone/Lua"/>
+									<listOptionValue builtIn="false" value="/home/Boris/Programiranje/RePhone/include"/>
+									<listOptionValue builtIn="false" value="/home/Boris/Programiranje/RePhone/common"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.1709368094" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
 							</tool>

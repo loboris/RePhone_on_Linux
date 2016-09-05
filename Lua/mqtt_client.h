@@ -110,7 +110,7 @@ typedef struct {
   word16			keep_alive_cnt;
   char				client_id[32];
   char				username[32];
-  char				password[32];
+  char				password[64];
   byte				tx_buf[MAX_BUFFER_SIZE];
   byte				rx_buf[MAX_BUFFER_SIZE];
   word32			cmd_timeout_ms;

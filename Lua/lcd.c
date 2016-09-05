@@ -8,7 +8,6 @@
 #include <fcntl.h>
 #include "tjpgd.h"
 
-//#include "vmdcl_gpio.h"
 #include "vmdcl.h"
 #include "vmtype.h"
 #include "vmlog.h"
@@ -17,6 +16,7 @@
 #include "vmstdlib.h"
 #include "vmchset.h"
 #include "vmtouch.h"
+#include "vmdcl_gpio.h"
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -193,9 +193,11 @@ static uint8_t *userfont = NULL;
 
 extern int g_graphics_ready;
 extern VM_DCL_HANDLE g_spi_handle;
-extern VM_DCL_HANDLE g_spi_cs_handle;
-extern VM_DCL_HANDLE g_spi_dc_handle;
+extern t_spi_params g_spi;
+extern int _setup_spi();
+extern int _spi_wrrd_data(VMUINT8 *temp_buf, int len);
 extern int _LcdSpiTransfer(uint8_t *buf, int len);
+extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
 
 static int TFT_type = -1;
 static uint16_t _width = XADOW_WIDTH;
@@ -212,6 +214,7 @@ static int rowstart = 0;				// May be overridden in init func
 static uint8_t orientation = PORTRAIT;	// screen orientation
 static uint8_t rotation = 0;			// font rotation
 static uint8_t tp_initialized = 0;		// touch panel initialized flag
+static VM_DCL_HANDLE tp_cs_handle = VM_DCL_HANDLE_INVALID;
 
 typedef struct {
 	uint8_t 	*font;
@@ -1777,7 +1780,7 @@ int lcd_init( lua_State* L )
   uint8_t typ = luaL_checkinteger( L, 1);
 
   if (typ < 8) {
-	  if ((g_spi_handle == VM_DCL_HANDLE_INVALID) || (g_spi_dc_handle == VM_DCL_HANDLE_INVALID) || (g_spi_cs_handle == VM_DCL_HANDLE_INVALID)) {
+	  if ((g_spi_handle == VM_DCL_HANDLE_INVALID) || (g_spi.g_spi_dc_handle == VM_DCL_HANDLE_INVALID) || (g_spi.g_spi_cs_handle == VM_DCL_HANDLE_INVALID)) {
 		vm_log_error("SPI not yet initialized");
 		return 0;
 	  }
@@ -2852,6 +2855,179 @@ static int lcd_on_touch(lua_State *L)
 }
 
 
+//-----------------------------------
+static int _tp_get_data(VMUINT8 type)
+{
+	VMUINT8 buf[4];
+	int result;
+	vm_dcl_control(tp_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL); // CS=0
+	buf[0] = type;
+	buf[1] = 0;
+	buf[1] = 0;
+	result = _spi_wrrd_data(buf,3);
+	vm_dcl_control(tp_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL); // CS=1
+
+	if (result == VM_DCL_STATUS_OK) result = (VMUINT32)( ((buf[1] & 0x7F) << 5) | (buf[2] >> 3) );
+	return result;
+}
+
+//-----------------------------------------------
+static int tp_get_data(VMUINT8 type, int samples)
+{
+	int n, result, val = 0;
+	VMUINT32 i = 0;
+	VMUINT32 vbuf[18];
+	VMUINT32 minval, maxval, dif;
+	//VM_TIME_UST_COUNT tmstart = vm_time_ust_get_count();
+	//VM_TIME_UST_COUNT tmstop;
+
+    if (samples < 3) samples = 1;
+    if (samples > 18) samples = 18;
+
+    // one dummy read
+    result = _tp_get_data(type);
+
+    // read data
+	while (i < 10) {
+    	minval = 5000;
+    	maxval = 0;
+		// get values
+		for (n=0;n<samples;n++) {
+		    result = _tp_get_data(type);
+			if (result < 0) break;
+
+			vbuf[n] = result;
+			if (result < minval) minval = result;
+			if (result > maxval) maxval = result;
+		}
+		if (result < 0) break;
+		dif = maxval - minval;
+		if (dif < 40) break;
+		i++;
+    }
+	if (result < 0) return -1;
+
+	if (samples > 2) {
+		// remove one min value
+		for (n = 0; n < samples; n++) {
+			if (vbuf[n] == minval) {
+				vbuf[n] = 5000;
+				break;
+			}
+		}
+		// remove one max value
+		for (n = 0; n < samples; n++) {
+			if (vbuf[n] == maxval) {
+				vbuf[n] = 5000;
+				break;
+			}
+		}
+		for (n = 0; n < samples; n++) {
+			if (vbuf[n] < 5000) val += vbuf[n];
+		}
+		val /= (samples-2);
+	}
+	else val = vbuf[0];
+
+	/*
+	tmstop = vm_time_ust_get_count();
+	VMUINT32 dur;
+	if (tmstop > tmstart) dur = tmstop - tmstart;
+	else dur = tmstop + (0xFFFFFFFF - tmstart);
+	//printf("Read %02X: time=%d, val=%d, min=%d, max=%d, dif=%d\n", type, dur, val, minval, maxval, (maxval-minval));
+	*/
+
+    return val;
+}
+
+//-------------------------------------
+static int _lcd_get_touch(lua_State *L)
+{
+	t_spi_params temp_spi;
+	int result = 0;
+
+	g_shell_result = 1;
+
+	// save spi settings
+	memcpy(&temp_spi, &g_spi, sizeof(t_spi_params));
+	g_spi.conf_data.clock_high_time = 15;
+	g_spi.conf_data.clock_low_time = 15;
+	g_spi.conf_data.clock_polarity = VM_DCL_SPI_CLOCK_POLARITY_1;
+	g_spi.conf_data.clock_phase = VM_DCL_SPI_CLOCK_PHASE_1;
+
+	result = _setup_spi();
+	if (result < 0) goto exit;
+
+    int X=0, Y=0, Z=0;
+
+    result = tp_get_data(0xB0, 3);
+	if (result < 0) goto exit;
+
+	if (result > 50)  {
+		Z = result;
+
+		result = tp_get_data(0xD0, 10);
+		if (result < 0) goto exit;
+		X = result;
+
+		result = tp_get_data(0x90, 10);
+		if (result < 0) goto exit;
+		Y = result;
+	}
+
+exit:
+	// restore spi settings
+	memcpy(&g_spi, &temp_spi, sizeof(t_spi_params));
+	int status = _setup_spi();
+
+	if (result >= 0) {
+		g_shell_result = 3;
+		lua_pushinteger(L, Z);
+		lua_pushinteger(L, X);
+		lua_pushinteger(L, Y);
+	}
+	else lua_pushinteger(L, result);
+	vm_signal_post(g_shell_signal);
+	return 0;
+}
+
+//====================================
+static int lcd_get_touch(lua_State *L)
+{
+	if ((g_spi_handle == VM_DCL_HANDLE_INVALID) || (tp_cs_handle == VM_DCL_HANDLE_INVALID)) {
+		// spi not setup
+		lua_pushinteger(L, -1);
+		return 1;
+	}
+
+	remote_CCall(L, &_lcd_get_touch);
+	return g_shell_result;
+}
+
+//=======================================
+static int lcd_set_touch_cs(lua_State *L)
+{
+	if (tp_cs_handle != VM_DCL_HANDLE_INVALID) {
+    	vm_dcl_close(tp_cs_handle);
+    	tp_cs_handle = VM_DCL_HANDLE_INVALID;
+	}
+
+    int cs = luaL_checkinteger(L, 1);
+    gpio_get_handle(cs, &tp_cs_handle);
+    if (tp_cs_handle != VM_DCL_HANDLE_INVALID) {
+        vm_dcl_control(tp_cs_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
+        vm_dcl_control(tp_cs_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+        vm_dcl_control(tp_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+        lua_pushinteger(L, 0);
+    }
+    else {
+    	tp_cs_handle = VM_DCL_HANDLE_INVALID;
+		vm_log_error("error initializing TP CS on pin #%d", cs);
+	    lua_pushinteger(L, -1);
+    }
+    return 1;
+}
+
 
 #undef MIN_OPT_LEVEL
 #define MIN_OPT_LEVEL 0
@@ -2894,6 +3070,8 @@ const LUA_REG_TYPE lcd_map[] =
   { LSTRKEY( "hsb2rgb" ), LFUNCVAL( lcd_HSBtoRGB )},
   { LSTRKEY( "setbrightness" ), LFUNCVAL( lcd_set_brightness )},
   { LSTRKEY( "ontouch" ), LFUNCVAL( lcd_on_touch )},
+  { LSTRKEY( "gettouch" ), LFUNCVAL( lcd_get_touch )},
+  { LSTRKEY( "set_touch_cs" ), LFUNCVAL( lcd_set_touch_cs )},
   
 #if LUA_OPTIMIZE_MEMORY > 0
   { LSTRKEY( "PORTRAIT" ),       LNUMVAL( PORTRAIT ) },

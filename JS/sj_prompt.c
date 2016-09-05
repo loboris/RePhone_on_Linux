@@ -27,7 +27,7 @@ struct sj_prompt_state {
 static struct sj_prompt_state s_sjp;
 
 extern void retarget_putc(char);
-extern void retarget_puts(char *);
+extern void retarget_puts(const char *);
 
 static void process_js(char *cmd);
 static void process_prompt_char(char ch);
@@ -110,7 +110,7 @@ static const char help_str[] =
     "All other input is treated as JS\n";
 
 static void process_help(int argc, char *argv[], unsigned int param) {
-  retarget_puts(help_str);
+  retarget_puts((const char *)help_str);
 }
 
 typedef void (*f_cmdprocessor)(int argc, char *argv[], unsigned int param);

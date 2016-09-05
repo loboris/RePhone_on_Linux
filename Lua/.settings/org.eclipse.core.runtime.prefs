@@ -1,0 +1,5 @@
+content-types/enabled=false
+content-types/org.eclipse.cdt.core.cHeader/file-extensions=h
+content-types/org.eclipse.cdt.core.cSource/file-extensions=c
+content-types/org.eclipse.cdt.core.cSource/file-names=makefile
+eclipse.preferences.version=1

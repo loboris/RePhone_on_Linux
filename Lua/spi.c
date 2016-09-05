@@ -27,19 +27,15 @@ typedef struct _VM_READ_BUFFER
 	VMUINT8 read_len;
 }VM_READ_BUFFER;
 
-
 typedef struct _VM_WRITE_BUFFER
 {
     VMUINT8 write_buffer[VM_SPI_WRITE_BUFFER_SIZE];
 	VMUINT8 write_len;
 }VM_WRITE_BUFFER;
 
-VM_DCL_HANDLE g_spi_handle = VM_DCL_HANDLE_INVALID;
-VM_DCL_HANDLE g_spi_cs_handle = VM_DCL_HANDLE_INVALID;
-VM_DCL_HANDLE g_spi_dc_handle = VM_DCL_HANDLE_INVALID;
 
-static VMUINT32 cs_pin_mask = 0;
-static VMUINT32 dc_pin_mask = 0;
+VM_DCL_HANDLE g_spi_handle = VM_DCL_HANDLE_INVALID;
+t_spi_params g_spi;
 
 // SPI data transfer buffers
 static VM_READ_BUFFER* g_spi_read_data;
@@ -51,46 +47,11 @@ extern int gpio_get_handle(int pin, VM_DCL_HANDLE* handle);
 
 
 
-// Lua: spi.setup(])
-//================================
-static int _spi_setup(lua_State* L)
+//------------------
+int _setup_spi(void)
 {
 	VM_DCL_HANDLE gpio_handle;
-	vm_dcl_spi_config_parameter_t conf_data;
-    int result = VM_DCL_HANDLE_INVALID;
-    int pmd = VM_TRUE;
-
-    if (g_spi_cs_handle != VM_DCL_HANDLE_INVALID) {
-    	vm_dcl_close(g_spi_cs_handle);
-    	g_spi_cs_handle = VM_DCL_HANDLE_INVALID;
-    }
-    if (g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
-    	vm_dcl_close(g_spi_dc_handle);
-    	g_spi_dc_handle = VM_DCL_HANDLE_INVALID;
-    }
-
-    /*/ SPI_MOSI gpio config
-	gpio_handle = vm_dcl_open(VM_DCL_GPIO, SPI_MOSI_PIN_NAME);
-    if (gpio_handle == VM_DCL_HANDLE_INVALID) goto exit;
-    vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_SET_MODE_4, NULL);
-	vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_ENABLE_PULL, NULL);
-	vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
-
-	// SPI_MISO gpio config
-	gpio_handle = vm_dcl_open(VM_DCL_GPIO, SPI_MISO_PIN_NAME);
-    if (gpio_handle == VM_DCL_HANDLE_INVALID) goto exit;
-
-    vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_SET_MODE_4, NULL);
-	vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_ENABLE_PULL, NULL);
-	vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);
-
-	// SPI_SCL gpio config
-	gpio_handle = vm_dcl_open(VM_DCL_GPIO, SPI_SCLK_PIN_NAME);
-    if (gpio_handle == VM_DCL_HANDLE_INVALID) goto exit;
-
-	vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_SET_MODE_4, NULL);
-	vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_ENABLE_PULL, NULL);
-	vm_dcl_control(gpio_handle, VM_DCL_GPIO_COMMAND_SET_PULL_HIGH, NULL);*/
+    int result = -1;
 
 	if (VM_DCL_HANDLE_INVALID == g_spi_handle) {
 		gpio_handle = vm_dcl_open(VM_DCL_GPIO, SPI_MOSI_PIN_NAME);
@@ -136,18 +97,42 @@ static int _spi_setup(lua_State* L)
 		}
 	}
 
+	result = vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_SET_CONFIG_PARAMETER,(void *)&g_spi.conf_data);
+
+	if (VM_DCL_STATUS_OK != result) {
+		vm_log_error("set spi config parameters failed: %d", result);
+	}
+	else {
+		vm_dcl_spi_mode_t spi_data_mode;
+		//spi_data_mode.parameter = 0;
+		spi_data_mode.mode = VM_DCL_SPI_MODE_PAUSE;
+		spi_data_mode.is_enabled = g_spi.pmd;
+		vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_SET_MODE,(void *)&spi_data_mode);
+
+		spi_data_mode.mode = VM_DCL_SPI_MODE_DEASSERT;
+		spi_data_mode.is_enabled = g_spi.pmd ^ 0x01;
+		vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_SET_MODE,(void *)&spi_data_mode);
+	}
+
+exit:
+    return result;
+}
+
+//=================================
+static int _spi_setup(lua_State* L)
+{
 	// set default config
-	conf_data.clock_high_time = 4;
-	conf_data.clock_low_time = 4;
-	conf_data.cs_hold_time = 1;
-	conf_data.cs_idle_time = 1;
-	conf_data.cs_setup_time= 1;
-	conf_data.clock_polarity = VM_DCL_SPI_CLOCK_POLARITY_0;
-	conf_data.clock_phase = VM_DCL_SPI_CLOCK_PHASE_0;
-	conf_data.rx_endian = VM_DCL_SPI_ENDIAN_LITTLE;
-	conf_data.tx_endian = VM_DCL_SPI_ENDIAN_LITTLE;
-	conf_data.rx_msbf = VM_DCL_SPI_MSB_FIRST;
-	conf_data.tx_msbf = VM_DCL_SPI_MSB_FIRST;
+	g_spi.conf_data.clock_high_time = 4;
+	g_spi.conf_data.clock_low_time = 4;
+	g_spi.conf_data.cs_hold_time = 1;
+	g_spi.conf_data.cs_idle_time = 1;
+	g_spi.conf_data.cs_setup_time= 1;
+	g_spi.conf_data.clock_polarity = VM_DCL_SPI_CLOCK_POLARITY_0;
+	g_spi.conf_data.clock_phase = VM_DCL_SPI_CLOCK_PHASE_0;
+	g_spi.conf_data.rx_endian = VM_DCL_SPI_ENDIAN_LITTLE;
+	g_spi.conf_data.tx_endian = VM_DCL_SPI_ENDIAN_LITTLE;
+	g_spi.conf_data.rx_msbf = VM_DCL_SPI_MSB_FIRST;
+	g_spi.conf_data.tx_msbf = VM_DCL_SPI_MSB_FIRST;
 
 	if (lua_istable(L, 1)) {
 		int param;
@@ -159,20 +144,20 @@ static int _spi_setup(lua_State* L)
 		    if ((param >= 0) && (param < 4)) {
 		        switch (param) {
 		            case 0:
-		            	conf_data.clock_polarity = VM_DCL_SPI_CLOCK_POLARITY_0;
-		            	conf_data.clock_phase = VM_DCL_SPI_CLOCK_PHASE_0;
+		            	g_spi.conf_data.clock_polarity = VM_DCL_SPI_CLOCK_POLARITY_0;
+		            	g_spi.conf_data.clock_phase = VM_DCL_SPI_CLOCK_PHASE_0;
 		                break;
 		            case 1:
-		            	conf_data.clock_polarity = VM_DCL_SPI_CLOCK_POLARITY_0;
-		            	conf_data.clock_phase = VM_DCL_SPI_CLOCK_PHASE_1;
+		            	g_spi.conf_data.clock_polarity = VM_DCL_SPI_CLOCK_POLARITY_0;
+		            	g_spi.conf_data.clock_phase = VM_DCL_SPI_CLOCK_PHASE_1;
 		                break;
 		            case 2:
-		            	conf_data.clock_polarity = VM_DCL_SPI_CLOCK_POLARITY_1;
-		            	conf_data.clock_phase = VM_DCL_SPI_CLOCK_PHASE_0;
+		            	g_spi.conf_data.clock_polarity = VM_DCL_SPI_CLOCK_POLARITY_1;
+		            	g_spi.conf_data.clock_phase = VM_DCL_SPI_CLOCK_PHASE_0;
 		                break;
 		            case 3:
-		            	conf_data.clock_polarity = VM_DCL_SPI_CLOCK_POLARITY_1;
-		            	conf_data.clock_phase = VM_DCL_SPI_CLOCK_PHASE_1;
+		            	g_spi.conf_data.clock_polarity = VM_DCL_SPI_CLOCK_POLARITY_1;
+		            	g_spi.conf_data.clock_phase = VM_DCL_SPI_CLOCK_PHASE_1;
 		                break;
 		        }
 		    }
@@ -184,12 +169,12 @@ static int _spi_setup(lua_State* L)
 		  if ( lua_isnumber(L, -1) ) {
 		    param = luaL_checkinteger( L, -1 );
 		    if (param == 0) {
-		    	conf_data.rx_endian = VM_DCL_SPI_ENDIAN_LITTLE;
-		    	conf_data.tx_endian = VM_DCL_SPI_ENDIAN_LITTLE;
+		    	g_spi.conf_data.rx_endian = VM_DCL_SPI_ENDIAN_LITTLE;
+		    	g_spi.conf_data.tx_endian = VM_DCL_SPI_ENDIAN_LITTLE;
 		    }
 		    else if (param == 1) {
-		    	conf_data.rx_endian = VM_DCL_SPI_ENDIAN_BIG;
-		    	conf_data.tx_endian = VM_DCL_SPI_ENDIAN_BIG;
+		    	g_spi.conf_data.rx_endian = VM_DCL_SPI_ENDIAN_BIG;
+		    	g_spi.conf_data.tx_endian = VM_DCL_SPI_ENDIAN_BIG;
 		    }
 		  }
 		}
@@ -199,12 +184,12 @@ static int _spi_setup(lua_State* L)
 		  if ( lua_isnumber(L, -1) ) {
 		    param = luaL_checkinteger( L, -1 );
 		    if (param == 0) {
-		    	conf_data.rx_msbf = VM_DCL_SPI_LSB_FIRST;
-		    	conf_data.tx_msbf = VM_DCL_SPI_LSB_FIRST;
+		    	g_spi.conf_data.rx_msbf = VM_DCL_SPI_LSB_FIRST;
+		    	g_spi.conf_data.tx_msbf = VM_DCL_SPI_LSB_FIRST;
 		    }
 		    else if (param == 1) {
-		    	conf_data.rx_msbf = VM_DCL_SPI_MSB_FIRST;
-		    	conf_data.tx_msbf = VM_DCL_SPI_MSB_FIRST;
+		    	g_spi.conf_data.rx_msbf = VM_DCL_SPI_MSB_FIRST;
+		    	g_spi.conf_data.tx_msbf = VM_DCL_SPI_MSB_FIRST;
 		    }
 		  }
 		}
@@ -214,8 +199,8 @@ static int _spi_setup(lua_State* L)
 		  if ( lua_isnumber(L, -1) ) {
 		    param = luaL_checkinteger( L, -1 );
 		    if ((param >= 0) && (param <= 255)) {
-		    	conf_data.clock_high_time = param;
-		    	conf_data.clock_low_time = param;
+		    	g_spi.conf_data.clock_high_time = param;
+		    	g_spi.conf_data.clock_low_time = param;
 				vm_log_debug("SPI clock is %d kHz", 32000/(param+1));
 		    }
 		  }
@@ -225,7 +210,7 @@ static int _spi_setup(lua_State* L)
 		if (!lua_isnil(L, -1)) {
 		  if ( lua_isnumber(L, -1) ) {
 		    param = luaL_checkinteger( L, -1 );
-		    if ((param == 0) || (param == 1)) pmd = param;
+		    if ((param == 0) || (param == 1)) g_spi.pmd = param;
 		  }
 		}
 
@@ -237,8 +222,8 @@ static int _spi_setup(lua_State* L)
 		    if (param > 16000) param = 16000;
 		    param = (32000 / param) - 1;
 		    if (param > 255) param = 255;
-	    	conf_data.clock_high_time = param;
-	    	conf_data.clock_low_time = param;
+		    g_spi.conf_data.clock_high_time = param;
+		    g_spi.conf_data.clock_low_time = param;
 			vm_log_debug("SPI clock is %d kHz", 32000/(param+1));
 		  }
 		}
@@ -246,16 +231,20 @@ static int _spi_setup(lua_State* L)
 		lua_getfield(L, 1, "cs");
 		if (!lua_isnil(L, -1)) {
 		  if ( lua_isnumber(L, -1) ) {
+			if (g_spi.g_spi_cs_handle != VM_DCL_HANDLE_INVALID) {
+				vm_dcl_close(g_spi.g_spi_cs_handle);
+				g_spi.g_spi_cs_handle = VM_DCL_HANDLE_INVALID;
+			}
 		    param = luaL_checkinteger( L, -1 );
-		    gpio_get_handle(param, &g_spi_cs_handle);
-		    if (g_spi_cs_handle != VM_DCL_HANDLE_INVALID) {
-		        vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
-		        vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
-		        vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
-		        cs_pin_mask = (1, (1 << param));
+		    gpio_get_handle(param, &g_spi.g_spi_cs_handle);
+		    if (g_spi.g_spi_cs_handle != VM_DCL_HANDLE_INVALID) {
+		        vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
+		        vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+		        vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+		        g_spi.cs_pin_mask = (1, (1 << param));
 		    }
 		    else {
-		    	g_spi_cs_handle = VM_DCL_HANDLE_INVALID;
+		    	g_spi.g_spi_cs_handle = VM_DCL_HANDLE_INVALID;
 				vm_log_error("error initializing CS on pin #%d", param);
 		    }
 		  }
@@ -267,16 +256,20 @@ static int _spi_setup(lua_State* L)
 		lua_getfield(L, 1, "dc");
 		if (!lua_isnil(L, -1)) {
 		  if ( lua_isnumber(L, -1) ) {
+			if (g_spi.g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
+				vm_dcl_close(g_spi.g_spi_dc_handle);
+				g_spi.g_spi_dc_handle = VM_DCL_HANDLE_INVALID;
+			}
 		    param = luaL_checkinteger( L, -1 );
-		    gpio_get_handle(param, &g_spi_dc_handle);
-		    if (g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
-		        vm_dcl_control(g_spi_dc_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
-		        vm_dcl_control(g_spi_dc_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
-		        vm_dcl_control(g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
-		        dc_pin_mask = (1, (1 << param));
+		    gpio_get_handle(param, &g_spi.g_spi_dc_handle);
+		    if (g_spi.g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
+		        vm_dcl_control(g_spi.g_spi_dc_handle, VM_DCL_GPIO_COMMAND_SET_MODE_0, NULL);
+		        vm_dcl_control(g_spi.g_spi_dc_handle, VM_DCL_GPIO_COMMAND_SET_DIRECTION_OUT, NULL);
+		        vm_dcl_control(g_spi.g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+		        g_spi.dc_pin_mask = (1, (1 << param));
 		    }
 		    else {
-		    	g_spi_dc_handle = VM_DCL_HANDLE_INVALID;
+		    	g_spi.g_spi_dc_handle = VM_DCL_HANDLE_INVALID;
 				vm_log_error("error initializing DC on pin #%d", param);
 		    }
 		  }
@@ -286,36 +279,7 @@ static int _spi_setup(lua_State* L)
 		}
 	}
 
-
-	result = vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_SET_CONFIG_PARAMETER,(void *)&conf_data);
-
-	if (VM_DCL_STATUS_OK != result) {
-		vm_log_error("spi ioctl set config para fail. status: %d", result);
-	}
-	else {
-		/*vm_dcl_spi_clock_t spi_data;
-		vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_QUERY_CLOCK,(void *)&spi_data);
-		vm_log_debug("spi base clock: %d MHz", spi_data.clock);
-
-		vm_dcl_spi_capability_t spi_cap_data;
-		vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_QUERY_CAPABILITY,(void *)&spi_cap_data);
-		printf("cstmg: %d~%d,%d~%d,%d~%d  len: %d~%d  cnt: %d~%d\n",
-				spi_cap_data.cs_hold_time_min,spi_cap_data.cs_hold_time_max,
-				spi_cap_data.cs_setup_time_min,spi_cap_data.cs_setup_time_max,
-				spi_cap_data.cs_idle_time_min,spi_cap_data.cs_idle_time_max,
-				spi_cap_data.transfer_length_min,spi_cap_data.transfer_length_max,
-				spi_cap_data.transfer_count_min,spi_cap_data.transfer_count_max);*/
-
-		vm_dcl_spi_mode_t spi_data_mode;
-		//spi_data_mode.parameter = 0;
-		spi_data_mode.mode = VM_DCL_SPI_MODE_PAUSE;
-		spi_data_mode.is_enabled = pmd;
-		vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_SET_MODE,(void *)&spi_data_mode);
-
-		spi_data_mode.mode = VM_DCL_SPI_MODE_DEASSERT;
-		spi_data_mode.is_enabled = pmd ^ 0x01;
-		vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_SET_MODE,(void *)&spi_data_mode);
-	}
+	int result = _setup_spi();
 
 exit:
     lua_pushinteger(L, result);
@@ -345,13 +309,13 @@ static int _spi_deinit(lua_State* L)
 		vm_free(g_spi_write_data);
 	}
 
-	if (g_spi_cs_handle != VM_DCL_HANDLE_INVALID) {
-    	vm_dcl_close(g_spi_cs_handle);
-    	g_spi_cs_handle = VM_DCL_HANDLE_INVALID;
+	if (g_spi.g_spi_cs_handle != VM_DCL_HANDLE_INVALID) {
+    	vm_dcl_close(g_spi.g_spi_cs_handle);
+    	g_spi.g_spi_cs_handle = VM_DCL_HANDLE_INVALID;
     }
-    if (g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
-    	vm_dcl_close(g_spi_dc_handle);
-    	g_spi_dc_handle = VM_DCL_HANDLE_INVALID;
+    if (g_spi.g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
+    	vm_dcl_close(g_spi.g_spi_dc_handle);
+    	g_spi.g_spi_dc_handle = VM_DCL_HANDLE_INVALID;
     }
     g_shell_result = 0;
 	vm_signal_post(g_shell_signal);
@@ -368,7 +332,7 @@ static int spi_deinit(lua_State* L)
 //----------------------------------------
 int _LcdSpiTransfer(uint8_t *buf, int len)
 {
-  if ((g_spi_dc_handle == VM_DCL_HANDLE_INVALID) || (g_spi_cs_handle == VM_DCL_HANDLE_INVALID)) {
+  if ((g_spi.g_spi_dc_handle == VM_DCL_HANDLE_INVALID) || (g_spi.g_spi_cs_handle == VM_DCL_HANDLE_INVALID)) {
 	  vm_log_error("SPI not setup");
 	  return -1;
   }
@@ -393,13 +357,13 @@ int _LcdSpiTransfer(uint8_t *buf, int len)
 	if (buf[bptr] == 0) break;
 
 	// --- for command DC=0 ---
-	//vm_dcl_control(g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+	//vm_dcl_control(g_spi.g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
 	reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20308);  // set low
-	*reg = dc_pin_mask;
+	*reg = g_spi.dc_pin_mask;
 	// --- Activate chip select ---
-   	//vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+   	//vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
 	reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20308);  // set low
-	*reg = cs_pin_mask;
+	*reg = g_spi.cs_pin_mask;
 
 	count--;
 	// --- send command byte ---
@@ -409,22 +373,22 @@ int _LcdSpiTransfer(uint8_t *buf, int len)
 	status = vm_dcl_write(g_spi_handle,(VM_DCL_BUFFER*)temp_buf, datalen, &bcount, 0);
 
 	// --- Deactivate chip select -------------------
-   	//vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+   	//vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 	//reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20304);  // set high
-	//*reg = cs_pin_mask;
+	//*reg = g_spi.cs_pin_mask;
 
     if (VM_DCL_STATUS_OK != status) {
 		vm_log_error("lcd_transfer command error: %d", status);
 		// --- Deactivate chip select -------------------
-	   	//vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+	   	//vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 		reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20304);  // set high
-		*reg = cs_pin_mask;
+		*reg = g_spi.cs_pin_mask;
 		break;
 	}
 	// --- for data DC=1 ---
-   	//vm_dcl_control(g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+   	//vm_dcl_control(g_spi.g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 	reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20304);  // set high
-	*reg = dc_pin_mask;
+	*reg = g_spi.dc_pin_mask;
 
     //printf("Cmd: %02x, ", buf[bptr]);
 	// get ndata & rep
@@ -448,9 +412,9 @@ int _LcdSpiTransfer(uint8_t *buf, int len)
 
 	if ((count > 0) && (ndata > 0)) {
 	  // --- Activate chip select --------------------
- 	  //vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+ 	  //vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
  	  //reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20308);  // set low
- 	  //*reg = cs_pin_mask;
+ 	  //*reg = g_spi.cs_pin_mask;
 
 	  status = VM_DCL_STATUS_OK;
 	  int bsz = 0;
@@ -503,23 +467,23 @@ int _LcdSpiTransfer(uint8_t *buf, int len)
 
 	  if (VM_DCL_STATUS_OK != status) {
 		vm_log_error("lcd_transfer data error: %d", status);
-		//vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+		//vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 		reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20304);  // set high
-		*reg = cs_pin_mask;
+		*reg = g_spi.cs_pin_mask;
 		break;
 	  }
 	  bptr += ndata;  // next command
 	  count -= ndata;
 	  // --- Deactivate chip select -------------------
-	  //vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+	  //vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 	  reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20304);  // set high
-	  *reg = cs_pin_mask;
+	  *reg = g_spi.cs_pin_mask;
 	}
 	else {
 		// --- Deactivate chip select -------------------
-		//vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+		//vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
 		reg = (uint32_t *)(REG_BASE_ADDRESS + 0x20304);  // set high
-		*reg = cs_pin_mask;
+		*reg = g_spi.cs_pin_mask;
 	}
   }
 
@@ -528,176 +492,232 @@ int _LcdSpiTransfer(uint8_t *buf, int len)
   return status;
 }
 
-/*
-//--------------------------------------
-static int _spi_test_write(lua_State* L)
+//-----------------------------------------------------------------------------------------------
+static int _spi_getarg(lua_State* L, t_spi_arg *arg, VMUINT8 *temp_buf, int argstart, int argend)
 {
-    VM_DCL_STATUS status;
-    VM_DCL_BUFFER_LENGTH bcount,datalen;
-    VMUINT8 *temp_buf;
+	int argn;
+    const char* pdata;
+    size_t datalen;
+    int numdata;
+    int bptr = 0;
+    int i = 0;
 
-    int spi_repeat = luaL_checkinteger(L, 1);
+    arg->out_type = 0;
+    arg->deact_cs = 1;
+    arg->send_as_cmd = 0;
+    arg->read_while_write = 0;
+    arg->rwb = 0xFF;
 
-    temp_buf = vm_malloc_dma(TEMP_BUF_SIZE);
-    if (temp_buf == NULL) {
-    	vm_log_error("buffer allocation error");
-    	vm_signal_post(g_shell_signal);
-    	return 0;
+    for (argn = argstart; argn < argend; argn++) {
+        // lua_isnumber() would silently convert a string of digits to an integer
+        // whereas here strings are handled separately.
+        if (lua_type(L, argn) == LUA_TNUMBER) {
+            numdata = (int)luaL_checkinteger(L, argn);
+            if ((numdata >= 0) && (numdata <= 255) && (bptr < TEMP_BUF_SIZE)) temp_buf[bptr++] = numdata;
+        }
+        else if(lua_istable(L, argn)) {
+            datalen = lua_objlen(L, argn);
+            for (i = 0; i < datalen; i++) {
+                lua_rawgeti(L, argn, i + 1);
+                numdata = (int)luaL_checkinteger(L, -1);
+                lua_pop(L, 1);
+                if ((numdata >= 0) && (numdata <= 255) && (bptr < TEMP_BUF_SIZE)) temp_buf[bptr++] = numdata;
+            }
+        }
+        else if (lua_isstring(L, argn)) {
+        	int dta = 1;
+            pdata = luaL_checklstring(L, argn, &datalen);
+            if (datalen == 2) {
+            	if (strstr(pdata, "*h") != NULL) {
+            		arg->out_type = 1;
+            		dta = 0;
+            	}
+            	else if (strstr(pdata, "*t") != NULL) {
+            		arg->out_type = 2;
+            		dta = 0;
+            	}
+            	else if (strstr(pdata, "*c") != NULL) {
+            		arg->send_as_cmd = 1;
+            		dta = 0;
+            	}
+            	else if (strstr(pdata, "*w") != NULL) {
+            		arg->read_while_write = 1;
+            		dta = 0;
+            	}
+            	else if (strstr(pdata, "*s") != NULL) {
+            		arg->deact_cs = 0;
+            		dta = 0;
+            	}
+            }
+            if (dta) {
+				for (i = 0; i < datalen; i++) {
+		            if (bptr < TEMP_BUF_SIZE) temp_buf[bptr++] = pdata[i];
+				}
+            }
+        }
     }
-
-    g_shell_result = 0;
-    memset(temp_buf, 0, TEMP_BUF_SIZE);
-
-	VM_TIME_UST_COUNT tmstart = vm_time_ust_get_count();
-    while (spi_repeat > 0) {
-		if (spi_repeat > TEMP_BUF_SIZE) {
-			bcount = TEMP_BUF_SIZE / 1024;
-			datalen = 1024;
-		}
-		else if (spi_repeat > 1024) {
-			bcount = spi_repeat / 1024;
-			datalen = 1024;
-		}
-		else {
-			bcount = 1;
-			datalen = spi_repeat;
-		}
-		status = vm_dcl_write(g_spi_handle,(VM_DCL_BUFFER*)temp_buf, datalen, &bcount, 0);
-		spi_repeat -= datalen*bcount;
-	    g_shell_result += datalen*bcount;
-		if (VM_DCL_STATUS_OK != status) break;
-    }
-	VM_TIME_UST_COUNT tmend = vm_time_ust_get_count();
-	VMUINT32 dur;
-	if (tmend > tmstart) dur = tmend - tmstart;
-	else dur = tmend + (0xFFFFFFFF - tmstart);
-	printf("sent %d bytes in %u usec, speed: %d kHz\n", g_shell_result, dur, (g_shell_result*8)/(dur/1000));
-
-	vm_free(temp_buf);
-
-	vm_signal_post(g_shell_signal);
-	return 0;
+    return bptr;
 }
 
-//===============================
-static int spi_test(lua_State* L)
+//--------------------------------------------
+int _spi_wrrd_data(VMUINT8 *temp_buf, int len)
 {
-	if (g_spi_handle == VM_DCL_HANDLE_INVALID) return luaL_error(L, "SPI not setup");
+	memset(g_spi_read_data->read_buffer, 0, VM_SPI_WRITE_BUFFER_SIZE);
+	memcpy(g_spi_write_data->write_buffer, temp_buf, len);
 
-    int spi_repeat = luaL_checkinteger(L, 1);
-    remote_CCall(L, &_spi_test_write);
+	g_spi_write_and_read.read_data_ptr = g_spi_read_data->read_buffer;
+	g_spi_write_and_read.read_data_length = len;
 
-    return 0;
+	g_spi_write_and_read.write_data_ptr = g_spi_write_data->write_buffer;
+	g_spi_write_and_read.write_data_length = len;
+
+	int status = vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_WRITE_AND_READ,(void *)&g_spi_write_and_read);
+	memcpy(temp_buf, g_spi_read_data->read_buffer, len);
+
+	/*int status = VM_DCL_STATUS_OK;
+	// send data
+	for (int i=0; i<len; i++) {
+		g_spi_write_data->write_buffer[0] = temp_buf[i];
+		status = vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_WRITE_AND_READ,(void *)&g_spi_write_and_read);
+		if (VM_DCL_STATUS_OK == status) temp_buf[i] = g_spi_read_data->read_buffer[0];
+		else break;
+	}*/
+	return status;
 }
-*/
+
+//----------------------------------------------------------------------
+int _spi_writedata(VMUINT8 *temp_buf, t_spi_arg *arg, int bptr, int len)
+{
+	memset(g_spi_read_data->read_buffer, 0, VM_SPI_WRITE_BUFFER_SIZE);
+	memset(g_spi_write_data->write_buffer, 0xFF, VM_SPI_WRITE_BUFFER_SIZE);
+	g_spi_write_and_read.read_data_ptr = g_spi_read_data->read_buffer;
+	g_spi_write_and_read.read_data_length = 1;
+	g_spi_write_and_read.write_data_ptr = g_spi_write_data->write_buffer;
+	g_spi_write_and_read.write_data_length = 1;
+
+	int status = VM_DCL_STATUS_OK;
+	// send data
+	for (int i=0; i<len; i++) {
+		if ((i == 0) && (arg->send_as_cmd)) {
+			// DC = 0
+		    if (g_spi.g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
+		   		vm_dcl_control(g_spi.g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+		    }
+		}
+		g_spi_write_data->write_buffer[0] = temp_buf[i+bptr];
+		status = vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_WRITE_AND_READ,(void *)&g_spi_write_and_read);
+		if ((i == 0) && (arg->send_as_cmd)) {
+			// DC = 1
+		    if (g_spi.g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
+		   		vm_dcl_control(g_spi.g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+		    }
+		}
+		if (VM_DCL_STATUS_OK == status) temp_buf[i+bptr] = g_spi_read_data->read_buffer[0];
+		else break;
+	}
+	return status;
+}
+
+//---------------------------------------------------------------------
+int _spi_readdata(VMUINT8 *temp_buf, t_spi_arg *arg, int bptr, int len)
+{
+	g_spi_write_and_read.read_data_ptr = g_spi_read_data->read_buffer;
+	g_spi_write_and_read.read_data_length = 1;
+	g_spi_write_and_read.write_data_ptr = g_spi_write_data->write_buffer;
+	g_spi_write_and_read.write_data_length = 1;
+
+	int status = VM_DCL_STATUS_OK;
+	// read data
+	for (int i=0; i<len; i++) {
+		g_spi_write_data->write_buffer[0] = arg->rwb;
+		status = vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_WRITE_AND_READ,(void *)&g_spi_write_and_read);
+		if (VM_DCL_STATUS_OK == status) temp_buf[bptr+i] = g_spi_read_data->read_buffer[0];
+		else break;
+	}
+	return status;
+}
 
 // Lua: wrote = spi.send(data1, [data2], ..., [datan] )
 // data can be either a string, a table or an 8-bit number
 //================================
 static int _spi_send(lua_State* L)
 {
-    const char* pdata;
-    size_t sdatalen, i;
-    int numdata;
-    uint8_t send_as_cmd = 0;
-    uint8_t deact_cs = 1;
-    uint32_t wrote = 0;
-    unsigned argn;
-    VM_DCL_BUFFER_LENGTH bcount,datalen;
-    VM_DCL_STATUS status;
     VMUINT8 *temp_buf;
 
     temp_buf = vm_malloc_dma(TEMP_BUF_SIZE);
     if (temp_buf == NULL) {
-        g_shell_result = -1;
+        g_shell_result = -2;
     	vm_signal_post(g_shell_signal);
     	return 0;
     }
 
-    // Copy arguments to buffer
-    for (argn = 1; argn <= lua_gettop(L); argn++) {
-        // lua_isnumber() would silently convert a string of digits to an integer
-        // whereas here strings are handled separately.
-        if (lua_type(L, argn) == LUA_TNUMBER) {
-            numdata = (int)luaL_checkinteger(L, argn);
-            if ((numdata >= 0) && (numdata <= 255) && (wrote < TEMP_BUF_SIZE)) temp_buf[wrote++] = numdata;
-        }
-        else if (lua_istable(L, argn)) {
-            sdatalen = lua_objlen(L, argn);
-            for (i = 0; i < sdatalen; i++) {
-                lua_rawgeti(L, argn, i + 1);
-                numdata = (int)luaL_checkinteger(L, -1);
-                lua_pop(L, 1);
-                if ((numdata >= 0) && (numdata <= 255) && (wrote < TEMP_BUF_SIZE)) temp_buf[wrote++] = numdata;
-            }
-        }
-        else if (lua_isstring(L, argn)) {
-            pdata = luaL_checklstring(L, argn, &sdatalen);
-            if ((sdatalen == 2) && (strstr(pdata, "*c")) != NULL) send_as_cmd = 1;
-            else if ((sdatalen == 2) && (strstr(pdata, "*s")) != NULL) deact_cs = 0;
-            else {
-				for (i = 0; i < sdatalen; i++) {
-					if (wrote < TEMP_BUF_SIZE) temp_buf[wrote++] = pdata[i];
-				}
-            }
-        }
+    VM_DCL_BUFFER_LENGTH bcount,datalen;
+    VM_DCL_STATUS status = VM_DCL_STATUS_OK;;
+    t_spi_arg arg;
+
+	// get arguments
+    int wsize = _spi_getarg(L, &arg, temp_buf, 1, (lua_gettop(L)+1));
+    if (wsize > TEMP_BUF_SIZE) {
+    	vm_free(temp_buf);
+        g_shell_result = -3;
+    	vm_signal_post(g_shell_signal);
+    	return 0;
     }
 
-	// activate CS
-    if (g_spi_cs_handle != VM_DCL_HANDLE_INVALID) {
-   		vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
-    }
-
-    int bsz = wrote;
+    int bsz = wsize;
     int wrt = 0;
-    status = VM_DCL_STATUS_OK;
 
-    if (send_as_cmd) {
-    	// send first byte as command
-    	// set DC=0
-        if (g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
-       		vm_dcl_control(g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
-        }
-		bcount = 1;
-		datalen = 1;
-		status = vm_dcl_write(g_spi_handle,(VM_DCL_BUFFER*)(temp_buf+wrt), datalen, &bcount, 0);
+    if (wsize > 0) {
+    	// activate CS
+   		vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+   	    // set DC=1
+   	    if (g_spi.g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
+   	   		vm_dcl_control(g_spi.g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+   	    }
 
-		bsz--;
-		wrt++;
+   	    if ((arg.send_as_cmd) && (g_spi.g_spi_dc_handle != VM_DCL_HANDLE_INVALID)) {
+   	    	// send first byte as command
+   	    	// set DC=0
+   	   		vm_dcl_control(g_spi.g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+   			bcount = 1;
+   			datalen = 1;
+   			status = vm_dcl_write(g_spi_handle,(VM_DCL_BUFFER*)(temp_buf+wrt), datalen, &bcount, 0);
+
+   			bsz--;
+   			wrt++;
+   		    // set DC=1
+   	   		vm_dcl_control(g_spi.g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+   	    }
+
+   	    if (VM_DCL_STATUS_OK == status) {
+   			// send buffer
+   			while (bsz > 0) {
+   				if (bsz > 1024) {
+   					bcount = TEMP_BUF_SIZE / 1024;
+   					datalen = 1024;
+   				}
+   				else {
+   					bcount = 1;
+   					datalen = bsz;
+   				}
+   				status = vm_dcl_write(g_spi_handle,(VM_DCL_BUFFER*)(temp_buf+wrt), datalen, &bcount, 0);
+   				bsz -= datalen*bcount;
+   				wrt += datalen*bcount;
+   				if (VM_DCL_STATUS_OK != status) break;
+   			}
+   		}
+
+   		// deactivate CS
+   	    if ((g_spi.g_spi_cs_handle != VM_DCL_HANDLE_INVALID) && (arg.deact_cs)) {
+   	   		vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+   	    }
     }
 
-    // set DC=1
-    if (g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
-   		vm_dcl_control(g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
-    }
-
-	if (VM_DCL_STATUS_OK == status) {
-		// send buffer
-		while (bsz > 0) {
-			if (bsz > 1024) {
-				bcount = TEMP_BUF_SIZE / 1024;
-				datalen = 1024;
-			}
-			else {
-				bcount = 1;
-				datalen = bsz;
-			}
-			status = vm_dcl_write(g_spi_handle,(VM_DCL_BUFFER*)(temp_buf+wrt), datalen, &bcount, 0);
-			bsz -= datalen*bcount;
-			wrt += datalen*bcount;
-			if (VM_DCL_STATUS_OK != status) break;
-		}
-	}
-
-	// deactivate CS
-    if ((g_spi_cs_handle != VM_DCL_HANDLE_INVALID) && (deact_cs)) {
-   		vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
-    }
-
+    // free buffer
 	vm_free(temp_buf);
 
 	if (VM_DCL_STATUS_OK != status) g_shell_result = -2;
-	else g_shell_result = wrote;
+	else g_shell_result = wsize;
 
 	vm_signal_post(g_shell_signal);
 	return 0;
@@ -708,7 +728,7 @@ static int spi_send(lua_State* L)
 {
 	if (g_spi_handle == VM_DCL_HANDLE_INVALID) return luaL_error(L, "SPI not setup");
 
-	g_shell_result = 0;
+	g_shell_result = -1;
     if (lua_gettop(L) > 0) remote_CCall(L, &_spi_send);
 
     lua_pushinteger(L, g_shell_result);
@@ -729,87 +749,55 @@ static int _spi_recv(lua_State* L)
     	return 0;
     }
 
+    t_spi_arg arg;
     uint32_t size = luaL_checkinteger(L, 1);
-    int i;
-    uint8_t out_type = 0;
-    uint8_t deact_cs = 1;
-    int rd = 0;
-    unsigned argn;
     luaL_Buffer b;
-    //VM_DCL_BUFFER_LENGTH bcount,datalen;
     VM_DCL_STATUS status;
 
-    if (size < 1)
+    if (size < 1) size = 1;
     if (size > TEMP_BUF_SIZE) size = TEMP_BUF_SIZE;
 
     // check for format argument
-    for (argn = 2; argn <= lua_gettop(L); argn++) {
-		if (lua_isstring(L, argn)) {
-			const char* sarg;
-			size_t sarglen;
-			sarg = luaL_checklstring(L, 2, &sarglen);
-			if (sarglen == 2) {
-				if (strstr(sarg, "*h") != NULL) out_type = 1;
-				else if (strstr(sarg, "*t") != NULL) out_type = 2;
-				else if (strstr(sarg, "*s") != NULL) deact_cs = 0;
-			}
-		}
-    }
+    int rsize = _spi_getarg(L, &arg, temp_buf, 2, (lua_gettop(L)+1));
 
 	// DC = 1
-    if (g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
-   		vm_dcl_control(g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+    if (g_spi.g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
+   		vm_dcl_control(g_spi.g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
     }
 	// activate CS
-    if (g_spi_cs_handle != VM_DCL_HANDLE_INVALID) {
-   		vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+    if (g_spi.g_spi_cs_handle != VM_DCL_HANDLE_INVALID) {
+   		vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
     }
 
-    // read data to buffer
-    status = VM_DCL_STATUS_OK;
-	memset(g_spi_read_data->read_buffer, 0, VM_SPI_WRITE_BUFFER_SIZE);
-	memset(g_spi_write_data->write_buffer, 0xFF, VM_SPI_WRITE_BUFFER_SIZE);
-	g_spi_write_and_read.read_data_ptr = g_spi_read_data->read_buffer;
-	g_spi_write_and_read.read_data_length = 1;
-	g_spi_write_and_read.write_data_ptr = g_spi_write_data->write_buffer;
-	g_spi_write_and_read.write_data_length = 1;
-
-	for (i=0; i<size; i++) {
-		status = vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_WRITE_AND_READ,(void *)&g_spi_write_and_read);
-		if (VM_DCL_STATUS_OK == status) temp_buf[i] = g_spi_read_data->read_buffer[0];
-		else break;
-		rd++;
-	}
+    status = _spi_readdata(temp_buf, &arg, 0, size);
 
 	// deactivate CS
-    if ((g_spi_cs_handle != VM_DCL_HANDLE_INVALID) && (deact_cs)){
-   		vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+    if ((g_spi.g_spi_cs_handle != VM_DCL_HANDLE_INVALID) && (arg.deact_cs)){
+   		vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
     }
 
     // Copy to Lua buffer
-    if ((VM_DCL_STATUS_OK == status) && (rd > 0)) {
-        if (out_type < 2) {
+    if (VM_DCL_STATUS_OK == status) {
+	    lua_pushinteger(L, size);
+        if (arg.out_type < 2) {
             char hbuf[4];
         	luaL_buffinit(L, &b);
-            for (i = 0; i < rd; i++) {
-            	if (out_type == 0) luaL_addchar(&b, temp_buf[i]);
+            for (int i = 0; i < size; i++) {
+            	if (arg.out_type == 0) luaL_addchar(&b, temp_buf[i]);
             	else {
             		sprintf(hbuf, "%02x;", temp_buf[i]);
             		luaL_addstring(&b, hbuf);
             	}
     		}
-    	    lua_pushinteger(L, rd);
     	    luaL_pushresult(&b);
         }
         else {
-    	    lua_pushinteger(L, rd);
         	lua_newtable(L);
-            for (i = 0; i < rd; i++) {
+            for (int i = 0; i < size; i++) {
             	lua_pushinteger( L, temp_buf[i]);
             	lua_rawseti(L,-2, i+1);
             }
         }
-
         g_shell_result = 2;
     }
     else {
@@ -839,152 +827,59 @@ static int spi_recv(lua_State* L)
 static int _spi_txrx(lua_State* L)
 {
     VMUINT8 *temp_buf;
+    t_spi_arg arg;
 
+    g_shell_result = 1;
     temp_buf = vm_calloc(TEMP_BUF_SIZE);
     if (temp_buf == NULL) {
         lua_pushinteger(L, -1);
-        g_shell_result = 1;
     	vm_signal_post(g_shell_signal);
     	return 0;
     }
 
-    const char* pdata;
-    size_t datalen;
-    int numdata;
-    int argn;
-    int i = 0;
-    uint8_t out_type = 0;
-    uint8_t deact_cs = 1;
-    uint8_t send_as_cmd = 0;
-    uint8_t read_while_write = 0;
-    int bptr = 0;
-	int startptr = 0;
     VM_DCL_STATUS status;
     luaL_Buffer b;
-
-    // prepare for transfer
+    int i, bptr;
     size_t size = luaL_checkinteger(L, -1);
-    int top = lua_gettop(L);
-    
-	// copy send data to buffer
-    for (argn = 1; argn < top; argn++) {
-        // lua_isnumber() would silently convert a string of digits to an integer
-        // whereas here strings are handled separately.
-        if (lua_type(L, argn) == LUA_TNUMBER) {
-            numdata = (int)luaL_checkinteger(L, argn);
-            if ((numdata >= 0) && (numdata <= 255) && (bptr < TEMP_BUF_SIZE)) temp_buf[bptr++] = numdata;
-        }
-        else if(lua_istable(L, argn)) {
-            datalen = lua_objlen(L, argn);
-            for (i = 0; i < datalen; i++) {
-                lua_rawgeti(L, argn, i + 1);
-                numdata = (int)luaL_checkinteger(L, -1);
-                lua_pop(L, 1);
-                if ((numdata >= 0) && (numdata <= 255) && (bptr < TEMP_BUF_SIZE)) temp_buf[bptr++] = numdata;
-            }
-        }
-        else if (lua_isstring(L, argn)) {
-        	int dta = 1;
-            pdata = luaL_checklstring(L, argn, &datalen);
-            if (datalen == 2) {
-            	if (strstr(pdata, "*h") != NULL) {
-            		out_type = 1;
-            		dta = 0;
-            	}
-            	else if (strstr(pdata, "*t") != NULL) {
-            		out_type = 2;
-            		dta = 0;
-            	}
-            	else if (strstr(pdata, "*c") != NULL) {
-            		send_as_cmd = 1;
-            		dta = 0;
-            	}
-            	else if (strstr(pdata, "*w") != NULL) {
-            		read_while_write = 1;
-            		dta = 0;
-            	}
-            	else if (strstr(pdata, "*s") != NULL) {
-            		deact_cs = 0;
-            		dta = 0;
-            	}
-            }
-            if (dta) {
-				for (i = 0; i < datalen; i++) {
-		            if (bptr < TEMP_BUF_SIZE) temp_buf[bptr++] = pdata[i];
-				}
-            }
-        }
+
+	// get arguments
+    bptr = _spi_getarg(L, &arg, temp_buf, 1, lua_gettop(L));
+    if ((bptr+size) > TEMP_BUF_SIZE) {
+    	vm_free(temp_buf);
+        lua_pushinteger(L, -2);
+    	vm_signal_post(g_shell_signal);
+    	return 0;
     }
 
 	// DC = 1
-    if (g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
-   		vm_dcl_control(g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+    if (g_spi.g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
+   		vm_dcl_control(g_spi.g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
     }
 	// activate CS
-    if (g_spi_cs_handle != VM_DCL_HANDLE_INVALID) {
-   		vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
+    if (g_spi.g_spi_cs_handle != VM_DCL_HANDLE_INVALID) {
+   		vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
     }
 
-	memset(g_spi_read_data->read_buffer, 0, VM_SPI_WRITE_BUFFER_SIZE);
-	memset(g_spi_write_data->write_buffer, 0xFF, VM_SPI_WRITE_BUFFER_SIZE);
-	g_spi_write_and_read.read_data_ptr = g_spi_read_data->read_buffer;
-	g_spi_write_and_read.read_data_length = 1;
-	g_spi_write_and_read.write_data_ptr = g_spi_write_data->write_buffer;
-	g_spi_write_and_read.write_data_length = 1;
-
-	status = VM_DCL_STATUS_OK;
-	// send data
-	for (i=0; i<bptr; i++) {
-		if ((i == 0) && (send_as_cmd)) {
-			// DC = 0
-		    if (g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
-		   		vm_dcl_control(g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_LOW, NULL);
-		    }
-		}
-		g_spi_write_data->write_buffer[0] = temp_buf[i];
-		status = vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_WRITE_AND_READ,(void *)&g_spi_write_and_read);
-		if ((i == 0) && (send_as_cmd)) {
-			// DC = 1
-		    if (g_spi_dc_handle != VM_DCL_HANDLE_INVALID) {
-		   		vm_dcl_control(g_spi_dc_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
-		    }
-		}
-		if (VM_DCL_STATUS_OK == status) temp_buf[i] = g_spi_read_data->read_buffer[0];
-		else break;
-	}
-
-    if (status == VM_DCL_STATUS_OK) {
-		// read data
-    	if (read_while_write) {
-    		size += bptr;
-    		if (size > TEMP_BUF_SIZE) size = TEMP_BUF_SIZE;
-    		startptr = bptr;
-    	}
-		g_spi_write_data->write_buffer[0] = 0xFF;;
-		for (i=bptr; i<size; i++) {
-			status = vm_dcl_control(g_spi_handle,VM_DCL_SPI_CONTROL_WRITE_AND_READ,(void *)&g_spi_write_and_read);
-			if (VM_DCL_STATUS_OK == status) temp_buf[i] = g_spi_read_data->read_buffer[0];
-			else break;
-		}
-    }
+    // write and read data
+    status = _spi_writedata(temp_buf, &arg, 0, bptr);
+    if (status == VM_DCL_STATUS_OK) status = _spi_readdata(temp_buf, &arg, bptr, size);
 
 	// deactivate CS
-    if ((g_spi_cs_handle != VM_DCL_HANDLE_INVALID) && (deact_cs)) {
-   		vm_dcl_control(g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
+    if ((g_spi.g_spi_cs_handle != VM_DCL_HANDLE_INVALID) && (arg.deact_cs)) {
+   		vm_dcl_control(g_spi.g_spi_cs_handle, VM_DCL_GPIO_COMMAND_WRITE_HIGH, NULL);
     }
 
-    if (status != VM_DCL_STATUS_OK) {
-    	lua_pushinteger(L, -3);
-        g_shell_result = 1;
-    }
+    if (status != VM_DCL_STATUS_OK) lua_pushinteger(L, -3);
     else {
+    	int startptr = bptr;
+    	if (arg.read_while_write) startptr = 0;
+
     	lua_pushinteger(L, bptr);
-    	lua_pushinteger(L, size);
-        if (out_type < 2) {
+        if (arg.out_type < 2) {
             char hbuf[4];
         	luaL_buffinit(L, &b);
-            for (i = 0; i < size; i++) {
-            	if (out_type == 0) luaL_addchar(&b, temp_buf[i]);
+            for (i = startptr; i < (size+bptr); i++) {
+            	if (arg.out_type == 0) luaL_addchar(&b, temp_buf[i]);
             	else {
             		sprintf(hbuf, "%02x;", temp_buf[i]);
             		luaL_addstring(&b, hbuf);
@@ -994,12 +889,12 @@ static int _spi_txrx(lua_State* L)
         }
         else {
         	lua_newtable(L);
-            for (i = 0; i < size; i++) {
+            for (i = startptr; i < (size+bptr); i++) {
             	lua_pushinteger( L, temp_buf[i]);
             	lua_rawseti(L,-2, i+1);
             }
         }
-        g_shell_result = 3;
+        g_shell_result = 2;
     }
 
     vm_free(temp_buf);
@@ -1016,7 +911,6 @@ static int spi_txrx(lua_State* L)
 	if (lua_gettop(L) < 2) return luaL_error(L, "invalid number of arguments");
 
 	size_t size = luaL_checkinteger(L, -1);
-    if ((size < 0) || (size > TEMP_BUF_SIZE)) return luaL_error(L, "read data length wrong");
 
     remote_CCall(L, &_spi_txrx);
     return g_shell_result;
@@ -1034,7 +928,6 @@ const LUA_REG_TYPE spi_map[] = {
 		{ LSTRKEY("write"), LFUNCVAL(spi_send) },
         { LSTRKEY("read"), LFUNCVAL(spi_recv) },
         { LSTRKEY("txrx"), LFUNCVAL(spi_txrx) },
-        //{ LSTRKEY("test"), LFUNCVAL(spi_test) },
         { LNILKEY, LNILVAL }
 };
 
@@ -1045,6 +938,14 @@ const LUA_REG_TYPE spi_map[] = {
 
 LUALIB_API int luaopen_spi(lua_State* L)
 {
+	g_spi.g_spi_cs_handle = VM_DCL_HANDLE_INVALID;
+	g_spi.g_spi_dc_handle = VM_DCL_HANDLE_INVALID;
+
+	g_spi.cs_pin_mask = 0;
+	g_spi.dc_pin_mask = 0;
+
+	g_spi.pmd = VM_TRUE;
+
 #if LUA_OPTIMIZE_MEMORY > 0
     return 0;
 #else  // #if LUA_OPTIMIZE_MEMORY > 0

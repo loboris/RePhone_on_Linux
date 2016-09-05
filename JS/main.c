@@ -24,6 +24,10 @@ extern void js_init_gpio(struct v7 *v7);
 extern void js_init_audio(struct v7 *v7);
 extern void js_init_gsm(struct v7 *v7);
 
+
+int sys_wdt_tmo = 13001;			// ** HW WDT timeout in ticks: 13001 -> 59.999615 seconds **
+int sys_wdt_rst = 10834;			// time at which hw wdt is reset in ticks: 10834 -> 50 seconds, must be < 'sys_wdt_tmo'
+
 void key_init(void)
 {
     VM_DCL_HANDLE kbd_handle;

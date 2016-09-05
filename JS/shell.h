@@ -9,14 +9,14 @@
 #include "vmdcl.h"
 #include "vmbt_cm.h"
 #include "vmsock.h"
-#include "vmdcl_spi.h"
-
-#include "lua.h"
-#include "mqtt_client.h"
 
 #define USE_UART1_TARGET
 
-#define LUA_NET "net"
+#define SHOW_LOG_FATAL		0x01
+#define SHOW_LOG_ERROR		0x02
+#define SHOW_LOG_WARNING	0x03
+#define SHOW_LOG_INFO		0x04
+#define SHOW_LOG_DEBUG		0x10
 
 #define REDLED           17
 #define GREENLED         15
@@ -47,26 +47,6 @@
 #define CCALL_MESSAGE_FREE		356
 #define CCALL_MESSAGE_TICK		358
 #define CB_MESSAGE_ID		    400
-
-typedef struct
-{
-	VM_DCL_HANDLE g_spi_cs_handle;
-	VM_DCL_HANDLE g_spi_dc_handle;
-	VMUINT32 cs_pin_mask;
-	VMUINT32 dc_pin_mask;
-    int pmd;
-	vm_dcl_spi_config_parameter_t conf_data;
-	vm_dcl_spi_mode_t spi_data_mode;
-} t_spi_params;
-
-typedef struct
-{
-    uint8_t out_type;
-    uint8_t deact_cs;
-    uint8_t send_as_cmd;
-    uint8_t read_while_write;
-    uint8_t rwb;
-} t_spi_arg;
 
 typedef struct {
     int			wdgtmo;
@@ -243,9 +223,6 @@ typedef struct {
 } cb_func_param_adc_t;
 
 
-lua_State *shellL;			// Lua state
-lua_State *ttyL;			// Lua state
-
 VM_THREAD_HANDLE g_main_handle;
 VM_THREAD_HANDLE g_ttythread_handle;
 VM_THREAD_HANDLE g_shellthread_handle;
@@ -261,7 +238,6 @@ VM_SIGNAL_ID g_shell_signal;
 VM_SIGNAL_ID g_tty_signal;
 //VM_SIGNAL_ID g_reboot_signal;
 
-lua_CFunction g_CCfunc;
 cfunc_params_t g_CCparams;
 cbfunc_params_t g_CBparams;
 int CCwait;
@@ -279,8 +255,6 @@ VMINT32 shell_thread(VM_THREAD_HANDLE thread_handle, void* user_data);
 VMINT32 tty_thread(VM_THREAD_HANDLE thread_handle, void* user_data);
 void l_message (const char *pname, const char *msg);
 //void shell_docall(lua_State *L);
-int remote_CCall(lua_State *L, lua_CFunction func);
-void remote_lua_call(VMUINT16 type, void *params);
 int file_exists(const char *filename);
 void full_fname(char *fname, VMWCHAR *ucs_name, int size);
 int file_open(const char* file, int flags);
@@ -290,6 +264,7 @@ int file_flush(int file);
 int file_read(int file, char* ptr, int len);
 int file_write(int file, char* ptr, int len);
 int file_seek(int file, int offset, int whence);
+void _get_sys_vars(int doset, void *heapsz, void *wdgtmo);
 
 //void _mutex_lock(void);
 //void _mutex_unlock(void);

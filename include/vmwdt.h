@@ -123,6 +123,25 @@ void vm_wdt_reset(VM_WDT_HANDLE handle);
  *****************************************************************************/
 void vm_wdt_stop(VM_WDT_HANDLE handle);
 
+/*****************************************************************************
+ * FUNCTION
+ *  vm_wdt_feed
+ * DESCRIPTION
+ *  feed watch
+ * PARAMETERS
+ *  handle  : [IN]   watch dog handle that vm_wdt_start returned.
+ * RETURN
+ *  void
+ * EXAMPLE
+ * <code>
+ * VMINT handle = vm_wdt_start(1000);
+ * // do somting
+ * vm_wdt_feed(handle);
+ * // finish doing
+ * vm_wdt_stop(handle);
+ *****************************************************************************/
+void vm_wdt_feed(VM_WDT_HANDLE handle);
+
 #ifdef __cplusplus
 }
 #endif

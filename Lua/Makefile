@@ -27,7 +27,8 @@ OBJECTS += $(WORKSPACE_PATH)common/lcd_sitronix_st7789s.o $(WORKSPACE_PATH)commo
 SYS_OBJECTS += $(WORKSPACE_PATH)common/gccmain.o
 INCLUDE_PATHS += -I. -I$(WORKSPACE_PATH)include -I$(WORKSPACE_PATH)common
 LIBRARY_PATHS += -L$(WORKSPACE_PATH)lib
-LIBRARIES += $(WORKSPACE_PATH)lib/LINKIT10/armgcc/percommon.a -lm
+LIBRARIES += $(WORKSPACE_PATH)lib/LINKIT10/armgcc/libmtk.a -lm
+#LIBRARIES += $(WORKSPACE_PATH)lib/LINKIT10/armgcc/percommon.a -lm
 LINKER_SCRIPT = $(WORKSPACE_PATH)lib/LINKIT10/armgcc/scat.ld
 
 ###############################################################################
