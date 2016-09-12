@@ -677,6 +677,7 @@ static int mqtt_create(lua_State *L)
 	const char *host = NULL;
 	const char *user = NULL;
 	const char *pass = NULL;
+	const char *cid = NULL;
 	int cb_msg = LUA_NOREF;
 	int cb_dis = LUA_NOREF;
 
@@ -710,6 +711,14 @@ static int mqtt_create(lua_State *L)
 		  }
 		}
 		if (pass == NULL) user = NULL;
+	  }
+	}
+
+	lua_getfield(L, 1, "clientid");
+	if (!lua_isnil(L, -1)) {
+	  if ( lua_isstring(L, -1) ) {
+	    cid = luaL_checklstring( L, -1, &len );
+	    if (len > 31) cid = NULL;
 	  }
 	}
 
@@ -768,7 +777,9 @@ static int mqtt_create(lua_State *L)
     p->qos = qos;
 	p->use_tls = use_tls;
 	p->timerHandle = -1;
-	strcpy(p->client_id,DEFAULT_CLIENT_ID);
+	if (cid) strcpy(p->client_id, cid);
+	else strcpy(p->client_id,DEFAULT_CLIENT_ID);
+
 	for (int i=0; i<MAX_MQTT_TOPICS;i++) {
 		//p->topic_filters[i][0] = '\0';
 		p->topics[i].topic_filter = NULL;

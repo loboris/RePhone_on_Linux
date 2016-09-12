@@ -1,3 +1,10 @@
+=== Ver.: 1.0.9    12/09/2016 ===
+- mqtt module, client ID can now be set
+- https module, added blocking get/post functions versions
+- lcd module, touch functions for XCP2046 based touch pannels
+- some minor bug fixes
+- documentation updated
+
 === Ver.: 1.0.8    03/09/2016 ===
 - mqtt module, password max length is now 63 (was 31)
 - some bug fixes and improvements in spi module

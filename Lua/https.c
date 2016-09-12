@@ -35,6 +35,7 @@ static int g_https_header_cb_ref = LUA_NOREF;
 static int g_https_response_cb_ref = LUA_NOREF;
 static int g_postdata_len = 0;
 static int g_post_type = 0;
+static int g_http_wait = 0;
 static cb_func_param_httpsdata_t https_cb_params_data;
 static cb_func_param_httpsheader_t https_cb_params_header;
 
@@ -212,7 +213,7 @@ static void https_send_status_query_rsp_cb(VMUINT8 status)
 static void data_received(VMUINT8* reply_segment, VMUINT32 reply_segment_len, VMBOOL more)
 {
 	if (https_cb_params_data.ffd >= 0) {
-		// Receive to file
+		// ** Receive to file **
 	    VMUINT written_bytes = 0;
 		https_cb_params_data.len += reply_segment_len;
     	int res = vm_fs_write(https_cb_params_data.ffd, reply_segment, reply_segment_len, &written_bytes);
@@ -225,7 +226,7 @@ static void data_received(VMUINT8* reply_segment, VMUINT32 reply_segment_len, VM
 		}
 	}
 	else if (https_cb_params_data.reply != NULL) {
-		// Receive to buffer
+		// ** Receive to buffer **
 		VMUINT8 c;
 		for (int i = 0; i < reply_segment_len; i++) {
 			if (https_cb_params_data.len < https_cb_params_data.maxlen) {
@@ -240,11 +241,20 @@ static void data_received(VMUINT8* reply_segment, VMUINT32 reply_segment_len, VM
 		}
 		https_cb_params_data.reply[https_cb_params_data.len] = '\0';
 	}
-	if ((more == 0) && (https_cb_params_data.busy == 0)) {
-		// Send Callback function request
-		https_cb_params_data.cb_ref = g_https_response_cb_ref;
-		https_cb_params_data.busy = 1;
-		remote_lua_call(CB_FUNC_HTTPS_DATA, &https_cb_params_data);
+	if (more == 0) {
+		// Last data received
+		if (g_https_response_cb_ref != LUA_NOREF) {
+			if (https_cb_params_data.busy == 0) {
+				// Send Callback function request
+				https_cb_params_data.cb_ref = g_https_response_cb_ref;
+				https_cb_params_data.busy = 1;
+				remote_lua_call(CB_FUNC_HTTPS_DATA, &https_cb_params_data);
+			}
+		}
+		else if (g_http_wait) {
+			// get/post function waiting for response
+			vm_signal_post(g_shell_signal);
+		}
 	}
 }
 
@@ -275,6 +285,7 @@ static void https_send_read_request_rsp_cb(VMUINT16 request_id,
     }
     else {
         g_request_id = request_id;
+        // Header received, call cb function if registered
     	if (g_https_header_cb_ref != LUA_NOREF) {
     		if (https_cb_params_header.busy == 0) {
     			https_cb_params_header.busy = 0;
@@ -294,6 +305,13 @@ static void https_send_read_request_rsp_cb(VMUINT16 request_id,
                 vm_https_cancel(request_id);
                 vm_https_unset_channel(g_channel_id);
             }
+        }
+        else {
+            // last data received, unset channel
+            vm_https_cancel(request_id);
+            vm_https_unset_channel(g_channel_id);
+            g_channel_id = 0;
+            g_read_seg_num = 0;
         }
     }
 }
@@ -325,7 +343,7 @@ static void https_send_read_read_content_rsp_cb(VMUINT16 request_id,
         }
     }
     else {
-        // don't want to send more requests, so unset channel
+        // last data received, unset channel
         vm_https_cancel(request_id);
         vm_https_unset_channel(g_channel_id);
         g_channel_id = 0;
@@ -341,11 +359,13 @@ int https_get_post(lua_State* L, int index, lua_CFunction cb_func)
     	return https_cb_params_data.state;
 	}
 
+	/*
 	// CB function must be defined
 	if (g_https_response_cb_ref == LUA_NOREF) {
 		vm_log_error("Callback function not set.");
     	return -1;
 	}
+	*/
 
 	// Check url, will be handled later
     if (lua_type(L, 1) != LUA_TSTRING) {
@@ -360,7 +380,10 @@ int https_get_post(lua_State* L, int index, lua_CFunction cb_func)
 		}
     }
 
-    // Free data buffer if necessary
+	g_http_wait = 0;
+	int max_wait_time = 30000;
+
+	// Free data buffer if necessary
     if (https_cb_params_data.reply != NULL) {
     	free(https_cb_params_data.reply);
     	https_cb_params_data.reply = NULL;
@@ -373,14 +396,18 @@ int https_get_post(lua_State* L, int index, lua_CFunction cb_func)
 	https_cb_params_data.busy = 0;
 
 	// Check optional parameters
-    if (lua_type(L, index) == LUA_TNUMBER) {
-    	// Buffer size given
-    	https_cb_params_data.maxlen = luaL_checkinteger(L, index);
-    	// Set max buffer length
-    	if (https_cb_params_data.maxlen < 1024) https_cb_params_data.maxlen = 1024;
-    	else if (https_cb_params_data.maxlen > (200 * 1024)) https_cb_params_data.maxlen = 128*1024;
-    }
-    else if (lua_type(L, index) == LUA_TSTRING) {
+	int rec_type = 0;
+
+	if (lua_gettop(L) > index) {
+	    if (lua_type(L, index+1) == LUA_TNUMBER) {
+	    	max_wait_time = luaL_checkinteger(L, index+1);
+	    	if (max_wait_time < 10) max_wait_time = 10;
+	    	if (max_wait_time > 120) max_wait_time = 120;
+	    	max_wait_time *= 1000;
+	    }
+	}
+    if (lua_type(L, index) == LUA_TSTRING) {
+    	int rec_type = 1;
     	// File name is given
         const char* fname = luaL_checkstring(L, index);
         https_cb_params_data.ffd = file_open(fname, O_CREAT);
@@ -390,23 +417,48 @@ int https_get_post(lua_State* L, int index, lua_CFunction cb_func)
     	    https_cb_params_data.state = 0; // free
         	return -4;
         }
-	    https_cb_params_data.state = 2; // receive to file
-		remote_CCall(L, cb_func);
-		return g_shell_result;
+        // ** receive to file **
+	    https_cb_params_data.state = 2;
+    }
+    else if (lua_type(L, index) == LUA_TNUMBER) {
+    	// Buffer size given
+    	https_cb_params_data.maxlen = luaL_checkinteger(L, index);
+    	// Set max buffer length
+    	if (https_cb_params_data.maxlen < 1024) https_cb_params_data.maxlen = 1024;
+    	else if (https_cb_params_data.maxlen > (200 * 1024)) https_cb_params_data.maxlen = 128*1024;
+    }
+    if (rec_type == 0) {
+		// ** Receive to buffer **, allocate response buffer
+		https_cb_params_data.reply = malloc(https_cb_params_data.maxlen+1);
+		if (https_cb_params_data.reply != NULL) {
+			https_cb_params_data.len = 0;
+			https_cb_params_data.busy = 0;
+			https_cb_params_data.more = 0;
+		}
+		else {
+			vm_log_error("Memory allocation failed");
+			return -5;
+		}
     }
 
-    // Get to buffer, allocate response buffer
-	https_cb_params_data.reply = malloc(https_cb_params_data.maxlen+1);
-	if (https_cb_params_data.reply != NULL) {
-		https_cb_params_data.len = 0;
-		https_cb_params_data.busy = 0;
-		https_cb_params_data.more = 0;
+    // Initiate get/post request
+	remote_CCall(L, cb_func);
+	if (g_shell_result < 0)	return g_shell_result;
 
-		remote_CCall(L, cb_func);
-		return g_shell_result;
+	if (g_https_response_cb_ref == LUA_NOREF) {
+		// Response cb function not registered, wait for response
+		g_http_wait = 1;
+	    if (vm_signal_timed_wait(g_shell_signal, max_wait_time) != 0) {
+			g_http_wait = 0;
+	    	g_shell_result = -6;
+			vm_log_error("Timeout waiting for response");
+	    }
+	    else {
+	    	g_shell_result = 978;
+	    }
 	}
-	vm_log_error("Memory allocation failed");
-	return -5;
+
+	return g_shell_result;
 }
 
 //=========================
@@ -758,16 +810,44 @@ exit:
 //===============================
 static int https_get(lua_State* L)
 {
-	lua_pushinteger(L, https_get_post(L, 2, &_https_get));
-	return 1;
+	int res = https_get_post(L, 2, &_https_get);
+	if (res == 978) {
+		lua_pushinteger(L, https_cb_params_data.len);
+	    if (https_cb_params_data.reply != NULL) {
+	    	lua_pushlstring(L, https_cb_params_data.reply, https_cb_params_data.len);
+			free(https_cb_params_data.reply);
+	    }
+	    else {
+	    	lua_pushstring(L, "__Receive_To_File__");
+	    }
+	    return 2;
+	}
+	else {
+		lua_pushinteger(L, res);
+		return 1;
+	}
 }
 
 // https.get(url, post_data [,fname | bufsize])
 //==========================
 int https_post(lua_State* L)
 {
-	lua_pushinteger(L, https_get_post(L, 3, &_https_post));
-	return 1;
+	int res = https_get_post(L, 3, &_https_post);
+	if (res == 978) {
+		lua_pushinteger(L, https_cb_params_data.len);
+	    if (https_cb_params_data.reply != NULL) {
+	    	lua_pushlstring(L, https_cb_params_data.reply, https_cb_params_data.len);
+			free(https_cb_params_data.reply);
+	    }
+	    else {
+	    	lua_pushstring(L, "__Receive_To_File__");
+	    }
+	    return 2;
+	}
+	else {
+		lua_pushinteger(L, res);
+		return 1;
+	}
 }
 
 //=================================
