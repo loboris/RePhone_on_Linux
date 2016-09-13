@@ -404,7 +404,7 @@ int https_get_post(lua_State* L, int index, lua_CFunction cb_func)
 	if (lua_gettop(L) > index) {
 	    if (lua_type(L, index+1) == LUA_TNUMBER) {
 	    	max_wait_time = luaL_checkinteger(L, index+1);
-	    	if (max_wait_time < 10) max_wait_time = 10;
+	    	if (max_wait_time < 5) max_wait_time = 5;
 	    	if (max_wait_time > 120) max_wait_time = 120;
 	    	max_wait_time *= 1000;
 	    }

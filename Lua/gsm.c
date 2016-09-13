@@ -613,10 +613,13 @@ static int _gsm_list_sms_received(lua_State *L)
 {
 	int stat = 1;
 
-	if (lua_isnumber(L, 1)) {
-		stat = luaL_checkinteger(L, 1) & 0x1F;
-		if (stat == 0) stat = 1;
-	}
+    if (lua_gettop(L) > 0) {
+		if (lua_isnumber(L, 1)) {
+			stat = luaL_checkinteger(L, 1);
+			if (stat <= 0) stat = 1;
+			stat &= 0x1F;
+		}
+    }
 
 	vm_gsm_sms_query_t query_data_t;
 
@@ -641,10 +644,12 @@ static int gsm_list_sms_received(lua_State *L)
     	luaL_unref(L, LUA_REGISTRYINDEX, g_sms_list_cb_ref);
     	g_sms_list_cb_ref = LUA_NOREF;
     }
-	if ((lua_type(L, -1) == LUA_TFUNCTION) || (lua_type(L, -1) == LUA_TLIGHTFUNCTION)) {
-	    lua_pushvalue(L, -1);
-	    g_sms_list_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
-	}
+    if (lua_gettop(L) > 0) {
+		if ((lua_type(L, -1) == LUA_TFUNCTION) || (lua_type(L, -1) == LUA_TLIGHTFUNCTION)) {
+			lua_pushvalue(L, -1);
+			g_sms_list_cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+		}
+    }
 
     g_shell_result = -9;
 	remote_CCall(L, &_gsm_list_sms_received);

@@ -31,16 +31,17 @@ function sntp_cb(stat)
     print("==================================================")
     
     if sim_stat == 1 then
-        -- Check number of received messages
+        -- Check total number of messages
         print("SIM card inserted, IMEI="..imei)
         local nsms = sms.numrec()
         print("You have "..nsms.." messages")
         if nsms > 0 then
-            print("Reading 1st message:")
-            --  read first message
+            --  get list of unread messages
             local smsidx = sms.list(1)
             local smsfrom, smstime, smsmsg
-            if smsidx[1] ~= nil then
+            print("Unread messages: "..#smsidx)
+            if #smsidx > 0 then
+                print("Reading 1st message:")
                 smsfrom, smstime, smsmsg = sms.read(smsidx[1])
                 print("----------")
                 print("sms from: "..smsfrom)
