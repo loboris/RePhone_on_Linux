@@ -85,9 +85,11 @@ static void free_buffers(int free_type)
 			// Receiving to buffer
 			https_cb_params_data.reply[https_cb_params_data.len] = '\0';
 		}
-		https_cb_params_data.cb_ref = g_https_response_cb_ref;
-		https_cb_params_data.busy = 1;
-		remote_lua_call(CB_FUNC_HTTPS_DATA, &https_cb_params_data);
+		if (g_https_response_cb_ref != LUA_NOREF) {
+			https_cb_params_data.cb_ref = g_https_response_cb_ref;
+			https_cb_params_data.busy = 1;
+			remote_lua_call(CB_FUNC_HTTPS_DATA, &https_cb_params_data);
+		}
 	}
 }
 
@@ -253,6 +255,7 @@ static void data_received(VMUINT8* reply_segment, VMUINT32 reply_segment_len, VM
 		}
 		else if (g_http_wait) {
 			// get/post function waiting for response
+			https_cb_params_data.busy = 1;
 			vm_signal_post(g_shell_signal);
 		}
 	}
@@ -441,21 +444,16 @@ int https_get_post(lua_State* L, int index, lua_CFunction cb_func)
 		}
     }
 
-    // Initiate get/post request
+    // ** Initiate get/post request ***
 	remote_CCall(L, cb_func);
 	if (g_shell_result < 0)	return g_shell_result;
 
 	if (g_https_response_cb_ref == LUA_NOREF) {
-		// Response cb function not registered, wait for response
+		// *** Response cb function not registered, wait for response ***
 		g_http_wait = 1;
-	    if (vm_signal_timed_wait(g_shell_signal, max_wait_time) != 0) {
-			g_http_wait = 0;
-	    	g_shell_result = -6;
-			vm_log_error("Timeout waiting for response");
-	    }
-	    else {
-	    	g_shell_result = 978;
-	    }
+	    if (vm_signal_timed_wait(g_shell_signal, max_wait_time) != 0) g_shell_result = -978;
+	    else g_shell_result = 978;
+		g_http_wait = 0;
 	}
 
 	return g_shell_result;
@@ -806,21 +804,60 @@ exit:
 	return 0;
 }
 
-// https.get(url [,fname | bufsize])
-//===============================
-static int https_get(lua_State* L)
+//=====================================
+static int _https_cancel( lua_State* L )
 {
-	int res = https_get_post(L, 2, &_https_get);
-	if (res == 978) {
-		lua_pushinteger(L, https_cb_params_data.len);
-	    if (https_cb_params_data.reply != NULL) {
-	    	lua_pushlstring(L, https_cb_params_data.reply, https_cb_params_data.len);
-			free(https_cb_params_data.reply);
-	    }
-	    else {
-	    	lua_pushstring(L, "__Receive_To_File__");
-	    }
-	    return 2;
+	if (g_request_id >= 0) {
+		vm_https_cancel(g_request_id);
+	}
+	vm_https_unset_channel(g_channel_id);
+	g_channel_id = 0;
+	g_read_seg_num = 0;
+
+    g_shell_result = 0;
+	vm_signal_post(g_shell_signal);
+	return 0;
+}
+
+//=====================================
+static int https_cancel( lua_State* L )
+{
+	remote_CCall(L, &_https_cancel);
+	return g_shell_result;
+}
+
+//------------------------------------------
+static int _https_end(lua_State* L, int res)
+{
+	if (abs(res) == 978) {
+		// ** waiting for response
+		int n = 2;
+		if (res == 978) {
+			// response received
+			lua_pushinteger(L, https_cb_params_data.len);
+			if (https_cb_params_data.reply != NULL) {
+				lua_pushlstring(L, https_cb_params_data.reply, https_cb_params_data.len);
+				free(https_cb_params_data.reply);
+			}
+			else {
+				lua_pushstring(L, "__Receive_To_File__");
+			}
+		}
+		else {
+			// timeout
+			remote_CCall(L, &_https_cancel);
+			lua_pushinteger(L, -6);
+			n = 1;
+			vm_log_error("Timeout waiting for response");
+		}
+	    vm_thread_sleep(50);
+	    https_cb_params_data.reply = NULL;
+	    https_cb_params_data.maxlen = 0;
+	    https_cb_params_data.len = 0;
+	    https_cb_params_data.more = 0;
+	    https_cb_params_data.busy = 0;
+	    https_cb_params_data.state = 0;
+	    return n;
 	}
 	else {
 		lua_pushinteger(L, res);
@@ -828,26 +865,20 @@ static int https_get(lua_State* L)
 	}
 }
 
+// https.get(url [,fname | bufsize])
+//===============================
+static int https_get(lua_State* L)
+{
+	int res = https_get_post(L, 2, &_https_get);
+	return _https_end(L, res);
+}
+
 // https.get(url, post_data [,fname | bufsize])
 //==========================
 int https_post(lua_State* L)
 {
 	int res = https_get_post(L, 3, &_https_post);
-	if (res == 978) {
-		lua_pushinteger(L, https_cb_params_data.len);
-	    if (https_cb_params_data.reply != NULL) {
-	    	lua_pushlstring(L, https_cb_params_data.reply, https_cb_params_data.len);
-			free(https_cb_params_data.reply);
-	    }
-	    else {
-	    	lua_pushstring(L, "__Receive_To_File__");
-	    }
-	    return 2;
-	}
-	else {
-		lua_pushinteger(L, res);
-		return 1;
-	}
+	return _https_end(L, res);
 }
 
 //=================================
@@ -899,33 +930,11 @@ static int https_on( lua_State* L )
 	return 1;
 }
 
-//=====================================
-static int _https_cancel( lua_State* L )
-{
-	if (g_request_id >= 0) {
-		vm_https_cancel(g_request_id);
-	}
-	vm_https_unset_channel(g_channel_id);
-	g_channel_id = 0;
-	g_read_seg_num = 0;
-
-    g_shell_result = 0;
-	vm_signal_post(g_shell_signal);
-	return 0;
-}
-
-//=====================================
-static int https_cancel( lua_State* L )
-{
-	remote_CCall(L, &_https_cancel);
-	return g_shell_result;
-}
-
 //=======================================
 static int https_getstate( lua_State* L )
 {
 	lua_pushinteger(L, https_cb_params_data.state);
-	return g_shell_result;
+	return 1;
 }
 
 

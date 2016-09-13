@@ -2,6 +2,12 @@
 # The beta version for a linux firmware upload
 # ############################################
 
+# ############################################
+# Thanks to:
+# Stefan.Mandl1@gmail.com
+# https://github.com/mandl/LinkIt_Assist_2502
+# ############################################
+
 !!PYTHON3 must be installed!!
 
 udev rule
