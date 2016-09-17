@@ -17,8 +17,8 @@
 
 
 #define LUA_VERSION	"Lua 5.1.4"
-#define LUA_RELEASE	"LuaRephone 1.0.10"
-#define LUA_RELEASE_DATE "2016/09/13"
+#define LUA_RELEASE	"LuaRephone 1.0.11"
+#define LUA_RELEASE_DATE "2016/09/17"
 #define LUA_VERSION_NUM	501
 #define LUA_COPYRIGHT	"Copyright (C) 1994-2011 Lua.org, PUC-Rio, 2016 LoBo"
 #define LUA_AUTHORS 	"R. Ierusalimschy, L. H. de Figueiredo & W. Celes, LoBo"

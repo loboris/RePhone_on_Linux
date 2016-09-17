@@ -64,6 +64,8 @@ extern unsigned int g_memory_size_b;
 extern vm_gsm_gprs_apn_info_t apn_info;
 extern VM_BEARER_DATA_ACCOUNT_TYPE gprs_bearer_type;
 extern int lcd_init( lua_State* L );
+extern uint32_t tp_calx;
+extern uint32_t tp_caly;
 
 
 //-------------------------------------------------------------
@@ -506,6 +508,12 @@ static void setup_from_params(lua_State *L)
 			else if ((klen == 9) && (strstr(key, "inputtype") == key)) {
 				use_term_input = value;
 				printf("  'inputtype' = %d\n", value);
+			}
+			else if ((klen == 4) && (strstr(key, "calx") == key)) {
+				tp_calx = value;
+			}
+			else if ((klen == 4) && (strstr(key, "caly") == key)) {
+				tp_caly = value;
 			}
 		  }
 	  }

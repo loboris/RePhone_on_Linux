@@ -1,3 +1,11 @@
+=== Ver.: 1.0.11   17/09/2016 ===
+- lcd module, touch functions for XCP2046 based touch pannels updated
+- lcd.gettouch() now returns calibrated coordinates
+- TP calibration program written in Lua added
+- Simple paint program written in Lua added to demonstrate touch panel usage
+- some minor bug fixes
+- documentation updated
+
 === Ver.: 1.0.10   13/09/2016 ===
 - https module
     - bug fix in blocking get/post functions versions

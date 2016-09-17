@@ -216,6 +216,9 @@ static uint8_t rotation = 0;			// font rotation
 static uint8_t tp_initialized = 0;		// touch panel initialized flag
 static VM_DCL_HANDLE tp_cs_handle = VM_DCL_HANDLE_INVALID;
 
+uint32_t tp_calx = 0x00010001;
+uint32_t tp_caly = 0x00010001;
+
 typedef struct {
 	uint8_t 	*font;
 	uint8_t 	x_size;
@@ -2994,13 +2997,65 @@ exit:
 //====================================
 static int lcd_get_touch(lua_State *L)
 {
-	if ((g_spi_handle == VM_DCL_HANDLE_INVALID) || (tp_cs_handle == VM_DCL_HANDLE_INVALID)) {
+	if ((TFT_type != 1) || (g_spi_handle == VM_DCL_HANDLE_INVALID) || (tp_cs_handle == VM_DCL_HANDLE_INVALID)) {
 		// spi not setup
 		lua_pushinteger(L, -1);
 		return 1;
 	}
 
 	remote_CCall(L, &_lcd_get_touch);
+	return g_shell_result;
+}
+
+//=====================================
+static int lcd_read_touch(lua_State *L)
+{
+	if ((TFT_type != 1) || (g_spi_handle == VM_DCL_HANDLE_INVALID) || (tp_cs_handle == VM_DCL_HANDLE_INVALID)) {
+		// spi not setup
+		lua_pushinteger(L, -1);
+		return 1;
+	}
+
+	remote_CCall(L, &_lcd_get_touch);
+	if (g_shell_result == 1) return 1;
+
+    int X, Y, Z, tmp;
+    Y = luaL_checkinteger(L,-1);
+    X = luaL_checkinteger(L,-2);
+	lua_pop(L, 2);
+
+	int xleft = (tp_calx >> 16) & 0x3FFF;
+	int xright = tp_calx & 0x3FFF;
+	int ytop = (tp_caly >> 16) & 0x3FFF;
+	int ybottom = tp_caly & 0x3FFF;
+
+	X = ((X - xleft) * 320) / (xright - xleft);
+	Y = ((Y - ytop) * 240) / (ybottom - ytop);
+
+	if (X < 0) X = 0;
+	if (X > 319) X = 319;
+	if (Y < 0) Y = 0;
+	if (Y > 239) Y = 239;
+
+	switch (orientation) {
+		case PORTRAIT:
+			tmp = X;
+			X = 240 - Y - 1;
+			Y = tmp;
+			break;
+		case PORTRAIT_FLIP:
+			tmp = X;
+			X = Y;
+			Y = 320 - tmp - 1;
+			break;
+		case LANDSCAPE_FLIP:
+			X = 320 - X - 1;
+			Y = 240 - Y - 1;
+			break;
+	}
+
+	lua_pushinteger(L, X);
+	lua_pushinteger(L, Y);
 	return g_shell_result;
 }
 
@@ -3027,6 +3082,15 @@ static int lcd_set_touch_cs(lua_State *L)
     }
     return 1;
 }
+
+//==================================
+static int lcd_set_cal(lua_State *L)
+{
+    tp_calx = luaL_checkinteger(L, 1);
+    tp_caly = luaL_checkinteger(L, 2);
+    return 0;
+}
+
 
 
 #undef MIN_OPT_LEVEL
@@ -3070,8 +3134,10 @@ const LUA_REG_TYPE lcd_map[] =
   { LSTRKEY( "hsb2rgb" ), LFUNCVAL( lcd_HSBtoRGB )},
   { LSTRKEY( "setbrightness" ), LFUNCVAL( lcd_set_brightness )},
   { LSTRKEY( "ontouch" ), LFUNCVAL( lcd_on_touch )},
-  { LSTRKEY( "gettouch" ), LFUNCVAL( lcd_get_touch )},
+  { LSTRKEY( "gettouch" ), LFUNCVAL( lcd_read_touch )},
+  { LSTRKEY( "getrawtouch" ), LFUNCVAL( lcd_get_touch )},
   { LSTRKEY( "set_touch_cs" ), LFUNCVAL( lcd_set_touch_cs )},
+  { LSTRKEY( "setcal" ), LFUNCVAL( lcd_set_cal )},
   
 #if LUA_OPTIMIZE_MEMORY > 0
   { LSTRKEY( "PORTRAIT" ),       LNUMVAL( PORTRAIT ) },
@@ -3134,8 +3200,8 @@ LUALIB_API int luaopen_lcd(lua_State *L)
   MOD_REG_NUMBER( L, "CENTER",			CENTER);
   MOD_REG_NUMBER( L, "RIGHT",	        RIGHT);
   MOD_REG_NUMBER( L, "BOTTOM",	        BOTTOM);
-  MOD_REG_NUMBER( L, "LASTX",	        LASTY);
-  MOD_REG_NUMBER( L, "LASTY",	        LASTX);
+  MOD_REG_NUMBER( L, "LASTX",	        LASTX);
+  MOD_REG_NUMBER( L, "LASTY",	        LASTY);
   MOD_REG_NUMBER( L, "BLACK",           TFT_BLACK);
   MOD_REG_NUMBER( L, "NAVY",            TFT_NAVY);
   MOD_REG_NUMBER( L, "DARKGREEN",       TFT_DARKGREEN);
